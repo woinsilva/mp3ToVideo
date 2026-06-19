@@ -1,0 +1,13 @@
+{
+  "name": "@video/shared",
+  "private": true,
+  "version": "0.1.0",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "node -e \"console.log('No tests yet for @video/shared')\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}
