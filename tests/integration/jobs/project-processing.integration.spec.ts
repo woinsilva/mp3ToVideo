@@ -14,7 +14,14 @@ import { PrismaService as ApiPrismaService } from '../../../apps/api/src/databas
 import { ProjectProcessingQueueService } from '../../../apps/api/src/modules/jobs/services/project-processing-queue.service';
 import { PrismaService as WorkerPrismaService } from '../../../apps/worker/src/database/prisma.service';
 import { ProjectProcessor } from '../../../apps/worker/src/processors/project.processor';
+import { AudioMetadataService } from '../../../apps/worker/src/services/audio-metadata.service';
+import { LyricsFallbackService } from '../../../apps/worker/src/services/lyrics-fallback.service';
+import { MusicStructureService } from '../../../apps/worker/src/services/music-structure.service';
+import { ProjectPipelineStateService } from '../../../apps/worker/src/services/project-pipeline-state.service';
 import { ProjectProcessingPipelineService } from '../../../apps/worker/src/services/project-processing-pipeline.service';
+import { ScenePlanningService } from '../../../apps/worker/src/services/scene-planning.service';
+import { ScenePromptService } from '../../../apps/worker/src/services/scene-prompt.service';
+import { StoryboardFallbackService } from '../../../apps/worker/src/services/storyboard-fallback.service';
 
 function buildSqliteUrl(relativePath: string): string {
   return `file:${relativePath.replace(/\\/g, '/')}`;
@@ -67,6 +74,8 @@ describe('Project processing integration', () => {
   let authToken: string;
   let projectId: string;
   let sampleMp3Path: string;
+  let organizationId: string;
+  let userId: string;
 
   beforeEach(async () => {
     const database = await createTestDatabase();
@@ -105,6 +114,8 @@ describe('Project processing integration', () => {
     });
 
     authToken = registerResponse.body.accessToken;
+    organizationId = registerResponse.body.organization.id;
+    userId = registerResponse.body.user.id;
 
     const createResponse = await request(app.getHttpServer())
       .post('/projects')
@@ -180,25 +191,78 @@ describe('Project processing integration', () => {
       })
       .expect(201);
 
+    const configService = {
+      get: (key: string, defaultValue?: unknown) => {
+        const values: Record<string, unknown> = {
+          'audio.ffprobePath': 'ffprobe',
+          'audio.mockDurationSeconds': 30,
+          'ai.enableFallbacks': true
+        };
+
+        return key in values ? values[key] : defaultValue;
+      }
+    } as never;
+
     const processor = new ProjectProcessor(
       prisma as unknown as WorkerPrismaService,
-      {
-        run: async () => undefined
-      } as ProjectProcessingPipelineService
+      new ProjectProcessingPipelineService(
+        prisma as unknown as WorkerPrismaService,
+        new ProjectPipelineStateService(prisma as unknown as WorkerPrismaService),
+        new AudioMetadataService(configService),
+        new LyricsFallbackService(),
+        new MusicStructureService(),
+        new StoryboardFallbackService(),
+        new ScenePlanningService(),
+        new ScenePromptService()
+      )
     );
 
     await processor.process({
       id: 'bull-job-1',
       data: {
         projectId,
-        organizationId: 'unused-org',
-        requestedByUserId: 'unused-user'
+        organizationId,
+        requestedByUserId: userId
       }
     });
 
     const project = await prisma.project.findUnique({
       where: {
         id: projectId
+      }
+    });
+    const track = await prisma.track.findUnique({
+      where: {
+        projectId
+      }
+    });
+    const lyrics = await prisma.lyrics.findUnique({
+      where: {
+        projectId
+      }
+    });
+    const sections = await prisma.musicSection.findMany({
+      where: {
+        projectId
+      },
+      orderBy: {
+        startSeconds: 'asc'
+      }
+    });
+    const storyboard = await prisma.storyboard.findUnique({
+      where: {
+        projectId
+      }
+    });
+    const scenes = await prisma.scene.findMany({
+      where: {
+        projectId
+      },
+      include: {
+        prompt: true
+      },
+      orderBy: {
+        index: 'asc'
       }
     });
     const processingJob = await prisma.processingJob.findFirst({
@@ -209,6 +273,17 @@ describe('Project processing integration', () => {
 
     expect(project?.status).toBe('completed');
     expect(project?.errorMessage).toBeNull();
+    expect(track?.durationSeconds).toBe(30);
+    expect(lyrics?.source).toBe('mock');
+    expect(sections.length).toBeGreaterThan(0);
+    expect(sections[0]?.startSeconds).toBe(0);
+    expect(sections.at(-1)?.endSeconds).toBe(30);
+    expect(storyboard?.visualStyle).toBe('cinematic music video');
+    expect(scenes.length).toBeGreaterThan(0);
+    expect(scenes.every((scene) => scene.prompt)).toBe(true);
+    expect(scenes[0]?.startSeconds).toBe(0);
+    expect(scenes.at(-1)?.endSeconds).toBe(30);
+    expect(scenes.every((scene) => scene.durationSeconds >= 4 && scene.durationSeconds <= 10)).toBe(true);
     expect(processingJob?.status).toBe('completed');
     expect(processingJob?.progress).toBe(100);
     expect(processingJob?.errorMessage).toBeNull();

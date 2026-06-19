@@ -5,7 +5,14 @@ import { configuration } from './config/configuration';
 import { envValidationSchema } from './config/env.validation';
 import { PrismaModule } from './database/prisma.module';
 import { ProjectProcessor } from './processors/project.processor';
+import { AudioMetadataService } from './services/audio-metadata.service';
+import { LyricsFallbackService } from './services/lyrics-fallback.service';
+import { MusicStructureService } from './services/music-structure.service';
+import { ProjectPipelineStateService } from './services/project-pipeline-state.service';
 import { ProjectProcessingPipelineService } from './services/project-processing-pipeline.service';
+import { ScenePlanningService } from './services/scene-planning.service';
+import { ScenePromptService } from './services/scene-prompt.service';
+import { StoryboardFallbackService } from './services/storyboard-fallback.service';
 import { ProjectProcessingWorkerService } from './workers/project-processing-worker.service';
 import { RedisConnectionService } from './workers/redis-connection.service';
 
@@ -23,7 +30,14 @@ import { RedisConnectionService } from './workers/redis-connection.service';
   providers: [
     RedisConnectionService,
     ProjectProcessor,
+    AudioMetadataService,
+    LyricsFallbackService,
+    MusicStructureService,
+    ProjectPipelineStateService,
     ProjectProcessingPipelineService,
+    ScenePlanningService,
+    ScenePromptService,
+    StoryboardFallbackService,
     ProjectProcessingWorkerService
   ]
 })
