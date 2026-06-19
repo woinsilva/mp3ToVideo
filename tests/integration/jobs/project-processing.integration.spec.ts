@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 
 import type { INestApplication } from '@nestjs/common';
@@ -19,6 +20,8 @@ import { LyricsFallbackService } from '../../../apps/worker/src/services/lyrics-
 import { MusicStructureService } from '../../../apps/worker/src/services/music-structure.service';
 import { ProjectPipelineStateService } from '../../../apps/worker/src/services/project-pipeline-state.service';
 import { ProjectProcessingPipelineService } from '../../../apps/worker/src/services/project-processing-pipeline.service';
+import { ProjectRenderService } from '../../../apps/worker/src/services/project-render.service';
+import { RenderStorageService } from '../../../apps/worker/src/services/render-storage.service';
 import { ScenePlanningService } from '../../../apps/worker/src/services/scene-planning.service';
 import { ScenePromptService } from '../../../apps/worker/src/services/scene-prompt.service';
 import { StoryboardFallbackService } from '../../../apps/worker/src/services/storyboard-fallback.service';
@@ -148,6 +151,24 @@ describe('Project processing integration', () => {
     if (sampleMp3Path && existsSync(sampleMp3Path)) {
       rmSync(sampleMp3Path, { force: true });
     }
+
+    if (projectId) {
+      const projectTempDir = resolve('storage', 'temp', projectId);
+      const projectSceneDir = resolve('storage', 'generated-scenes', organizationId, projectId);
+      const projectRenderDir = resolve('storage', 'renders', organizationId, projectId);
+
+      if (existsSync(projectTempDir)) {
+        rmSync(projectTempDir, { force: true, recursive: true });
+      }
+
+      if (existsSync(projectSceneDir)) {
+        rmSync(projectSceneDir, { force: true, recursive: true });
+      }
+
+      if (existsSync(projectRenderDir)) {
+        rmSync(projectRenderDir, { force: true, recursive: true });
+      }
+    }
   });
 
   it('creates a queued processing job right after the MP3 upload', async () => {
@@ -194,14 +215,38 @@ describe('Project processing integration', () => {
     const configService = {
       get: (key: string, defaultValue?: unknown) => {
         const values: Record<string, unknown> = {
+          'storage.root': './storage',
           'audio.ffprobePath': 'ffprobe',
           'audio.mockDurationSeconds': 30,
-          'ai.enableFallbacks': true
+          'ai.enableFallbacks': true,
+          'rendering.ffmpegPath': 'ffmpeg',
+          'rendering.width': 1280,
+          'rendering.height': 720,
+          'rendering.frameRate': 24
         };
 
         return key in values ? values[key] : defaultValue;
       }
     } as never;
+    const renderStorageService = new RenderStorageService(configService);
+    const projectRenderService = new ProjectRenderService(
+      prisma as unknown as WorkerPrismaService,
+      renderStorageService,
+      {
+        createSceneClip: async (outputPath: string) => {
+          await mkdir(dirname(outputPath), { recursive: true });
+          await writeFile(outputPath, Buffer.from('fake-scene-video'));
+        },
+        concatSceneClips: async (_inputListPath: string, outputPath: string) => {
+          await mkdir(dirname(outputPath), { recursive: true });
+          await writeFile(outputPath, Buffer.from('fake-video-track'));
+        },
+        muxAudio: async (_videoPath: string, _audioPath: string, outputPath: string) => {
+          await mkdir(dirname(outputPath), { recursive: true });
+          await writeFile(outputPath, Buffer.from('fake-final-mp4'));
+        }
+      } as never
+    );
 
     const processor = new ProjectProcessor(
       prisma as unknown as WorkerPrismaService,
@@ -213,7 +258,8 @@ describe('Project processing integration', () => {
         new MusicStructureService(),
         new StoryboardFallbackService(),
         new ScenePlanningService(),
-        new ScenePromptService()
+        new ScenePromptService(),
+        projectRenderService
       )
     );
 
@@ -265,6 +311,23 @@ describe('Project processing integration', () => {
         index: 'asc'
       }
     });
+    const render = await prisma.render.findFirst({
+      where: {
+        projectId
+      }
+    });
+    const renderAsset = await prisma.asset.findFirst({
+      where: {
+        projectId,
+        type: 'render'
+      }
+    });
+    const sceneAssets = await prisma.asset.findMany({
+      where: {
+        projectId,
+        type: 'video_scene'
+      }
+    });
     const processingJob = await prisma.processingJob.findFirst({
       where: {
         projectId
@@ -281,9 +344,17 @@ describe('Project processing integration', () => {
     expect(storyboard?.visualStyle).toBe('cinematic music video');
     expect(scenes.length).toBeGreaterThan(0);
     expect(scenes.every((scene) => scene.prompt)).toBe(true);
+    expect(scenes.every((scene) => scene.status === 'completed')).toBe(true);
+    expect(scenes.every((scene) => scene.videoAssetId)).toBe(true);
     expect(scenes[0]?.startSeconds).toBe(0);
     expect(scenes.at(-1)?.endSeconds).toBe(30);
     expect(scenes.every((scene) => scene.durationSeconds >= 4 && scene.durationSeconds <= 10)).toBe(true);
+    expect(sceneAssets).toHaveLength(scenes.length);
+    expect(render?.status).toBe('completed');
+    expect(render?.durationSeconds).toBe(30);
+    expect(render?.assetId).toBe(renderAsset?.id);
+    expect(renderAsset?.mimeType).toBe('video/mp4');
+    expect(readFileSync(resolve(renderAsset?.storagePath ?? '')).length).toBeGreaterThan(0);
     expect(processingJob?.status).toBe('completed');
     expect(processingJob?.progress).toBe(100);
     expect(processingJob?.errorMessage).toBeNull();

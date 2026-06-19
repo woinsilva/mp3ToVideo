@@ -1,0 +1,186 @@
+import { stat } from 'node:fs/promises';
+import { resolve } from 'node:path';
+
+import { Inject, Injectable } from '@nestjs/common';
+import { AssetType, RenderStatus, SceneStatus } from '@prisma/client';
+
+import { PrismaService } from '../database/prisma.service';
+import { FfmpegRenderingService } from './ffmpeg-rendering.service';
+import { RenderStorageService } from './render-storage.service';
+
+interface RenderSceneInput {
+  id: string;
+  title: string;
+  durationSeconds: number;
+  sectionType: string;
+}
+
+interface RenderProjectInput {
+  organizationId: string;
+  projectId: string;
+  audioPath: string;
+  durationSeconds: number;
+  scenes: RenderSceneInput[];
+}
+
+@Injectable()
+export class ProjectRenderService {
+  constructor(
+    @Inject(PrismaService)
+    private readonly prismaService: PrismaService,
+    @Inject(RenderStorageService)
+    private readonly renderStorageService: RenderStorageService,
+    @Inject(FfmpegRenderingService)
+    private readonly ffmpegRenderingService: FfmpegRenderingService
+  ) {}
+
+  async render(input: RenderProjectInput): Promise<void> {
+    const existingRender = await this.prismaService.render.findFirst({
+      where: {
+        projectId: input.projectId
+      },
+      orderBy: {
+        updatedAt: 'desc'
+      }
+    });
+    const renderRecord = existingRender
+      ? await this.prismaService.render.update({
+          where: {
+            id: existingRender.id
+          },
+          data: {
+            status: RenderStatus.rendering,
+            durationSeconds: input.durationSeconds,
+            assetId: null
+          }
+        })
+      : await this.prismaService.render.create({
+          data: {
+            projectId: input.projectId,
+            status: RenderStatus.rendering,
+            durationSeconds: input.durationSeconds
+          }
+        });
+
+    try {
+      const sceneClipPaths: string[] = [];
+
+      for (const [index, scene] of input.scenes.entries()) {
+        const sceneClipPath = this.renderStorageService.buildSceneClipPath(
+          input.organizationId,
+          input.projectId,
+          index
+        );
+        const sceneClipAbsolutePath =
+          await this.renderStorageService.ensureParentDirectory(sceneClipPath);
+
+        await this.ffmpegRenderingService.createSceneClip(
+          sceneClipAbsolutePath,
+          scene.durationSeconds,
+          this.resolveSceneColor(scene.sectionType, index)
+        );
+
+        const sceneClipSize = Number((await stat(sceneClipAbsolutePath)).size);
+        const sceneAsset = await this.prismaService.asset.create({
+          data: {
+            organizationId: input.organizationId,
+            projectId: input.projectId,
+            type: AssetType.video_scene,
+            mimeType: 'video/mp4',
+            storagePath: sceneClipPath,
+            sizeBytes: sceneClipSize
+          }
+        });
+
+        await this.prismaService.scene.update({
+          where: {
+            id: scene.id
+          },
+          data: {
+            status: SceneStatus.completed,
+            videoAssetId: sceneAsset.id
+          }
+        });
+
+        sceneClipPaths.push(sceneClipPath);
+      }
+
+      const concatListPath = this.renderStorageService.buildConcatListPath(input.projectId);
+      const concatListAbsolutePath = await this.renderStorageService.writeConcatList(
+        concatListPath,
+        sceneClipPaths
+      );
+      const intermediateVideoPath = this.renderStorageService.buildIntermediateVideoPath(
+        input.projectId
+      );
+      const intermediateVideoAbsolutePath =
+        await this.renderStorageService.ensureParentDirectory(intermediateVideoPath);
+
+      await this.ffmpegRenderingService.concatSceneClips(
+        concatListAbsolutePath,
+        intermediateVideoAbsolutePath
+      );
+
+      const finalRenderPath = this.renderStorageService.buildFinalRenderPath(
+        input.organizationId,
+        input.projectId
+      );
+      const finalRenderAbsolutePath =
+        await this.renderStorageService.ensureParentDirectory(finalRenderPath);
+
+      await this.ffmpegRenderingService.muxAudio(
+        intermediateVideoAbsolutePath,
+        resolve(input.audioPath),
+        finalRenderAbsolutePath
+      );
+
+      const renderAsset = await this.prismaService.asset.create({
+        data: {
+          organizationId: input.organizationId,
+          projectId: input.projectId,
+          type: AssetType.render,
+          mimeType: 'video/mp4',
+          storagePath: finalRenderPath,
+          sizeBytes: Number((await stat(finalRenderAbsolutePath)).size)
+        }
+      });
+
+      await this.prismaService.render.update({
+        where: {
+          id: renderRecord.id
+        },
+        data: {
+          status: RenderStatus.completed,
+          assetId: renderAsset.id,
+          durationSeconds: input.durationSeconds
+        }
+      });
+    } catch (error) {
+      await this.prismaService.render.update({
+        where: {
+          id: renderRecord.id
+        },
+        data: {
+          status: RenderStatus.failed,
+          durationSeconds: input.durationSeconds
+        }
+      });
+
+      throw error;
+    }
+  }
+
+  private resolveSceneColor(sectionType: string, index: number): string {
+    const paletteBySectionType: Record<string, string[]> = {
+      intro: ['0x1d3557', '0x264653'],
+      verse: ['0x6d597a', '0x355070'],
+      chorus: ['0xe76f51', '0xf4a261'],
+      bridge: ['0x457b9d', '0x2a9d8f'],
+      outro: ['0x3a506b', '0x5bc0be'],
+      instrumental: ['0x4a4e69', '0x9a8c98']
+    };
+    const palette = paletteBySectionType[sectionType] ?? ['0x355070', '0x6d597a'];
+
+    return palette[index % palette.length];
+  }
+}

@@ -3,8 +3,12 @@ import * as Joi from 'joi';
 export const envValidationSchema = Joi.object({
   NODE_ENV: Joi.string().valid('development', 'test', 'production').default('development'),
   STORAGE_ROOT: Joi.string().default('./storage'),
+  FFMPEG_PATH: Joi.string().default('ffmpeg'),
   FFPROBE_PATH: Joi.string().default('ffprobe'),
   MOCK_AUDIO_DURATION_SECONDS: Joi.number().positive().default(30),
+  RENDER_WIDTH: Joi.number().integer().positive().default(1280),
+  RENDER_HEIGHT: Joi.number().integer().positive().default(720),
+  RENDER_FRAME_RATE: Joi.number().integer().positive().default(24),
   ENABLE_AI_FALLBACKS: Joi.boolean().truthy('true').falsy('false').default(true),
   REDIS_HOST: Joi.string().default('localhost'),
   REDIS_PORT: Joi.number().default(6379),

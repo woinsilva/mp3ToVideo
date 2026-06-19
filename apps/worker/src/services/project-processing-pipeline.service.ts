@@ -7,6 +7,7 @@ import { AudioMetadataService } from './audio-metadata.service';
 import { LyricsFallbackService } from './lyrics-fallback.service';
 import { MusicStructureService } from './music-structure.service';
 import { ProjectPipelineStateService } from './project-pipeline-state.service';
+import { ProjectRenderService } from './project-render.service';
 import { ScenePlanningService } from './scene-planning.service';
 import { ScenePromptService } from './scene-prompt.service';
 import { StoryboardFallbackService } from './storyboard-fallback.service';
@@ -29,7 +30,9 @@ export class ProjectProcessingPipelineService {
     @Inject(ScenePlanningService)
     private readonly scenePlanningService: ScenePlanningService,
     @Inject(ScenePromptService)
-    private readonly scenePromptService: ScenePromptService
+    private readonly scenePromptService: ScenePromptService,
+    @Inject(ProjectRenderService)
+    private readonly projectRenderService: ProjectRenderService
   ) {}
 
   async run(payload: ProjectProcessingJobPayload): Promise<void> {
@@ -159,6 +162,31 @@ export class ProjectProcessingPipelineService {
           }
         });
       }
+    });
+
+    const persistedScenes = await this.prismaService.scene.findMany({
+      where: {
+        projectId: project.id
+      },
+      orderBy: {
+        index: 'asc'
+      }
+    });
+
+    await this.projectPipelineStateService.update(project.id, ProjectStatus.rendering, 95);
+
+    await this.projectRenderService.render({
+      organizationId: payload.organizationId,
+      projectId: project.id,
+      audioPath: project.track.storagePath,
+      durationSeconds,
+      scenes: persistedScenes.map((scene) => ({
+        id: scene.id,
+        title: scene.title,
+        durationSeconds: scene.durationSeconds,
+        sectionType:
+          createdSections.find((section) => section.id === scene.musicSectionId)?.type ?? 'verse'
+      }))
     });
   }
 }
