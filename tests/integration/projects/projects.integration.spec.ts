@@ -171,7 +171,7 @@ describe('Projects integration', () => {
       .expect(201);
 
     expect(uploadResponse.body.projectId).toBe(createResponse.body.id);
-    expect(uploadResponse.body.status).toBe('uploaded');
+    expect(uploadResponse.body.status).toBe('queued');
 
     const track = await prisma.track.findUnique({
       where: {
@@ -197,7 +197,15 @@ describe('Projects integration', () => {
       }
     });
 
-    expect(project?.status).toBe('uploaded');
+    expect(project?.status).toBe('queued');
+
+    const processingJob = await prisma.processingJob.findFirst({
+      where: {
+        projectId: createResponse.body.id
+      }
+    });
+
+    expect(processingJob?.status).toBe('queued');
 
     uploadedFilePath = resolve(track?.storagePath ?? '');
     expect(existsSync(uploadedFilePath)).toBe(true);

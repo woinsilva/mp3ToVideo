@@ -6,8 +6,11 @@ import {
   NotFoundException
 } from '@nestjs/common';
 import { Prisma, ProjectStatus } from '@prisma/client';
+import { PROJECT_PROCESS_JOB_NAME, PROJECT_QUEUE_NAME } from '@video/shared';
 
 import { PrismaService } from '../../../database/prisma.service';
+import { ProjectProcessingPayloadFactory } from '../../jobs/services/project-processing-payload.factory';
+import { ProjectProcessingQueueService } from '../../jobs/services/project-processing-queue.service';
 import { LocalStorageService } from './local-storage.service';
 import { ProjectPresenter } from './project.presenter';
 
@@ -28,6 +31,10 @@ export class ProjectsService {
   constructor(
     @Inject(PrismaService)
     private readonly prismaService: PrismaService,
+    @Inject(ProjectProcessingQueueService)
+    private readonly projectProcessingQueueService: ProjectProcessingQueueService,
+    @Inject(ProjectProcessingPayloadFactory)
+    private readonly projectProcessingPayloadFactory: ProjectProcessingPayloadFactory,
     @Inject(LocalStorageService)
     private readonly localStorageService: LocalStorageService,
     @Inject(ProjectPresenter)
@@ -148,10 +155,40 @@ export class ProjectsService {
       return track;
     });
 
+    const payload = this.projectProcessingPayloadFactory.build({
+      projectId: input.projectId,
+      organizationId: input.organizationId,
+      requestedByUserId: project.createdByUserId
+    });
+
+    const queuedJob = await this.projectProcessingQueueService.enqueue(payload);
+
+    await this.prismaService.$transaction([
+      this.prismaService.processingJob.create({
+        data: {
+          projectId: input.projectId,
+          queueName: PROJECT_QUEUE_NAME,
+          jobName: PROJECT_PROCESS_JOB_NAME,
+          bullJobId: queuedJob.bullJobId,
+          status: 'queued',
+          progress: 0
+        }
+      }),
+      this.prismaService.project.update({
+        where: {
+          id: input.projectId
+        },
+        data: {
+          status: ProjectStatus.queued,
+          errorMessage: null
+        }
+      })
+    ]);
+
     return this.projectPresenter.uploadResult(
       input.projectId,
       result.id,
-      ProjectStatus.uploaded
+      ProjectStatus.queued
     );
   }
 }

@@ -6,6 +6,7 @@ import { envValidationSchema } from './config/env.validation';
 import { PrismaModule } from './database/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { HealthController } from './modules/health/health.controller';
+import { JobsModule } from './modules/jobs/jobs.module';
 import { ProjectsModule } from './modules/projects/projects.module';
 
 @Module({
@@ -19,6 +20,7 @@ import { ProjectsModule } from './modules/projects/projects.module';
     }),
     PrismaModule,
     AuthModule,
+    JobsModule,
     ProjectsModule
   ],
   controllers: [HealthController]
