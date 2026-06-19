@@ -1,0 +1,270 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../tests/generated/prisma"
+}
+
+datasource db {
+  provider     = "sqlite"
+  url          = env("DATABASE_URL")
+  relationMode = "prisma"
+}
+
+enum OrganizationRole {
+  owner
+  admin
+  member
+}
+
+enum ProjectStatus {
+  draft
+  uploaded
+  queued
+  processing
+  analyzing
+  storyboarding
+  generating_scenes
+  rendering
+  completed
+  failed
+}
+
+enum LyricsSource {
+  manual
+  whisper
+  mock
+}
+
+enum MusicSectionType {
+  intro
+  verse
+  chorus
+  bridge
+  outro
+  instrumental
+}
+
+enum SceneStatus {
+  pending
+  generating
+  completed
+  failed
+}
+
+enum AssetType {
+  audio
+  image
+  video_scene
+  render
+  subtitle
+  temp
+}
+
+enum RenderStatus {
+  pending
+  rendering
+  completed
+  failed
+}
+
+enum ProcessingJobStatus {
+  queued
+  active
+  completed
+  failed
+  retrying
+}
+
+model User {
+  id                  String               @id @default(cuid())
+  email               String               @unique
+  name                String
+  passwordHash        String
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  deletedAt           DateTime?
+  createdProjects     Project[]            @relation("ProjectCreatedBy")
+  organizationMembers OrganizationMember[]
+}
+
+model Organization {
+  id        String               @id @default(cuid())
+  name      String
+  slug      String               @unique
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+  deletedAt DateTime?
+  members   OrganizationMember[]
+  projects  Project[]
+  assets    Asset[]
+}
+
+model OrganizationMember {
+  id             String           @id @default(cuid())
+  organizationId String
+  userId         String
+  role           OrganizationRole
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+}
+
+model Project {
+  id              String          @id @default(cuid())
+  organizationId  String
+  createdByUserId String
+  title           String
+  status          ProjectStatus   @default(draft)
+  errorMessage    String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  deletedAt       DateTime?
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdByUser   User            @relation("ProjectCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  track           Track?
+  lyrics          Lyrics?
+  musicSections   MusicSection[]
+  storyboard      Storyboard?
+  scenes          Scene[]
+  renders         Render[]
+  assets          Asset[]
+  processingJobs  ProcessingJob[]
+}
+
+model Track {
+  id               String   @id @default(cuid())
+  projectId        String   @unique
+  originalFileName String
+  mimeType         String
+  sizeBytes        Int
+  durationSeconds  Float?
+  storagePath      String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  project          Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model Lyrics {
+  id             String       @id @default(cuid())
+  projectId      String       @unique
+  source         LyricsSource
+  rawText        String
+  normalizedText String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model MusicSection {
+  id            String           @id @default(cuid())
+  projectId     String
+  type          MusicSectionType
+  title         String
+  startSeconds  Float
+  endSeconds    Float
+  lyricsExcerpt String?
+  energy        Float?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  project       Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  scenes        Scene[]
+
+  @@index([projectId, startSeconds])
+}
+
+model Storyboard {
+  id               String   @id @default(cuid())
+  projectId        String   @unique
+  concept          String
+  visualStyle      String
+  mood             String
+  colorPalette     String
+  narrativeSummary String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  project          Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model Scene {
+  id              String        @id @default(cuid())
+  projectId       String
+  musicSectionId  String?
+  index           Int
+  title           String
+  description     String
+  startSeconds    Float
+  endSeconds      Float
+  durationSeconds Float
+  status          SceneStatus   @default(pending)
+  videoAssetId    String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  project         Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  musicSection    MusicSection? @relation(fields: [musicSectionId], references: [id], onDelete: SetNull)
+  videoAsset      Asset?        @relation("SceneVideoAsset", fields: [videoAssetId], references: [id], onDelete: SetNull)
+  prompt          ScenePrompt?
+
+  @@unique([projectId, index])
+  @@index([projectId, startSeconds])
+}
+
+model ScenePrompt {
+  id             String   @id @default(cuid())
+  sceneId        String   @unique
+  provider       String
+  positivePrompt String
+  negativePrompt String
+  style          String
+  camera         String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  scene          Scene    @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+}
+
+model Asset {
+  id             String       @id @default(cuid())
+  organizationId String
+  projectId      String
+  type           AssetType
+  mimeType       String
+  storagePath    String
+  sizeBytes      Int
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  render         Render?
+  sceneVideoFor  Scene[]      @relation("SceneVideoAsset")
+
+  @@index([organizationId, projectId, type])
+}
+
+model Render {
+  id              String       @id @default(cuid())
+  projectId       String
+  status          RenderStatus @default(pending)
+  assetId         String?      @unique
+  durationSeconds Float?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  project         Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  asset           Asset?       @relation(fields: [assetId], references: [id], onDelete: SetNull)
+}
+
+model ProcessingJob {
+  id           String              @id @default(cuid())
+  projectId    String
+  queueName    String
+  jobName      String
+  bullJobId    String?
+  status       ProcessingJobStatus
+  progress     Int                 @default(0)
+  errorMessage String?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  project      Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, queueName])
+}

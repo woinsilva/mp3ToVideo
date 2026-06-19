@@ -21,3 +21,6 @@ storage/temp/
 apps/frontend/dist/
 apps/api/dist/
 apps/worker/dist/
+tests/tmp/*.db
+prisma/tests/tmp/*.db
+tests/generated/

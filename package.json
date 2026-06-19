@@ -4,15 +4,29 @@
   "version": "0.1.0",
   "packageManager": "pnpm@10.12.4",
   "scripts": {
-    "dev": "concurrently -n api,worker,frontend -c blue,green,magenta \"pnpm --filter @video/api dev\" \"pnpm --filter @video/worker dev\" \"pnpm --filter @video/frontend dev\"",
-    "build": "pnpm -r build",
-    "lint": "pnpm -r lint",
-    "test": "pnpm -r test",
-    "typecheck": "pnpm -r typecheck"
+    "dev": "concurrently -n api,worker,frontend -c blue,green,magenta \"corepack pnpm --filter @video/api dev\" \"corepack pnpm --filter @video/worker dev\" \"corepack pnpm --filter @video/frontend dev\"",
+    "build": "corepack pnpm -r build",
+    "lint": "corepack pnpm -r lint",
+    "test": "corepack pnpm test:unit && corepack pnpm test:integration",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "corepack pnpm prisma:generate:test && vitest run tests/integration",
+    "typecheck": "corepack pnpm -r typecheck",
+    "prisma:generate": "prisma generate",
+    "prisma:generate:test": "prisma generate --schema prisma/schema.test.prisma",
+    "prisma:migrate": "prisma migrate dev --name init",
+    "prisma:seed": "tsx prisma/seed.ts",
+    "prisma:push": "prisma db push"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.9.0",
+    "dotenv": "^16.6.1"
   },
   "devDependencies": {
     "concurrently": "^9.0.1",
+    "prisma": "^6.9.0",
     "rimraf": "^6.0.1",
-    "typescript": "^5.8.3"
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3",
+    "vitest": "^2.1.9"
   }
 }
