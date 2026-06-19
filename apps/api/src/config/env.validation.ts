@@ -5,6 +5,8 @@ export const envValidationSchema = Joi.object({
   API_PORT: Joi.number().default(3000),
   JWT_SECRET: Joi.string().min(8).default('change-me'),
   JWT_EXPIRES_IN: Joi.string().default('7d'),
+  STORAGE_ROOT: Joi.string().default('./storage'),
+  MAX_UPLOAD_MB: Joi.number().integer().positive().default(50),
   DATABASE_PROVIDER: Joi.string().valid('postgresql', 'sqlite').default('postgresql'),
   REDIS_HOST: Joi.string().default('localhost'),
   REDIS_PORT: Joi.number().default(6379),
