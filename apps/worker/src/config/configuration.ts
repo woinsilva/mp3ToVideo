@@ -4,7 +4,14 @@ export const configuration = () => ({
   },
   audio: {
     ffprobePath: process.env.FFPROBE_PATH ?? 'ffprobe',
-    mockDurationSeconds: Number(process.env.MOCK_AUDIO_DURATION_SECONDS ?? 30)
+    mockDurationSeconds: Number(process.env.MOCK_AUDIO_DURATION_SECONDS ?? 30),
+    enableWhisper: process.env.ENABLE_WHISPER === 'true',
+    whisperPythonPath: process.env.WHISPER_PYTHON_PATH ?? 'python',
+    whisperModel: process.env.WHISPER_MODEL ?? 'distil-large-v3',
+    whisperDevice: process.env.WHISPER_DEVICE ?? 'cuda',
+    whisperComputeType: process.env.WHISPER_COMPUTE_TYPE ?? 'float16',
+    whisperTimeoutMs: Number(process.env.WHISPER_TIMEOUT_MS ?? 600000),
+    whisperLanguage: process.env.WHISPER_LANGUAGE ?? ''
   },
   rendering: {
     ffmpegPath: process.env.FFMPEG_PATH ?? 'ffmpeg',

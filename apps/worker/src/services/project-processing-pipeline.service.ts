@@ -1,10 +1,10 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { LyricsSource, ProjectStatus, SceneStatus } from '@prisma/client';
+import { ProjectStatus, SceneStatus } from '@prisma/client';
 import type { ProjectProcessingJobPayload } from '@video/shared';
 
 import { PrismaService } from '../database/prisma.service';
 import { AudioMetadataService } from './audio-metadata.service';
-import { LyricsFallbackService } from './lyrics-fallback.service';
+import { LyricsGenerationService } from './lyrics-generation.service';
 import { MusicStructureService } from './music-structure.service';
 import { ProjectPipelineStateService } from './project-pipeline-state.service';
 import { ProjectRenderService } from './project-render.service';
@@ -21,8 +21,8 @@ export class ProjectProcessingPipelineService {
     private readonly projectPipelineStateService: ProjectPipelineStateService,
     @Inject(AudioMetadataService)
     private readonly audioMetadataService: AudioMetadataService,
-    @Inject(LyricsFallbackService)
-    private readonly lyricsFallbackService: LyricsFallbackService,
+    @Inject(LyricsGenerationService)
+    private readonly lyricsGenerationService: LyricsGenerationService,
     @Inject(MusicStructureService)
     private readonly musicStructureService: MusicStructureService,
     @Inject(StoryboardGenerationService)
@@ -69,8 +69,7 @@ export class ProjectProcessingPipelineService {
       (await this.prismaService.lyrics.create({
         data: {
           projectId: project.id,
-          source: LyricsSource.mock,
-          ...this.lyricsFallbackService.build(project.title)
+          ...(await this.lyricsGenerationService.build(project.title, project.track.storagePath))
         }
       }));
 

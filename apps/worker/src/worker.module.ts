@@ -8,6 +8,7 @@ import { ProjectProcessor } from './processors/project.processor';
 import { AudioMetadataService } from './services/audio-metadata.service';
 import { FfmpegCommandBuilderService } from './services/ffmpeg-command-builder.service';
 import { FfmpegRenderingService } from './services/ffmpeg-rendering.service';
+import { LyricsGenerationService } from './services/lyrics-generation.service';
 import { LyricsFallbackService } from './services/lyrics-fallback.service';
 import { MusicStructureService } from './services/music-structure.service';
 import { OllamaClientService } from './services/ollama-client.service';
@@ -21,6 +22,7 @@ import { ScenePromptGenerationService } from './services/scene-prompt-generation
 import { ScenePromptService } from './services/scene-prompt.service';
 import { StoryboardGenerationService } from './services/storyboard-generation.service';
 import { StoryboardFallbackService } from './services/storyboard-fallback.service';
+import { WhisperTranscriptionService } from './services/whisper-transcription.service';
 import { ProjectProcessingWorkerService } from './workers/project-processing-worker.service';
 import { RedisConnectionService } from './workers/redis-connection.service';
 
@@ -41,6 +43,7 @@ import { RedisConnectionService } from './workers/redis-connection.service';
     AudioMetadataService,
     FfmpegCommandBuilderService,
     FfmpegRenderingService,
+    LyricsGenerationService,
     LyricsFallbackService,
     MusicStructureService,
     OllamaClientService,
@@ -54,6 +57,7 @@ import { RedisConnectionService } from './workers/redis-connection.service';
     ScenePromptService,
     StoryboardGenerationService,
     StoryboardFallbackService,
+    WhisperTranscriptionService,
     ProjectProcessingWorkerService
   ]
 })

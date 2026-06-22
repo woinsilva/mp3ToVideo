@@ -17,6 +17,7 @@ import { PrismaService as WorkerPrismaService } from '../../../apps/worker/src/d
 import { ProjectProcessor } from '../../../apps/worker/src/processors/project.processor';
 import { AudioMetadataService } from '../../../apps/worker/src/services/audio-metadata.service';
 import { LyricsFallbackService } from '../../../apps/worker/src/services/lyrics-fallback.service';
+import { LyricsGenerationService } from '../../../apps/worker/src/services/lyrics-generation.service';
 import { MusicStructureService } from '../../../apps/worker/src/services/music-structure.service';
 import { OllamaClientService } from '../../../apps/worker/src/services/ollama-client.service';
 import { ProcessingProgressService } from '../../../apps/worker/src/services/processing-progress.service';
@@ -29,6 +30,7 @@ import { ScenePromptGenerationService } from '../../../apps/worker/src/services/
 import { ScenePromptService } from '../../../apps/worker/src/services/scene-prompt.service';
 import { StoryboardGenerationService } from '../../../apps/worker/src/services/storyboard-generation.service';
 import { StoryboardFallbackService } from '../../../apps/worker/src/services/storyboard-fallback.service';
+import { WhisperTranscriptionService } from '../../../apps/worker/src/services/whisper-transcription.service';
 
 function buildSqliteUrl(relativePath: string): string {
   return `file:${relativePath.replace(/\\/g, '/')}`;
@@ -222,6 +224,13 @@ describe('Project processing integration', () => {
           'storage.root': './storage',
           'audio.ffprobePath': 'ffprobe',
           'audio.mockDurationSeconds': 30,
+          'audio.enableWhisper': false,
+          'audio.whisperPythonPath': 'python',
+          'audio.whisperModel': 'distil-large-v3',
+          'audio.whisperDevice': 'cuda',
+          'audio.whisperComputeType': 'float16',
+          'audio.whisperTimeoutMs': 600000,
+          'audio.whisperLanguage': '',
           'ai.enableOllama': false,
           'ai.ollamaBaseUrl': 'http://localhost:11434',
           'ai.ollamaModel': 'qwen3:8b',
@@ -247,6 +256,10 @@ describe('Project processing integration', () => {
     const scenePromptGenerationService = new ScenePromptGenerationService(
       ollamaClientService,
       new ScenePromptService()
+    );
+    const lyricsGenerationService = new LyricsGenerationService(
+      new WhisperTranscriptionService(configService),
+      new LyricsFallbackService()
     );
     const renderStorageService = new RenderStorageService(configService);
     const projectRenderService = new ProjectRenderService(
@@ -276,7 +289,7 @@ describe('Project processing integration', () => {
         prisma as unknown as WorkerPrismaService,
         new ProjectPipelineStateService(prisma as unknown as WorkerPrismaService),
         new AudioMetadataService(configService),
-        new LyricsFallbackService(),
+        lyricsGenerationService,
         new MusicStructureService(),
         storyboardGenerationService,
         new ScenePlanningService(),
