@@ -8,6 +8,7 @@ import { PrismaService } from '../database/prisma.service';
 import { FfmpegRenderingService } from './ffmpeg-rendering.service';
 import { ProcessingProgressService } from './processing-progress.service';
 import { RenderStorageService } from './render-storage.service';
+import { SceneImageGenerationService } from './scene-image-generation.service';
 
 interface RenderSceneInput {
   id: string;
@@ -31,6 +32,8 @@ export class ProjectRenderService {
     private readonly prismaService: PrismaService,
     @Inject(RenderStorageService)
     private readonly renderStorageService: RenderStorageService,
+    @Inject(SceneImageGenerationService)
+    private readonly sceneImageGenerationService: SceneImageGenerationService,
     @Inject(FfmpegRenderingService)
     private readonly ffmpegRenderingService: FfmpegRenderingService,
     @Inject(ProcessingProgressService)
@@ -76,12 +79,48 @@ export class ProjectRenderService {
         );
         const sceneClipAbsolutePath =
           await this.renderStorageService.ensureParentDirectory(sceneClipPath);
+        const scenePrompt = await this.prismaService.scenePrompt.findUnique({
+          where: {
+            sceneId: scene.id
+          }
+        });
+        const generatedSceneImage = scenePrompt
+          ? await this.sceneImageGenerationService.generate({
+              organizationId: input.organizationId,
+              projectId: input.projectId,
+              sceneIndex: index,
+              sceneTitle: scene.title,
+              positivePrompt: scenePrompt.positivePrompt,
+              negativePrompt: scenePrompt.negativePrompt,
+              style: scenePrompt.style,
+              camera: scenePrompt.camera
+            })
+          : null;
 
-        await this.ffmpegRenderingService.createSceneClip(
-          sceneClipAbsolutePath,
-          scene.durationSeconds,
-          this.resolveSceneColor(scene.sectionType, index)
-        );
+        if (generatedSceneImage) {
+          await this.prismaService.asset.create({
+            data: {
+              organizationId: input.organizationId,
+              projectId: input.projectId,
+              type: AssetType.image,
+              mimeType: 'image/png',
+              storagePath: generatedSceneImage.storagePath,
+              sizeBytes: generatedSceneImage.sizeBytes
+            }
+          });
+
+          await this.ffmpegRenderingService.createSceneClipFromImage(
+            sceneClipAbsolutePath,
+            scene.durationSeconds,
+            this.renderStorageService.getAbsolutePath(generatedSceneImage.storagePath)
+          );
+        } else {
+          await this.ffmpegRenderingService.createSceneClip(
+            sceneClipAbsolutePath,
+            scene.durationSeconds,
+            this.resolveSceneColor(scene.sectionType, index)
+          );
+        }
 
         const sceneClipSize = Number((await stat(sceneClipAbsolutePath)).size);
         const sceneAsset = await this.prismaService.asset.create({

@@ -27,6 +27,18 @@ export class RenderStorageService {
     ).replace(/\\/g, '/');
   }
 
+  buildSceneImagePath(organizationId: string, projectId: string, sceneIndex: number): string {
+    const root = this.configService.get<string>('storage.root', './storage');
+
+    return join(
+      root,
+      'generated-images',
+      organizationId,
+      projectId,
+      `scene-${String(sceneIndex + 1).padStart(3, '0')}.png`
+    ).replace(/\\/g, '/');
+  }
+
   buildConcatListPath(projectId: string): string {
     const root = this.configService.get<string>('storage.root', './storage');
 

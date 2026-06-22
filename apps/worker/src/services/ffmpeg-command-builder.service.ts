@@ -9,6 +9,15 @@ interface BuildSceneClipCommandInput {
   outputPath: string;
 }
 
+interface BuildSceneClipFromImageCommandInput {
+  width: number;
+  height: number;
+  frameRate: number;
+  durationSeconds: number;
+  imagePath: string;
+  outputPath: string;
+}
+
 interface BuildConcatCommandInput {
   inputListPath: string;
   outputPath: string;
@@ -29,6 +38,32 @@ export class FfmpegCommandBuilderService {
       'lavfi',
       '-i',
       `color=c=${input.colorHex}:s=${input.width}x${input.height}:d=${input.durationSeconds}:r=${input.frameRate}`,
+      '-c:v',
+      'libx264',
+      '-pix_fmt',
+      'yuv420p',
+      '-movflags',
+      '+faststart',
+      input.outputPath
+    ];
+  }
+
+  buildSceneClipFromImageArgs(input: BuildSceneClipFromImageCommandInput): string[] {
+    return [
+      '-y',
+      '-loop',
+      '1',
+      '-i',
+      input.imagePath,
+      '-vf',
+      [
+        `scale=${input.width}:${input.height}:force_original_aspect_ratio=increase`,
+        `crop=${input.width}:${input.height}`,
+        `zoompan=z='min(zoom+0.0008,1.08)':d=${Math.max(1, Math.round(input.durationSeconds * input.frameRate))}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${input.width}x${input.height}:fps=${input.frameRate}`,
+        `fps=${input.frameRate},format=yuv420p`
+      ].join(','),
+      '-t',
+      String(input.durationSeconds),
       '-c:v',
       'libx264',
       '-pix_fmt',

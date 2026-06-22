@@ -26,6 +26,20 @@ export const configuration = () => ({
     ollamaModel: process.env.OLLAMA_MODEL ?? 'qwen3:8b',
     ollamaTimeoutMs: Number(process.env.OLLAMA_TIMEOUT_MS ?? 180000)
   },
+  visual: {
+    provider: process.env.SCENE_VISUAL_PROVIDER ?? 'procedural',
+    comfyuiBaseUrl: process.env.COMFYUI_BASE_URL ?? 'http://localhost:8188',
+    comfyuiTimeoutMs: Number(process.env.COMFYUI_TIMEOUT_MS ?? 300000),
+    comfyuiPollIntervalMs: Number(process.env.COMFYUI_POLL_INTERVAL_MS ?? 3000),
+    comfyuiCheckpointName:
+      process.env.COMFYUI_CHECKPOINT_NAME ?? 'sd_xl_turbo_1.0.safetensors',
+    comfyuiWidth: Number(process.env.COMFYUI_WIDTH ?? 1024),
+    comfyuiHeight: Number(process.env.COMFYUI_HEIGHT ?? 576),
+    comfyuiSteps: Number(process.env.COMFYUI_STEPS ?? 8),
+    comfyuiCfg: Number(process.env.COMFYUI_CFG ?? 1.8),
+    comfyuiSampler: process.env.COMFYUI_SAMPLER ?? 'euler',
+    comfyuiScheduler: process.env.COMFYUI_SCHEDULER ?? 'normal'
+  },
   redis: {
     host: process.env.REDIS_HOST ?? 'localhost',
     port: Number(process.env.REDIS_PORT ?? 6379)

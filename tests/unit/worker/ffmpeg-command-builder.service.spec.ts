@@ -31,6 +31,38 @@ describe('FfmpegCommandBuilderService', () => {
     ]);
   });
 
+  it('builds the scene clip command from a generated image', () => {
+    const service = new FfmpegCommandBuilderService();
+
+    expect(
+      service.buildSceneClipFromImageArgs({
+        width: 1280,
+        height: 720,
+        frameRate: 24,
+        durationSeconds: 6,
+        imagePath: 'C:/tmp/scene-001.png',
+        outputPath: 'C:/tmp/scene-001.mp4'
+      })
+    ).toEqual([
+      '-y',
+      '-loop',
+      '1',
+      '-i',
+      'C:/tmp/scene-001.png',
+      '-vf',
+      "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,zoompan=z='min(zoom+0.0008,1.08)':d=144:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1280x720:fps=24,fps=24,format=yuv420p",
+      '-t',
+      '6',
+      '-c:v',
+      'libx264',
+      '-pix_fmt',
+      'yuv420p',
+      '-movflags',
+      '+faststart',
+      'C:/tmp/scene-001.mp4'
+    ]);
+  });
+
   it('builds concat and mux commands for the final render', () => {
     const service = new FfmpegCommandBuilderService();
 

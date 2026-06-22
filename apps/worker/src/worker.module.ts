@@ -6,6 +6,7 @@ import { envValidationSchema } from './config/env.validation';
 import { PrismaModule } from './database/prisma.module';
 import { ProjectProcessor } from './processors/project.processor';
 import { AudioMetadataService } from './services/audio-metadata.service';
+import { ComfyUiClientService } from './services/comfyui-client.service';
 import { FfmpegCommandBuilderService } from './services/ffmpeg-command-builder.service';
 import { FfmpegRenderingService } from './services/ffmpeg-rendering.service';
 import { LyricsGenerationService } from './services/lyrics-generation.service';
@@ -17,6 +18,7 @@ import { ProjectPipelineStateService } from './services/project-pipeline-state.s
 import { ProjectProcessingPipelineService } from './services/project-processing-pipeline.service';
 import { ProjectRenderService } from './services/project-render.service';
 import { RenderStorageService } from './services/render-storage.service';
+import { SceneImageGenerationService } from './services/scene-image-generation.service';
 import { ScenePlanningService } from './services/scene-planning.service';
 import { ScenePromptGenerationService } from './services/scene-prompt-generation.service';
 import { ScenePromptService } from './services/scene-prompt.service';
@@ -41,6 +43,7 @@ import { RedisConnectionService } from './workers/redis-connection.service';
     RedisConnectionService,
     ProjectProcessor,
     AudioMetadataService,
+    ComfyUiClientService,
     FfmpegCommandBuilderService,
     FfmpegRenderingService,
     LyricsGenerationService,
@@ -52,6 +55,7 @@ import { RedisConnectionService } from './workers/redis-connection.service';
     ProjectProcessingPipelineService,
     ProjectRenderService,
     RenderStorageService,
+    SceneImageGenerationService,
     ScenePlanningService,
     ScenePromptGenerationService,
     ScenePromptService,

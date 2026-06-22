@@ -266,9 +266,16 @@ describe('Project processing integration', () => {
       prisma as unknown as WorkerPrismaService,
       renderStorageService,
       {
+        generate: async () => null
+      } as never,
+      {
         createSceneClip: async (outputPath: string) => {
           await mkdir(dirname(outputPath), { recursive: true });
           await writeFile(outputPath, Buffer.from('fake-scene-video'));
+        },
+        createSceneClipFromImage: async (outputPath: string) => {
+          await mkdir(dirname(outputPath), { recursive: true });
+          await writeFile(outputPath, Buffer.from('fake-scene-video-from-image'));
         },
         concatSceneClips: async (_inputListPath: string, outputPath: string) => {
           await mkdir(dirname(outputPath), { recursive: true });

@@ -40,6 +40,29 @@ export class FfmpegRenderingService {
     );
   }
 
+  async createSceneClipFromImage(
+    outputPath: string,
+    durationSeconds: number,
+    imagePath: string
+  ): Promise<void> {
+    const ffmpegPath = this.configService.get<string>('rendering.ffmpegPath', 'ffmpeg');
+    const width = this.configService.get<number>('rendering.width', 1280);
+    const height = this.configService.get<number>('rendering.height', 720);
+    const frameRate = this.configService.get<number>('rendering.frameRate', 24);
+
+    await execFileAsync(
+      ffmpegPath,
+      this.ffmpegCommandBuilderService.buildSceneClipFromImageArgs({
+        width,
+        height,
+        frameRate,
+        durationSeconds,
+        imagePath,
+        outputPath
+      })
+    );
+  }
+
   async concatSceneClips(inputListPath: string, outputPath: string): Promise<void> {
     const ffmpegPath = this.configService.get<string>('rendering.ffmpegPath', 'ffmpeg');
 

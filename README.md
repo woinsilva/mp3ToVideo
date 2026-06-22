@@ -20,6 +20,7 @@ Fluxo atual:
 - processamento: FFmpeg, FFprobe
 - IA local: Ollama
 - transcricao local: faster-whisper
+- geracao visual local opcional: ComfyUI
 - infra local: Docker Compose
 
 ## Estrutura
@@ -59,6 +60,9 @@ Variaveis importantes:
 - `ENABLE_WHISPER`
 - `WHISPER_PYTHON_PATH`
 - `WHISPER_MODEL`
+- `SCENE_VISUAL_PROVIDER`
+- `COMFYUI_BASE_URL`
+- `COMFYUI_CHECKPOINT_NAME`
 
 ## Subir ambiente local
 
@@ -87,6 +91,14 @@ python -m pip install -r apps/worker/scripts/requirements-whisper.txt
 ```
 
 Com GPU NVIDIA, o recomendado e usar CUDA configurado na maquina para o `faster-whisper`.
+
+Se quiser geracao visual local por prompt:
+
+- deixe `SCENE_VISUAL_PROVIDER=comfyui`
+- suba o ComfyUI localmente em `http://localhost:8188`
+- configure um checkpoint compativel em `COMFYUI_CHECKPOINT_NAME`
+
+Sem ComfyUI ativo, o worker continua no modo `procedural` e gera cenas baseadas em composicao simples no `ffmpeg`.
 
 Banco:
 
@@ -154,14 +166,14 @@ Implementado:
 
 Ainda nao implementado:
 
-- integracao real com Whisper
-- geracao real de video por provedores externos
+- geracao de video por modelos nativamente text-to-video
 - billing
 
 Implementado parcialmente:
 
 - integracao real com Ollama para storyboard e prompts de cena
 - integracao real com faster-whisper para transcricao quando habilitado
+- geracao visual local por prompt via ComfyUI, convertendo imagem gerada em clipe animado
 - fallback automatico para modo mock quando Ollama estiver desabilitado ou indisponivel
 
 ## Observacoes
@@ -171,3 +183,4 @@ Implementado parcialmente:
 - o `docker-compose.yml` sobe Postgres, Redis e Ollama; API, worker e frontend rodam por `pnpm dev`
 - o modelo padrao sugerido para GPU local com 12 GB e `qwen3:8b`
 - o modelo padrao sugerido para transcricao local e `distil-large-v3`
+- para a camada visual local, a estrategia mais pragmatica no momento e `ComfyUI -> imagem por cena -> animacao no ffmpeg`
