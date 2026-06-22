@@ -10,6 +10,8 @@ import type {
 
 @Injectable()
 export class ProjectPresenter {
+  private static readonly stallThresholdMs = 45_000;
+
   summary(project: Project) {
     return {
       id: project.id,
@@ -29,12 +31,18 @@ export class ProjectPresenter {
   }
 
   status(project: Project, processingJob?: ProcessingJob | null) {
+    const lastUpdatedAt = processingJob?.updatedAt ?? project.updatedAt;
+
     return {
       projectId: project.id,
       status: project.status,
       progress: processingJob?.progress ?? this.defaultProgress(project.status),
       currentStep: this.currentStep(project.status),
-      errorMessage: project.errorMessage ?? processingJob?.errorMessage ?? null
+      errorMessage: project.errorMessage ?? processingJob?.errorMessage ?? null,
+      lastUpdatedAt,
+      isPossiblyStalled:
+        !this.isTerminalStatus(project.status) &&
+        Date.now() - lastUpdatedAt.getTime() > ProjectPresenter.stallThresholdMs
     };
   }
 
@@ -129,5 +137,9 @@ export class ProjectPresenter {
       default:
         return 'Unknown';
     }
+  }
+
+  private isTerminalStatus(status: ProjectStatus): boolean {
+    return status === 'completed' || status === 'failed';
   }
 }

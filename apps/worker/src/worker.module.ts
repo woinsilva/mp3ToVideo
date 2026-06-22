@@ -10,6 +10,7 @@ import { FfmpegCommandBuilderService } from './services/ffmpeg-command-builder.s
 import { FfmpegRenderingService } from './services/ffmpeg-rendering.service';
 import { LyricsFallbackService } from './services/lyrics-fallback.service';
 import { MusicStructureService } from './services/music-structure.service';
+import { ProcessingProgressService } from './services/processing-progress.service';
 import { ProjectPipelineStateService } from './services/project-pipeline-state.service';
 import { ProjectProcessingPipelineService } from './services/project-processing-pipeline.service';
 import { ProjectRenderService } from './services/project-render.service';
@@ -39,6 +40,7 @@ import { RedisConnectionService } from './workers/redis-connection.service';
     FfmpegRenderingService,
     LyricsFallbackService,
     MusicStructureService,
+    ProcessingProgressService,
     ProjectPipelineStateService,
     ProjectProcessingPipelineService,
     ProjectRenderService,

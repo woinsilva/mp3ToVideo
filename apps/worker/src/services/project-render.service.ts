@@ -6,6 +6,7 @@ import { AssetType, RenderStatus, SceneStatus } from '@prisma/client';
 
 import { PrismaService } from '../database/prisma.service';
 import { FfmpegRenderingService } from './ffmpeg-rendering.service';
+import { ProcessingProgressService } from './processing-progress.service';
 import { RenderStorageService } from './render-storage.service';
 
 interface RenderSceneInput {
@@ -31,7 +32,9 @@ export class ProjectRenderService {
     @Inject(RenderStorageService)
     private readonly renderStorageService: RenderStorageService,
     @Inject(FfmpegRenderingService)
-    private readonly ffmpegRenderingService: FfmpegRenderingService
+    private readonly ffmpegRenderingService: FfmpegRenderingService,
+    @Inject(ProcessingProgressService)
+    private readonly processingProgressService: ProcessingProgressService
   ) {}
 
   async render(input: RenderProjectInput): Promise<void> {
@@ -103,6 +106,10 @@ export class ProjectRenderService {
         });
 
         sceneClipPaths.push(sceneClipPath);
+        await this.processingProgressService.heartbeat(
+          input.projectId,
+          this.sceneRenderProgress(index + 1, input.scenes.length)
+        );
       }
 
       const concatListPath = this.renderStorageService.buildConcatListPath(input.projectId);
@@ -120,6 +127,7 @@ export class ProjectRenderService {
         concatListAbsolutePath,
         intermediateVideoAbsolutePath
       );
+      await this.processingProgressService.heartbeat(input.projectId, 96);
 
       const finalRenderPath = this.renderStorageService.buildFinalRenderPath(
         input.organizationId,
@@ -133,6 +141,7 @@ export class ProjectRenderService {
         resolve(input.audioPath),
         finalRenderAbsolutePath
       );
+      await this.processingProgressService.heartbeat(input.projectId, 99);
 
       const renderAsset = await this.prismaService.asset.create({
         data: {
@@ -182,5 +191,14 @@ export class ProjectRenderService {
     const palette = paletteBySectionType[sectionType] ?? ['0x355070', '0x6d597a'];
 
     return palette[index % palette.length];
+  }
+
+  private sceneRenderProgress(renderedScenes: number, totalScenes: number): number {
+    if (totalScenes <= 0) {
+      return 95;
+    }
+
+    const progress = 85 + Math.round((renderedScenes / totalScenes) * 10);
+    return Math.min(progress, 95);
   }
 }

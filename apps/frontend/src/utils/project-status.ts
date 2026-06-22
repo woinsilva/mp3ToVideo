@@ -57,3 +57,20 @@ export function projectStatusTone(status: ProjectStatus): 'error' | 'success' | 
 
   return 'info';
 }
+
+export function formatRelativeStatusUpdate(value: string, now = Date.now()): string {
+  const seconds = Math.max(0, Math.floor((now - new Date(value).getTime()) / 1000));
+
+  if (seconds < 60) {
+    return `atualizado ha ${seconds}s`;
+  }
+
+  const minutes = Math.floor(seconds / 60);
+
+  if (minutes < 60) {
+    return `atualizado ha ${minutes}min`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  return `atualizado ha ${hours}h`;
+}

@@ -414,7 +414,9 @@ describe('Projects integration', () => {
       status: 'completed',
       progress: 100,
       currentStep: 'Completed',
-      errorMessage: null
+      errorMessage: null,
+      lastUpdatedAt: expect.any(String),
+      isPossiblyStalled: false
     });
 
     const scenesResponse = await request(app.getHttpServer())

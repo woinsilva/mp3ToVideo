@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildProjectStatusSteps,
+  formatRelativeStatusUpdate,
   isTerminalProjectStatus,
   projectStatusTone
 } from '../../../apps/frontend/src/utils/project-status';
@@ -22,5 +23,14 @@ describe('frontend project status helpers', () => {
     expect(projectStatusTone('failed')).toBe('error');
     expect(projectStatusTone('completed')).toBe('success');
     expect(projectStatusTone('queued')).toBe('info');
+  });
+
+  it('formats relative update timestamps for the processing UI', () => {
+    expect(formatRelativeStatusUpdate('2026-06-22T15:00:00.000Z', Date.parse('2026-06-22T15:00:12.000Z'))).toBe(
+      'atualizado ha 12s'
+    );
+    expect(formatRelativeStatusUpdate('2026-06-22T15:00:00.000Z', Date.parse('2026-06-22T15:02:00.000Z'))).toBe(
+      'atualizado ha 2min'
+    );
   });
 });

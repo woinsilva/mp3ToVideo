@@ -9,12 +9,15 @@ import type { Job } from 'bullmq';
 
 import { PrismaService } from '../database/prisma.service';
 import { ProjectProcessingPipelineService } from '../services/project-processing-pipeline.service';
+import { ProcessingProgressService } from '../services/processing-progress.service';
 
 @Injectable()
 export class ProjectProcessor {
   constructor(
     @Inject(PrismaService)
     private readonly prismaService: PrismaService,
+    @Inject(ProcessingProgressService)
+    private readonly processingProgressService: ProcessingProgressService,
     @Inject(ProjectProcessingPipelineService)
     private readonly pipelineService: ProjectProcessingPipelineService
   ) {}
@@ -23,6 +26,7 @@ export class ProjectProcessor {
     const bullJobId = String(job.id);
 
     await this.upsertProcessingJob(job.data.projectId, bullJobId, ProcessingJobStatus.active, 10);
+    await this.processingProgressService.heartbeat(job.data.projectId, 10);
     await this.updateProject(job.data.projectId, {
       status: ProjectStatus.processing,
       errorMessage: null

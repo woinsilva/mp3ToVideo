@@ -18,11 +18,14 @@ describe('ProjectProcessor', () => {
       processingJob,
       project
     } as never;
+    const processingProgressService = {
+      heartbeat: vi.fn().mockResolvedValue(undefined)
+    } as never;
     const pipelineService = {
       run: vi.fn().mockResolvedValue(undefined)
     } as never;
 
-    const processor = new ProjectProcessor(prismaService, pipelineService);
+    const processor = new ProjectProcessor(prismaService, processingProgressService, pipelineService);
 
     await processor.process({
       id: 'bull-job-1',
@@ -71,6 +74,7 @@ describe('ProjectProcessor', () => {
         errorMessage: null
       }
     });
+    expect(processingProgressService.heartbeat).toHaveBeenCalledWith('project-1', 10);
   });
 
   it('marks the project and processing job as failed when the pipeline throws', async () => {
@@ -88,11 +92,14 @@ describe('ProjectProcessor', () => {
       processingJob,
       project
     } as never;
+    const processingProgressService = {
+      heartbeat: vi.fn().mockResolvedValue(undefined)
+    } as never;
     const pipelineService = {
       run: vi.fn().mockRejectedValue(new Error('pipeline failed'))
     } as never;
 
-    const processor = new ProjectProcessor(prismaService, pipelineService);
+    const processor = new ProjectProcessor(prismaService, processingProgressService, pipelineService);
 
     await expect(
       processor.process({

@@ -17,6 +17,8 @@
       :progress="statusPayload.progress"
       :current-step="statusPayload.currentStep"
       :error-message="statusPayload.errorMessage"
+      :last-updated-at="statusPayload.lastUpdatedAt"
+      :is-possibly-stalled="statusPayload.isPossiblyStalled"
     />
 
     <v-card v-else class="surface-card" rounded="xl">

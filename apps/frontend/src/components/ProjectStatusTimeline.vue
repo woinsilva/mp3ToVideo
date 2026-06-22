@@ -5,6 +5,7 @@
         <div>
           <h3 class="section-title">Processamento</h3>
           <p class="section-copy">{{ currentStep }}</p>
+          <p class="section-copy status-meta">{{ lastUpdateLabel }}</p>
         </div>
         <v-chip :color="tone" variant="tonal">{{ status }}</v-chip>
       </div>
@@ -22,6 +23,10 @@
         </div>
       </div>
 
+      <v-alert v-if="isPossiblyStalled" type="warning" variant="tonal">
+        O processamento pode estar travado ou demorando mais do que o esperado. A geracao continua no backend.
+      </v-alert>
+
       <v-alert v-if="errorMessage" type="error" variant="tonal">
         {{ errorMessage }}
       </v-alert>
@@ -32,7 +37,11 @@
 <script lang="ts">
 import { Component, Prop, Vue } from 'vue-facing-decorator';
 
-import { buildProjectStatusSteps, projectStatusTone } from '@/utils/project-status';
+import {
+  buildProjectStatusSteps,
+  formatRelativeStatusUpdate,
+  projectStatusTone
+} from '@/utils/project-status';
 import type { ProjectStatus } from '@/types/project.types';
 
 @Component
@@ -49,12 +58,22 @@ export default class ProjectStatusTimeline extends Vue {
   @Prop({ default: null })
   readonly errorMessage!: string | null;
 
+  @Prop({ required: true })
+  readonly lastUpdatedAt!: string;
+
+  @Prop({ default: false })
+  readonly isPossiblyStalled!: boolean;
+
   get steps() {
     return buildProjectStatusSteps(this.status);
   }
 
   get tone() {
     return projectStatusTone(this.status);
+  }
+
+  get lastUpdateLabel() {
+    return formatRelativeStatusUpdate(this.lastUpdatedAt);
   }
 }
 </script>

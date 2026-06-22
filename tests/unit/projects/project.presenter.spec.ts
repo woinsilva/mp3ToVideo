@@ -5,6 +5,7 @@ import { ProjectPresenter } from '../../../apps/api/src/modules/projects/service
 describe('ProjectPresenter', () => {
   it('maps project status responses with current step and progress', () => {
     const presenter = new ProjectPresenter();
+    const now = new Date();
 
     expect(
       presenter.status(
@@ -15,8 +16,8 @@ describe('ProjectPresenter', () => {
           title: 'Clip',
           status: 'rendering',
           errorMessage: null,
-          createdAt: new Date(),
-          updatedAt: new Date(),
+          createdAt: now,
+          updatedAt: now,
           deletedAt: null
         },
         {
@@ -28,8 +29,8 @@ describe('ProjectPresenter', () => {
           status: 'active',
           progress: 95,
           errorMessage: null,
-          createdAt: new Date(),
-          updatedAt: new Date()
+          createdAt: now,
+          updatedAt: now
         }
       )
     ).toEqual({
@@ -37,7 +38,9 @@ describe('ProjectPresenter', () => {
       status: 'rendering',
       progress: 95,
       currentStep: 'Rendering final video',
-      errorMessage: null
+      errorMessage: null,
+      lastUpdatedAt: now,
+      isPossiblyStalled: false
     });
   });
 });

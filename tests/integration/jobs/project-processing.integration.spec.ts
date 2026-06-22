@@ -18,6 +18,7 @@ import { ProjectProcessor } from '../../../apps/worker/src/processors/project.pr
 import { AudioMetadataService } from '../../../apps/worker/src/services/audio-metadata.service';
 import { LyricsFallbackService } from '../../../apps/worker/src/services/lyrics-fallback.service';
 import { MusicStructureService } from '../../../apps/worker/src/services/music-structure.service';
+import { ProcessingProgressService } from '../../../apps/worker/src/services/processing-progress.service';
 import { ProjectPipelineStateService } from '../../../apps/worker/src/services/project-pipeline-state.service';
 import { ProjectProcessingPipelineService } from '../../../apps/worker/src/services/project-processing-pipeline.service';
 import { ProjectRenderService } from '../../../apps/worker/src/services/project-render.service';
@@ -228,6 +229,9 @@ describe('Project processing integration', () => {
         return key in values ? values[key] : defaultValue;
       }
     } as never;
+    const processingProgressService = new ProcessingProgressService(
+      prisma as unknown as WorkerPrismaService
+    );
     const renderStorageService = new RenderStorageService(configService);
     const projectRenderService = new ProjectRenderService(
       prisma as unknown as WorkerPrismaService,
@@ -245,11 +249,13 @@ describe('Project processing integration', () => {
           await mkdir(dirname(outputPath), { recursive: true });
           await writeFile(outputPath, Buffer.from('fake-final-mp4'));
         }
-      } as never
+      } as never,
+      processingProgressService
     );
 
     const processor = new ProjectProcessor(
       prisma as unknown as WorkerPrismaService,
+      processingProgressService,
       new ProjectProcessingPipelineService(
         prisma as unknown as WorkerPrismaService,
         new ProjectPipelineStateService(prisma as unknown as WorkerPrismaService),
@@ -358,6 +364,7 @@ describe('Project processing integration', () => {
     expect(processingJob?.status).toBe('completed');
     expect(processingJob?.progress).toBe(100);
     expect(processingJob?.errorMessage).toBeNull();
+    expect(processingJob?.updatedAt.getTime()).toBeGreaterThan(processingJob?.createdAt.getTime() ?? 0);
   });
 
   it('marks the project as failed when the worker pipeline throws', async () => {
@@ -372,6 +379,7 @@ describe('Project processing integration', () => {
 
     const processor = new ProjectProcessor(
       prisma as unknown as WorkerPrismaService,
+      new ProcessingProgressService(prisma as unknown as WorkerPrismaService),
       {
         run: async () => {
           throw new Error('worker pipeline failed');

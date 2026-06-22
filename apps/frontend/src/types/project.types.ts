@@ -30,6 +30,8 @@ export interface ProjectStatusResponse {
   progress: number;
   currentStep: string;
   errorMessage: string | null;
+  lastUpdatedAt: string;
+  isPossiblyStalled: boolean;
 }
 
 export interface ScenePromptView {
