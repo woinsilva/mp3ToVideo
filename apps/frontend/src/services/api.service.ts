@@ -1,5 +1,15 @@
 import type { ApiErrorPayload } from '@/types/api.types';
 
+export class ApiRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number
+  ) {
+    super(message);
+    this.name = 'ApiRequestError';
+  }
+}
+
 class ApiService {
   private readonly baseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';
 
@@ -24,7 +34,7 @@ class ApiService {
     });
 
     if (!response.ok) {
-      throw new Error(await this.extractError(response));
+      throw new ApiRequestError(await this.extractError(response), response.status);
     }
 
     if (response.status === 204) {
@@ -47,7 +57,7 @@ class ApiService {
     });
 
     if (!response.ok) {
-      throw new Error(await this.extractError(response));
+      throw new ApiRequestError(await this.extractError(response), response.status);
     }
 
     return response.blob();

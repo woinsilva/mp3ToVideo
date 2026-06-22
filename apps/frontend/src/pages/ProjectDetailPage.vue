@@ -106,11 +106,13 @@ export default class ProjectDetailPage extends Vue {
   }
 
   get projectStatus(): ProjectStatus {
-    return this.projectsStore.currentStatus?.status ?? this.projectsStore.currentProject?.status ?? 'draft';
+    return this.statusPayload?.status ?? this.projectsStore.currentProject?.status ?? 'draft';
   }
 
   get statusPayload() {
-    return this.projectsStore.currentStatus;
+    return this.projectsStore.currentStatus?.projectId === this.projectId
+      ? this.projectsStore.currentStatus
+      : null;
   }
 
   get isProcessing(): boolean {

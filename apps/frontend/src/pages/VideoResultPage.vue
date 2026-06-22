@@ -52,6 +52,7 @@ import { useProjectsStore } from '@/stores/projects.store';
   }
 })
 export default class VideoResultPage extends Vue {
+  videoBlob: Blob | null = null;
   videoUrl: string | null = null;
   loading = false;
   errorMessage: string | null = null;
@@ -89,6 +90,8 @@ export default class VideoResultPage extends Vue {
       URL.revokeObjectURL(this.videoUrl);
       this.videoUrl = null;
     }
+
+    this.videoBlob = null;
   }
 
   async loadPage() {
@@ -118,6 +121,7 @@ export default class VideoResultPage extends Vue {
     }
 
     const blob = await this.projectsStore.downloadRender(this.projectId, this.authStore.token);
+    this.videoBlob = blob;
 
     if (this.videoUrl) {
       URL.revokeObjectURL(this.videoUrl);
@@ -131,8 +135,15 @@ export default class VideoResultPage extends Vue {
       return;
     }
 
-    const blob = await this.projectsStore.downloadRender(this.projectId, this.authStore.token);
-    const url = URL.createObjectURL(blob);
+    if (!this.videoBlob) {
+      await this.loadVideoBlob();
+    }
+
+    if (!this.videoBlob) {
+      return;
+    }
+
+    const url = URL.createObjectURL(this.videoBlob);
     const anchor = document.createElement('a');
     anchor.href = url;
     anchor.download = `${this.projectId}.mp4`;

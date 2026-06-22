@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 
+import { ApiRequestError } from '@/services/api.service';
 import { authService } from '@/services/auth.service';
 import type { AuthOrganization, AuthUser } from '@/types/api.types';
 
@@ -58,8 +59,13 @@ export const useAuthStore = defineStore('auth', {
         this.user = profile.user;
         this.organization = profile.organization;
         this.persist();
-      } catch {
-        this.logout();
+      } catch (error) {
+        if (
+          error instanceof ApiRequestError &&
+          (error.status === 401 || error.status === 403)
+        ) {
+          this.logout();
+        }
       }
     },
     async login(email: string, password: string) {

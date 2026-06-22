@@ -29,6 +29,11 @@ export const useProjectsStore = defineStore('projects', {
     errorMessage: null
   }),
   actions: {
+    resetProjectViewState() {
+      this.currentStatus = null;
+      this.currentScenes = [];
+      this.currentRender = null;
+    },
     async fetchProjects(token: string) {
       this.isLoading = true;
       this.errorMessage = null;
@@ -62,6 +67,10 @@ export const useProjectsStore = defineStore('projects', {
     async fetchProject(projectId: string, token: string) {
       this.isLoading = true;
       this.errorMessage = null;
+
+      if (this.currentProject?.id !== projectId) {
+        this.resetProjectViewState();
+      }
 
       try {
         this.currentProject = await projectsService.detail(projectId, token);
@@ -125,9 +134,7 @@ export const useProjectsStore = defineStore('projects', {
     },
     clearCurrentProject() {
       this.currentProject = null;
-      this.currentStatus = null;
-      this.currentScenes = [];
-      this.currentRender = null;
+      this.resetProjectViewState();
       this.errorMessage = null;
     },
     syncProjectStatus(projectId: string, status: ProjectSummary['status']) {
