@@ -18,13 +18,16 @@ import { ProjectProcessor } from '../../../apps/worker/src/processors/project.pr
 import { AudioMetadataService } from '../../../apps/worker/src/services/audio-metadata.service';
 import { LyricsFallbackService } from '../../../apps/worker/src/services/lyrics-fallback.service';
 import { MusicStructureService } from '../../../apps/worker/src/services/music-structure.service';
+import { OllamaClientService } from '../../../apps/worker/src/services/ollama-client.service';
 import { ProcessingProgressService } from '../../../apps/worker/src/services/processing-progress.service';
 import { ProjectPipelineStateService } from '../../../apps/worker/src/services/project-pipeline-state.service';
 import { ProjectProcessingPipelineService } from '../../../apps/worker/src/services/project-processing-pipeline.service';
 import { ProjectRenderService } from '../../../apps/worker/src/services/project-render.service';
 import { RenderStorageService } from '../../../apps/worker/src/services/render-storage.service';
 import { ScenePlanningService } from '../../../apps/worker/src/services/scene-planning.service';
+import { ScenePromptGenerationService } from '../../../apps/worker/src/services/scene-prompt-generation.service';
 import { ScenePromptService } from '../../../apps/worker/src/services/scene-prompt.service';
+import { StoryboardGenerationService } from '../../../apps/worker/src/services/storyboard-generation.service';
 import { StoryboardFallbackService } from '../../../apps/worker/src/services/storyboard-fallback.service';
 
 function buildSqliteUrl(relativePath: string): string {
@@ -219,6 +222,10 @@ describe('Project processing integration', () => {
           'storage.root': './storage',
           'audio.ffprobePath': 'ffprobe',
           'audio.mockDurationSeconds': 30,
+          'ai.enableOllama': false,
+          'ai.ollamaBaseUrl': 'http://localhost:11434',
+          'ai.ollamaModel': 'qwen3:8b',
+          'ai.ollamaTimeoutMs': 180000,
           'ai.enableFallbacks': true,
           'rendering.ffmpegPath': 'ffmpeg',
           'rendering.width': 1280,
@@ -231,6 +238,15 @@ describe('Project processing integration', () => {
     } as never;
     const processingProgressService = new ProcessingProgressService(
       prisma as unknown as WorkerPrismaService
+    );
+    const ollamaClientService = new OllamaClientService(configService);
+    const storyboardGenerationService = new StoryboardGenerationService(
+      ollamaClientService,
+      new StoryboardFallbackService()
+    );
+    const scenePromptGenerationService = new ScenePromptGenerationService(
+      ollamaClientService,
+      new ScenePromptService()
     );
     const renderStorageService = new RenderStorageService(configService);
     const projectRenderService = new ProjectRenderService(
@@ -262,9 +278,9 @@ describe('Project processing integration', () => {
         new AudioMetadataService(configService),
         new LyricsFallbackService(),
         new MusicStructureService(),
-        new StoryboardFallbackService(),
+        storyboardGenerationService,
         new ScenePlanningService(),
-        new ScenePromptService(),
+        scenePromptGenerationService,
         projectRenderService
       )
     );

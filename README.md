@@ -18,6 +18,7 @@ Fluxo atual:
 - banco: PostgreSQL
 - fila: Redis + BullMQ
 - processamento: FFmpeg, FFprobe
+- IA local: Ollama
 - infra local: Docker Compose
 
 ## Estrutura
@@ -51,6 +52,9 @@ Variaveis importantes:
 - `FFMPEG_PATH`
 - `FFPROBE_PATH`
 - `VITE_API_BASE_URL`
+- `ENABLE_OLLAMA`
+- `OLLAMA_BASE_URL`
+- `OLLAMA_MODEL`
 
 ## Subir ambiente local
 
@@ -58,6 +62,12 @@ Infra:
 
 ```bash
 docker compose up -d
+```
+
+Se quiser preparar o modelo local do Ollama junto com a infra, use:
+
+```bash
+docker compose up -d ollama ollama-model
 ```
 
 Dependencias:
@@ -85,6 +95,7 @@ Portas esperadas:
 - api: `http://localhost:3000`
 - postgres: `localhost:5432`
 - redis: `localhost:6379`
+- ollama: `localhost:11434`
 
 ## Comandos principais
 
@@ -132,12 +143,17 @@ Implementado:
 Ainda nao implementado:
 
 - integracao real com Whisper
-- integracao real com Ollama
 - geracao real de video por provedores externos
 - billing
+
+Implementado parcialmente:
+
+- integracao real com Ollama para storyboard e prompts de cena
+- fallback automatico para modo mock quando Ollama estiver desabilitado ou indisponivel
 
 ## Observacoes
 
 - o worker usa fallback local quando `ffprobe` nao consegue ler duracao real do audio
 - o frontend baixa o MP4 autenticado via `fetch`, nao via link publico
-- o `docker-compose.yml` atual sobe apenas Postgres e Redis; API, worker e frontend rodam por `pnpm dev`
+- o `docker-compose.yml` sobe Postgres, Redis e Ollama; API, worker e frontend rodam por `pnpm dev`
+- o modelo padrao sugerido para GPU local com 12 GB e `qwen3:8b`

@@ -13,7 +13,11 @@ export const configuration = () => ({
     frameRate: Number(process.env.RENDER_FRAME_RATE ?? 24)
   },
   ai: {
-    enableFallbacks: process.env.ENABLE_AI_FALLBACKS !== 'false'
+    enableFallbacks: process.env.ENABLE_AI_FALLBACKS !== 'false',
+    enableOllama: process.env.ENABLE_OLLAMA === 'true',
+    ollamaBaseUrl: process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434',
+    ollamaModel: process.env.OLLAMA_MODEL ?? 'qwen3:8b',
+    ollamaTimeoutMs: Number(process.env.OLLAMA_TIMEOUT_MS ?? 180000)
   },
   redis: {
     host: process.env.REDIS_HOST ?? 'localhost',

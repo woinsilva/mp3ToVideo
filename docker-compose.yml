@@ -21,6 +21,39 @@ services:
     volumes:
       - redis_data:/data
 
+  ollama:
+    image: ollama/ollama
+    container_name: video-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    environment:
+      OLLAMA_KEEP_ALIVE: 24h
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 20s
+
+  ollama-model:
+    image: ollama/ollama
+    container_name: video-ollama-model
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:8b}
+    entrypoint: ["/bin/sh", "-c"]
+    command: ollama pull "$${OLLAMA_MODEL}"
+    volumes:
+      - ollama_data:/root/.ollama
+
 volumes:
   postgres_data:
   redis_data:
+  ollama_data:

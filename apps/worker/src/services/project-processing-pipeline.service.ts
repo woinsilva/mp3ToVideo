@@ -9,8 +9,8 @@ import { MusicStructureService } from './music-structure.service';
 import { ProjectPipelineStateService } from './project-pipeline-state.service';
 import { ProjectRenderService } from './project-render.service';
 import { ScenePlanningService } from './scene-planning.service';
-import { ScenePromptService } from './scene-prompt.service';
-import { StoryboardFallbackService } from './storyboard-fallback.service';
+import { ScenePromptGenerationService } from './scene-prompt-generation.service';
+import { StoryboardGenerationService } from './storyboard-generation.service';
 
 @Injectable()
 export class ProjectProcessingPipelineService {
@@ -25,12 +25,12 @@ export class ProjectProcessingPipelineService {
     private readonly lyricsFallbackService: LyricsFallbackService,
     @Inject(MusicStructureService)
     private readonly musicStructureService: MusicStructureService,
-    @Inject(StoryboardFallbackService)
-    private readonly storyboardFallbackService: StoryboardFallbackService,
+    @Inject(StoryboardGenerationService)
+    private readonly storyboardGenerationService: StoryboardGenerationService,
     @Inject(ScenePlanningService)
     private readonly scenePlanningService: ScenePlanningService,
-    @Inject(ScenePromptService)
-    private readonly scenePromptService: ScenePromptService,
+    @Inject(ScenePromptGenerationService)
+    private readonly scenePromptGenerationService: ScenePromptGenerationService,
     @Inject(ProjectRenderService)
     private readonly projectRenderService: ProjectRenderService
   ) {}
@@ -118,7 +118,10 @@ export class ProjectProcessingPipelineService {
 
     await this.projectPipelineStateService.update(project.id, ProjectStatus.storyboarding, 55);
 
-    const storyboard = this.storyboardFallbackService.build(project.title, lyrics.normalizedText);
+    const storyboard = await this.storyboardGenerationService.build(
+      project.title,
+      lyrics.normalizedText
+    );
 
     await this.prismaService.storyboard.upsert({
       where: {
@@ -141,6 +144,7 @@ export class ProjectProcessingPipelineService {
 
     await this.prismaService.$transaction(async (tx) => {
       for (const [index, scene] of scenes.entries()) {
+        const promptDraft = await this.scenePromptGenerationService.build(scene, storyboard);
         const createdScene = await tx.scene.create({
           data: {
             projectId: project.id,
@@ -158,7 +162,7 @@ export class ProjectProcessingPipelineService {
         await tx.scenePrompt.create({
           data: {
             sceneId: createdScene.id,
-            ...this.scenePromptService.build(scene, storyboard)
+            ...promptDraft
           }
         });
       }
