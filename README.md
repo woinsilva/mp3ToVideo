@@ -109,6 +109,13 @@ corepack pnpm prisma:seed
 6. ao concluir, abra a pagina de resultado
 7. reproduza o video e baixe o MP4
 
+## Conta demo do seed
+
+Depois de rodar `corepack pnpm prisma:seed`, existe uma conta de desenvolvimento pronta para login:
+
+- email: `demo@example.com`
+- senha: `12345678`
+
 ## Estado atual do MVP
 
 Implementado:

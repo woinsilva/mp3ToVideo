@@ -4,8 +4,12 @@ import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 import { PrismaClient, ProjectStatus } from '../../generated/prisma';
+import { compareSync } from 'bcryptjs';
 
-import { seedDatabase } from '../../../prisma/seed-data';
+import {
+  DEMO_LOGIN_PASSWORD,
+  seedDatabase
+} from '../../../prisma/seed-data';
 
 function buildSqliteUrl(relativePath: string): string {
   return `file:${relativePath.replace(/\\/g, '/')}`;
@@ -87,6 +91,7 @@ describe('Prisma schema integration', () => {
     expect(user).not.toBeNull();
     expect(user?.organizationMembers).toHaveLength(1);
     expect(user?.organizationMembers[0]?.organization.slug).toBe('demo-workspace');
+    expect(compareSync(DEMO_LOGIN_PASSWORD, user?.passwordHash ?? '')).toBe(true);
   });
 
   it('persists a project graph and loads related records', async () => {

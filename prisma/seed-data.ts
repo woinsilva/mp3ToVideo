@@ -1,4 +1,8 @@
 import type { PrismaClient } from '@prisma/client';
+import { hashSync } from 'bcryptjs';
+
+export const DEMO_LOGIN_EMAIL = 'demo@example.com';
+export const DEMO_LOGIN_PASSWORD = '12345678';
 
 export interface DemoIdentity {
   user: {
@@ -25,9 +29,9 @@ export function slugifyWorkspaceName(input: string): string {
 export function buildDemoIdentity(): DemoIdentity {
   return {
     user: {
-      email: 'demo@example.com',
+      email: DEMO_LOGIN_EMAIL,
       name: 'Demo User',
-      passwordHash: 'demo-password-hash'
+      passwordHash: hashSync(DEMO_LOGIN_PASSWORD, 10)
     },
     organization: {
       name: 'Demo Workspace',
