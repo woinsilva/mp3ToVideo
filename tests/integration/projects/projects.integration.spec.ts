@@ -65,6 +65,7 @@ describe('Projects integration', () => {
   let secondAuthToken: string;
   let uploadedFilePath: string;
   let sampleMp3Path: string;
+  let sampleWavPath: string;
 
   beforeEach(async () => {
     const database = await createTestDatabase();
@@ -108,6 +109,9 @@ describe('Projects integration', () => {
     sampleMp3Path = resolve('tests', 'tmp', `sample-${randomUUID()}.mp3`);
     mkdirSync(dirname(sampleMp3Path), { recursive: true });
     writeFileSync(sampleMp3Path, Buffer.from('ID3 sample mp3 payload'));
+
+    sampleWavPath = resolve('tests', 'tmp', `sample-${randomUUID()}.wav`);
+    writeFileSync(sampleWavPath, Buffer.from('RIFF sample wav payload'));
   });
 
   afterEach(async () => {
@@ -125,6 +129,10 @@ describe('Projects integration', () => {
 
     if (sampleMp3Path && existsSync(sampleMp3Path)) {
       rmSync(sampleMp3Path, { force: true });
+    }
+
+    if (sampleWavPath && existsSync(sampleWavPath)) {
+      rmSync(sampleWavPath, { force: true });
     }
 
     if (uploadedFilePath && existsSync(uploadedFilePath)) {
@@ -221,7 +229,43 @@ describe('Projects integration', () => {
     expect(readFileSync(uploadedFilePath).length).toBeGreaterThan(0);
   });
 
-  it('rejects non-MP3 uploads', async () => {
+  it('uploads a WAV track, stores it with the original extension and updates project state', async () => {
+    const createResponse = await request(app.getHttpServer())
+      .post('/projects')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({
+        title: 'Upload WAV Flow'
+      })
+      .expect(201);
+
+    const uploadResponse = await request(app.getHttpServer())
+      .post(`/projects/${createResponse.body.id}/upload-track`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .attach('file', sampleWavPath, {
+        filename: 'track.wav',
+        contentType: 'audio/wav'
+      })
+      .expect(201);
+
+    expect(uploadResponse.body.projectId).toBe(createResponse.body.id);
+    expect(uploadResponse.body.status).toBe('queued');
+
+    const track = await prisma.track.findUnique({
+      where: {
+        projectId: createResponse.body.id
+      }
+    });
+
+    expect(track?.originalFileName).toBe('track.wav');
+    expect(track?.mimeType).toBe('audio/wav');
+    expect(track?.storagePath.endsWith('original.wav')).toBe(true);
+
+    uploadedFilePath = resolve(track?.storagePath ?? '');
+    expect(existsSync(uploadedFilePath)).toBe(true);
+    expect(readFileSync(uploadedFilePath).length).toBeGreaterThan(0);
+  });
+
+  it('rejects unsupported uploads', async () => {
     const createResponse = await request(app.getHttpServer())
       .post('/projects')
       .set('Authorization', `Bearer ${authToken}`)

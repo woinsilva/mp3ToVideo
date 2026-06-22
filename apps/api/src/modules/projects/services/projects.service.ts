@@ -180,6 +180,7 @@ export class ProjectsService {
     const storagePath = await this.localStorageService.saveProjectTrack(
       input.organizationId,
       input.projectId,
+      input.file.originalname,
       input.file.buffer
     );
 

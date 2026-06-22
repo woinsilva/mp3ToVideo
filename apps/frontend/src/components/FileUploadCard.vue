@@ -4,13 +4,13 @@
       <div>
         <h3 class="section-title">Upload do MP3</h3>
         <p class="section-copy">
-          Aceita apenas arquivos `.mp3`. O processamento comeca assim que o upload terminar.
+          Aceita arquivos `.mp3` e `.wav`. O processamento comeca assim que o upload terminar.
         </p>
       </div>
 
       <label class="auth-input-group">
-        <span class="auth-input-label">Escolha o arquivo MP3</span>
-        <input class="app-file-input" type="file" accept=".mp3,audio/mpeg" @change="onFileChange" />
+        <span class="auth-input-label">Escolha o arquivo de audio</span>
+        <input class="app-file-input" type="file" accept=".mp3,.wav,audio/mpeg,audio/wav,audio/x-wav" @change="onFileChange" />
       </label>
 
       <div class="upload-file-meta" v-if="selectedFile">
