@@ -33,6 +33,10 @@ body {
     radial-gradient(circle at 90% 0%, rgba(249, 115, 22, 0.14), transparent 22%);
 }
 
+.auth-container {
+  max-width: 520px;
+}
+
 .auth-panel,
 .surface-card,
 .hero-banner {
@@ -176,96 +180,41 @@ body {
   color: rgba(229, 231, 235, 0.65);
 }
 
-.auth-grid {
-  display: grid;
-  grid-template-columns: minmax(320px, 0.85fr) minmax(0, 1.15fr);
+.auth-panel--simple,
+.auth-form-shell {
+  display: flex;
+  flex-direction: column;
+}
+
+.auth-panel--simple {
   gap: 1.5rem;
-  align-items: stretch;
-}
-
-.auth-panel--hero {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  min-height: 100%;
-}
-
-.auth-panel--form {
-  align-self: stretch;
-  position: sticky;
-  top: 2rem;
-}
-
-.auth-form-shell,
-.auth-form-header {
-  display: flex;
-  flex-direction: column;
 }
 
 .auth-form-shell {
-  gap: 1.5rem;
+  gap: 1rem;
 }
 
-.auth-form-title {
+.auth-simple-title {
   margin: 0;
-  font-size: 1.6rem;
+  font-size: 2rem;
+  line-height: 1.05;
 }
 
-.auth-form-copy {
-  margin: 0.5rem 0 0;
+.auth-simple-subtitle {
+  margin: 0;
   color: rgba(229, 231, 235, 0.72);
   line-height: 1.6;
 }
 
-.auth-feature-list {
-  display: grid;
-  gap: 0.9rem;
-  margin-top: 2rem;
-}
-
-.auth-feature-item,
-.auth-demo-box {
-  border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(2, 6, 23, 0.45);
-}
-
-.auth-feature-item {
+.auth-links {
   display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  padding: 1rem 1.1rem;
-}
-
-.auth-feature-item span,
-.auth-demo-box span {
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
   color: rgba(229, 231, 235, 0.72);
 }
 
-.auth-demo-box {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  margin-top: 1.5rem;
-  padding: 1rem 1.1rem;
-}
-
-.auth-demo-label {
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  font-size: 0.75rem;
-  color: #fdba74;
-}
-
 @media (max-width: 900px) {
-  .auth-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .auth-panel--form {
-    position: static;
-  }
-
   .topbar,
   .hero-banner {
     flex-direction: column;

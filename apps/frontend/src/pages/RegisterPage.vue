@@ -1,30 +1,20 @@
 <template>
-  <AuthLayout
-    title="Criar conta"
-    subtitle="O cadastro cria a sua workspace pessoal para iniciar projetos e acompanhar o pipeline completo."
-  >
+  <AuthLayout title="Criar conta" subtitle="Crie sua conta para iniciar um projeto.">
     <div class="auth-form-shell">
-      <div class="auth-form-header">
-        <h2 class="auth-form-title">Criar conta</h2>
-        <p class="auth-form-copy">Preencha os dados basicos para entrar no dashboard e criar o primeiro projeto.</p>
-      </div>
-
-      <v-form class="d-flex flex-column ga-4" @submit.prevent="submit">
+      <v-form class="d-flex flex-column ga-3" @submit.prevent="submit">
         <v-text-field
           v-model="name"
           label="Nome"
           variant="outlined"
           autocomplete="name"
-          prepend-inner-icon="mdi-account-outline"
           :error-messages="nameErrors"
         />
         <v-text-field
           v-model="email"
-          label="Email"
-          type="email"
+          label="Usuario ou email"
+          type="text"
           variant="outlined"
           autocomplete="email"
-          prepend-inner-icon="mdi-email-outline"
           :error-messages="emailErrors"
         />
         <v-text-field
@@ -33,7 +23,6 @@
           type="password"
           variant="outlined"
           autocomplete="new-password"
-          prepend-inner-icon="mdi-lock-outline"
           hint="Minimo de 8 caracteres."
           persistent-hint
           :error-messages="passwordErrors"
@@ -44,11 +33,15 @@
         </v-alert>
         <v-alert v-if="errorMessage" type="error" variant="tonal">{{ errorMessage }}</v-alert>
 
-        <v-btn color="primary" size="large" type="submit" :loading="loading" block>Criar conta</v-btn>
+        <v-btn color="primary" size="large" type="submit" :loading="loading" block @click="submit">
+          Criar conta
+        </v-btn>
       </v-form>
 
-      <v-divider />
-      <v-btn variant="text" block type="button" @click="goToLogin">Ja tenho conta</v-btn>
+      <div class="auth-links">
+        <span>Ja tem uma conta?</span>
+        <v-btn variant="text" type="button" @click="goToLogin">Entrar</v-btn>
+      </div>
     </div>
   </AuthLayout>
 </template>

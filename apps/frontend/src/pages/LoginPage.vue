@@ -1,19 +1,13 @@
 <template>
-  <AuthLayout title="Entrar" subtitle="Acesse a sua conta para continuar projetos, acompanhar filas e baixar videos finalizados.">
+  <AuthLayout title="Entrar" subtitle="Acesse sua conta para continuar o projeto.">
     <div class="auth-form-shell">
-      <div class="auth-form-header">
-        <h2 class="auth-form-title">Login</h2>
-        <p class="auth-form-copy">Use a conta criada por voce ou a conta demo do ambiente local.</p>
-      </div>
-
-      <v-form class="d-flex flex-column ga-4" @submit.prevent="submit">
+      <v-form class="d-flex flex-column ga-3" @submit.prevent="submit">
         <v-text-field
           v-model="email"
-          label="Email"
-          type="email"
+          label="Usuario ou email"
+          type="text"
           variant="outlined"
-          autocomplete="email"
-          prepend-inner-icon="mdi-email-outline"
+          autocomplete="username"
           :error-messages="emailErrors"
         />
         <v-text-field
@@ -22,7 +16,6 @@
           type="password"
           variant="outlined"
           autocomplete="current-password"
-          prepend-inner-icon="mdi-lock-outline"
           :error-messages="passwordErrors"
         />
 
@@ -31,11 +24,19 @@
         </v-alert>
         <v-alert v-if="errorMessage" type="error" variant="tonal">{{ errorMessage }}</v-alert>
 
-        <v-btn color="primary" size="large" type="submit" :loading="loading" block>Entrar</v-btn>
+        <v-btn color="primary" size="large" type="submit" :loading="loading" block @click="submit">
+          Entrar
+        </v-btn>
       </v-form>
 
-      <v-divider />
-      <v-btn variant="text" block type="button" @click="goToRegister">Criar conta</v-btn>
+      <div class="auth-links">
+        <span>Nao tem uma conta?</span>
+        <v-btn variant="text" type="button" @click="goToRegister">Criar conta</v-btn>
+      </div>
+
+      <v-alert type="info" variant="tonal">
+        Conta demo: `demo@example.com` / `12345678`
+      </v-alert>
     </div>
   </AuthLayout>
 </template>
