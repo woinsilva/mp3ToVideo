@@ -4,6 +4,10 @@
       <v-row align="center" justify="center">
         <v-col cols="12" lg="10">
           <div class="auth-grid">
+            <section class="auth-panel auth-panel--form">
+              <slot />
+            </section>
+
             <section class="auth-panel auth-panel--hero">
               <p class="page-eyebrow">Video SaaS MVP</p>
               <h1 class="page-title">{{ title }}</h1>
@@ -29,10 +33,6 @@
                 <strong>demo@example.com</strong>
                 <span>Senha: 12345678</span>
               </div>
-            </section>
-
-            <section class="auth-panel auth-panel--form">
-              <slot />
             </section>
           </div>
         </v-col>

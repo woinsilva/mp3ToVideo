@@ -178,8 +178,9 @@ body {
 
 .auth-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  grid-template-columns: minmax(320px, 0.85fr) minmax(0, 1.15fr);
   gap: 1.5rem;
+  align-items: stretch;
 }
 
 .auth-panel--hero {
@@ -191,6 +192,8 @@ body {
 
 .auth-panel--form {
   align-self: stretch;
+  position: sticky;
+  top: 2rem;
 }
 
 .auth-form-shell,
@@ -257,6 +260,10 @@ body {
 @media (max-width: 900px) {
   .auth-grid {
     grid-template-columns: 1fr;
+  }
+
+  .auth-panel--form {
+    position: static;
   }
 
   .topbar,

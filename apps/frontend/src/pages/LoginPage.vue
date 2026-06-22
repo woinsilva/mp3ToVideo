@@ -26,11 +26,16 @@
           :error-messages="passwordErrors"
         />
 
+        <v-alert v-if="submitted && hasValidationErrors" type="warning" variant="tonal">
+          Preencha um email valido e uma senha com pelo menos 8 caracteres.
+        </v-alert>
         <v-alert v-if="errorMessage" type="error" variant="tonal">{{ errorMessage }}</v-alert>
 
         <v-btn color="primary" size="large" type="submit" :loading="loading" block>Entrar</v-btn>
-        <v-btn variant="text" block @click="goToRegister">Criar conta</v-btn>
       </v-form>
+
+      <v-divider />
+      <v-btn variant="text" block type="button" @click="goToRegister">Criar conta</v-btn>
     </div>
   </AuthLayout>
 </template>

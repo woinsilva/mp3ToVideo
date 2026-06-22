@@ -39,11 +39,16 @@
           :error-messages="passwordErrors"
         />
 
+        <v-alert v-if="submitted && hasValidationErrors" type="warning" variant="tonal">
+          Revise nome, email e senha antes de criar a conta.
+        </v-alert>
         <v-alert v-if="errorMessage" type="error" variant="tonal">{{ errorMessage }}</v-alert>
 
         <v-btn color="primary" size="large" type="submit" :loading="loading" block>Criar conta</v-btn>
-        <v-btn variant="text" block @click="goToLogin">Ja tenho conta</v-btn>
       </v-form>
+
+      <v-divider />
+      <v-btn variant="text" block type="button" @click="goToLogin">Ja tenho conta</v-btn>
     </div>
   </AuthLayout>
 </template>
