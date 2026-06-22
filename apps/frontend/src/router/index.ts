@@ -1,16 +1,79 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
 
+import CreateProjectPage from '@/pages/CreateProjectPage.vue';
 import DashboardPage from '@/pages/DashboardPage.vue';
+import LoginPage from '@/pages/LoginPage.vue';
+import ProcessingPage from '@/pages/ProcessingPage.vue';
+import ProjectDetailPage from '@/pages/ProjectDetailPage.vue';
+import RegisterPage from '@/pages/RegisterPage.vue';
+import VideoResultPage from '@/pages/VideoResultPage.vue';
+import { useAuthStore } from '@/stores/auth.store';
 
 const routes: RouteRecordRaw[] = [
   {
+    path: '/login',
+    name: 'login',
+    component: LoginPage,
+    meta: { guestOnly: true }
+  },
+  {
+    path: '/register',
+    name: 'register',
+    component: RegisterPage,
+    meta: { guestOnly: true }
+  },
+  {
     path: '/',
     name: 'dashboard',
-    component: DashboardPage
+    component: DashboardPage,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/projects/new',
+    name: 'create-project',
+    component: CreateProjectPage,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/projects/:id',
+    name: 'project-detail',
+    component: ProjectDetailPage,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/projects/:id/processing',
+    name: 'processing',
+    component: ProcessingPage,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/projects/:id/result',
+    name: 'video-result',
+    component: VideoResultPage,
+    meta: { requiresAuth: true }
   }
 ];
 
 export const router = createRouter({
   history: createWebHistory(),
   routes
+});
+
+router.beforeEach(async (to) => {
+  const authStore = useAuthStore();
+  authStore.hydrateFromStorage();
+
+  if (authStore.token && !authStore.user) {
+    await authStore.bootstrapSession();
+  }
+
+  if (to.meta.requiresAuth && !authStore.isAuthenticated) {
+    return { name: 'login' };
+  }
+
+  if (to.meta.guestOnly && authStore.isAuthenticated) {
+    return { name: 'dashboard' };
+  }
+
+  return true;
 });
