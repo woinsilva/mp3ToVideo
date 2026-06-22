@@ -1,46 +1,56 @@
 <template>
   <AuthLayout title="Criar conta" subtitle="Crie sua conta para iniciar um projeto.">
     <div class="auth-form-shell">
-      <v-form class="d-flex flex-column ga-3" @submit.prevent="submit">
-        <v-text-field
-          v-model="name"
-          label="Nome"
-          variant="outlined"
-          autocomplete="name"
-          :error-messages="nameErrors"
-        />
-        <v-text-field
-          v-model="email"
-          label="Usuario ou email"
-          type="text"
-          variant="outlined"
-          autocomplete="email"
-          :error-messages="emailErrors"
-        />
-        <v-text-field
-          v-model="password"
-          label="Senha"
-          type="password"
-          variant="outlined"
-          autocomplete="new-password"
-          hint="Minimo de 8 caracteres."
-          persistent-hint
-          :error-messages="passwordErrors"
-        />
+      <form class="auth-native-form" @submit.prevent="submit">
+        <label class="auth-input-group">
+          <span class="auth-input-label">Nome</span>
+          <input
+            v-model="name"
+            class="auth-input"
+            type="text"
+            autocomplete="name"
+            placeholder="Seu nome"
+          />
+        </label>
+        <p v-if="nameErrors.length" class="auth-input-error">{{ nameErrors[0] }}</p>
+
+        <label class="auth-input-group">
+          <span class="auth-input-label">Usuario ou email</span>
+          <input
+            v-model="email"
+            class="auth-input"
+            type="text"
+            autocomplete="email"
+            placeholder="voce@exemplo.com"
+          />
+        </label>
+        <p v-if="emailErrors.length" class="auth-input-error">{{ emailErrors[0] }}</p>
+
+        <label class="auth-input-group">
+          <span class="auth-input-label">Senha</span>
+          <input
+            v-model="password"
+            class="auth-input"
+            type="password"
+            autocomplete="new-password"
+            placeholder="Minimo de 8 caracteres"
+          />
+        </label>
+        <p v-if="passwordErrors.length" class="auth-input-error">{{ passwordErrors[0] }}</p>
 
         <v-alert v-if="submitted && hasValidationErrors" type="warning" variant="tonal">
           Revise nome, email e senha antes de criar a conta.
         </v-alert>
         <v-alert v-if="errorMessage" type="error" variant="tonal">{{ errorMessage }}</v-alert>
 
-        <v-btn color="primary" size="large" type="submit" :loading="loading" block @click="submit">
-          Criar conta
-        </v-btn>
-      </v-form>
+        <button class="auth-submit-button" type="submit" :disabled="loading">
+          {{ loading ? 'Criando conta...' : 'Criar conta' }}
+        </button>
+      </form>
 
       <div class="auth-links">
         <span>Ja tem uma conta?</span>
-        <v-btn variant="text" type="button" @click="goToLogin">Entrar</v-btn>
+        <button class="auth-link-button" type="button" @click="goToLogin">Entrar</button>
       </div>
     </div>
   </AuthLayout>

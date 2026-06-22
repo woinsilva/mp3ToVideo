@@ -1,41 +1,48 @@
 <template>
   <AuthLayout title="Entrar" subtitle="Acesse sua conta para continuar o projeto.">
     <div class="auth-form-shell">
-      <v-form class="d-flex flex-column ga-3" @submit.prevent="submit">
-        <v-text-field
-          v-model="email"
-          label="Usuario ou email"
-          type="text"
-          variant="outlined"
-          autocomplete="username"
-          :error-messages="emailErrors"
-        />
-        <v-text-field
-          v-model="password"
-          label="Senha"
-          type="password"
-          variant="outlined"
-          autocomplete="current-password"
-          :error-messages="passwordErrors"
-        />
+      <form class="auth-native-form" @submit.prevent="submit">
+        <label class="auth-input-group">
+          <span class="auth-input-label">Usuario ou email</span>
+          <input
+            v-model="email"
+            class="auth-input"
+            type="text"
+            autocomplete="username"
+            placeholder="voce@exemplo.com"
+          />
+        </label>
+        <p v-if="emailErrors.length" class="auth-input-error">{{ emailErrors[0] }}</p>
+
+        <label class="auth-input-group">
+          <span class="auth-input-label">Senha</span>
+          <input
+            v-model="password"
+            class="auth-input"
+            type="password"
+            autocomplete="current-password"
+            placeholder="Sua senha"
+          />
+        </label>
+        <p v-if="passwordErrors.length" class="auth-input-error">{{ passwordErrors[0] }}</p>
 
         <v-alert v-if="submitted && hasValidationErrors" type="warning" variant="tonal">
           Preencha um email valido e uma senha com pelo menos 8 caracteres.
         </v-alert>
         <v-alert v-if="errorMessage" type="error" variant="tonal">{{ errorMessage }}</v-alert>
 
-        <v-btn color="primary" size="large" type="submit" :loading="loading" block @click="submit">
-          Entrar
-        </v-btn>
-      </v-form>
+        <button class="auth-submit-button" type="submit" :disabled="loading">
+          {{ loading ? 'Entrando...' : 'Entrar' }}
+        </button>
+      </form>
 
       <div class="auth-links">
         <span>Nao tem uma conta?</span>
-        <v-btn variant="text" type="button" @click="goToRegister">Criar conta</v-btn>
+        <button class="auth-link-button" type="button" @click="goToRegister">Criar conta</button>
       </div>
 
       <v-alert type="info" variant="tonal">
-        Conta demo: `demo@example.com` / `12345678`
+        Conta demo: demo@example.com / 12345678
       </v-alert>
     </div>
   </AuthLayout>
