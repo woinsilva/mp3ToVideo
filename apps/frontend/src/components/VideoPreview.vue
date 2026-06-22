@@ -6,15 +6,14 @@
           <h3 class="section-title">Videoclipe final</h3>
           <p class="section-copy">Preview do MP4 gerado pelo worker.</p>
         </div>
-        <v-btn
-          color="primary"
-          prepend-icon="mdi-download"
+        <button
+          class="app-button"
+          type="button"
           :disabled="!videoUrl || loading"
-          :loading="loading"
           @click="$emit('download')"
         >
-          Baixar MP4
-        </v-btn>
+          {{ loading ? 'Preparando download...' : 'Baixar MP4' }}
+        </button>
       </div>
 
       <div class="video-frame">

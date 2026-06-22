@@ -8,9 +8,9 @@
           Crie um projeto, envie o MP3 e acompanhe a geracao do videoclipe.
         </p>
       </div>
-      <v-btn color="primary" size="large" prepend-icon="mdi-plus" @click="goToCreateProject">
+      <button class="app-button app-button--large" type="button" @click="goToCreateProject">
         Novo videoclipe
-      </v-btn>
+      </button>
     </section>
 
     <v-alert v-if="errorMessage" type="error" variant="tonal" class="mb-4">
@@ -31,9 +31,9 @@
               <v-chip color="primary" variant="tonal">{{ project.status }}</v-chip>
             </div>
 
-            <v-btn variant="outlined" prepend-icon="mdi-arrow-right" @click="openProject(project.id)">
+            <button class="app-button app-button--outline" type="button" @click="openProject(project.id)">
               Abrir projeto
-            </v-btn>
+            </button>
           </v-card-text>
         </v-card>
       </v-col>
@@ -45,6 +45,7 @@
         <p class="section-copy">
           O fluxo do MVP comeca criando um projeto e enviando o MP3 original.
         </p>
+        <button class="app-button" type="button" @click="goToCreateProject">Criar primeiro projeto</button>
       </v-card-text>
     </v-card>
   </AppLayout>

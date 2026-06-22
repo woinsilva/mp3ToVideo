@@ -4,29 +4,23 @@
       <div>
         <h3 class="section-title">Upload do MP3</h3>
         <p class="section-copy">
-          Aceita apenas arquivos `.mp3`. O processamento será disparado assim que o upload terminar.
+          Aceita apenas arquivos `.mp3`. O processamento comeca assim que o upload terminar.
         </p>
       </div>
 
-      <v-file-input
-        v-model="selectedFile"
-        accept=".mp3,audio/mpeg"
-        label="Escolha o arquivo MP3"
-        prepend-icon="mdi-music"
-        variant="outlined"
-        show-size
-      />
+      <label class="auth-input-group">
+        <span class="auth-input-label">Escolha o arquivo MP3</span>
+        <input class="app-file-input" type="file" accept=".mp3,audio/mpeg" @change="onFileChange" />
+      </label>
 
-      <v-btn
-        color="primary"
-        size="large"
-        prepend-icon="mdi-upload"
-        :disabled="!selectedFile || loading"
-        :loading="loading"
-        @click="emitUpload"
-      >
-        Enviar MP3
-      </v-btn>
+      <div class="upload-file-meta" v-if="selectedFile">
+        <strong>Arquivo selecionado:</strong>
+        <span>{{ selectedFile.name }}</span>
+      </div>
+
+      <button class="app-button" type="button" :disabled="!selectedFile || loading" @click="emitUpload">
+        {{ loading ? 'Enviando MP3...' : 'Enviar MP3' }}
+      </button>
     </v-card-text>
   </v-card>
 </template>
@@ -42,6 +36,11 @@ export default class FileUploadCard extends Vue {
   readonly loading!: boolean;
 
   selectedFile: File | null = null;
+
+  onFileChange(event: Event) {
+    const target = event.target as HTMLInputElement;
+    this.selectedFile = target.files?.[0] ?? null;
+  }
 
   emitUpload() {
     if (!this.selectedFile) {

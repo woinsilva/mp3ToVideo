@@ -6,6 +6,9 @@
         <h2 class="page-title">{{ projectTitle }}</h2>
         <p class="page-subtitle">Polling automatico do status do projeto em tempo real.</p>
       </div>
+      <button class="app-button app-button--outline" type="button" @click="goBackToProject">
+        Voltar ao projeto
+      </button>
     </section>
 
     <ProjectStatusTimeline
@@ -97,6 +100,10 @@ export default class ProcessingPage extends Vue {
         void this.$router.push({ name: 'video-result', params: { id: this.projectId } });
       }
     }
+  }
+
+  goBackToProject() {
+    void this.$router.push({ name: 'project-detail', params: { id: this.projectId } });
   }
 }
 </script>

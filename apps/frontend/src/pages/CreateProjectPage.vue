@@ -10,14 +10,31 @@
 
     <v-card class="surface-card form-card" rounded="xl">
       <v-card-text>
-        <v-form class="d-flex flex-column ga-4" @submit.prevent="submit">
-          <v-text-field v-model="title" label="Titulo do projeto" variant="outlined" />
+        <form class="app-native-form" @submit.prevent="submit">
+          <label class="auth-input-group">
+            <span class="auth-input-label">Titulo do projeto</span>
+            <input
+              v-model="title"
+              class="auth-input"
+              type="text"
+              placeholder="Ex.: Clip da musica X"
+            />
+          </label>
           <v-alert v-if="errorMessage" type="error" variant="tonal">{{ errorMessage }}</v-alert>
-          <div class="d-flex ga-3">
-            <v-btn color="primary" size="large" type="submit" :loading="loading">Criar projeto</v-btn>
-            <v-btn variant="outlined" @click="cancel">Cancelar</v-btn>
+
+          <v-alert v-if="submitted && !normalizedTitle" type="warning" variant="tonal">
+            Informe um titulo para criar o projeto.
+          </v-alert>
+
+          <div class="app-button-row">
+            <button class="app-button" type="submit" :disabled="loading">
+              {{ loading ? 'Criando projeto...' : 'Criar projeto' }}
+            </button>
+            <button class="app-button app-button--outline" type="button" @click="cancel">
+              Cancelar
+            </button>
           </div>
-        </v-form>
+        </form>
       </v-card-text>
     </v-card>
   </AppLayout>
@@ -39,6 +56,7 @@ export default class CreateProjectPage extends Vue {
   title = '';
   loading = false;
   errorMessage: string | null = null;
+  submitted = false;
 
   get authStore(): any {
     return useAuthStore();
@@ -48,8 +66,18 @@ export default class CreateProjectPage extends Vue {
     return useProjectsStore();
   }
 
+  get normalizedTitle(): string {
+    return this.title.trim();
+  }
+
   async submit() {
     if (!this.authStore.token) {
+      return;
+    }
+
+    this.submitted = true;
+
+    if (!this.normalizedTitle) {
       return;
     }
 
@@ -57,7 +85,7 @@ export default class CreateProjectPage extends Vue {
     this.errorMessage = null;
 
     try {
-      const project = await this.projectsStore.createProject(this.title, this.authStore.token);
+      const project = await this.projectsStore.createProject(this.normalizedTitle, this.authStore.token);
       void this.$router.push({ name: 'project-detail', params: { id: project.id } });
     } catch (error) {
       this.errorMessage = error instanceof Error ? error.message : 'Falha ao criar projeto';

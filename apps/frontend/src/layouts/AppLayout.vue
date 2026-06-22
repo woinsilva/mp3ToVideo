@@ -11,15 +11,11 @@
             <strong>{{ organizationName }}</strong>
             <span>{{ userName }}</span>
           </div>
-          <v-btn variant="text" prepend-icon="mdi-view-dashboard" @click="goToDashboard">
+          <button class="app-button app-button--ghost" type="button" @click="goToDashboard">
             Dashboard
-          </v-btn>
-          <v-btn color="primary" prepend-icon="mdi-plus" @click="goToCreateProject">
-            Novo projeto
-          </v-btn>
-          <v-btn variant="outlined" prepend-icon="mdi-logout" @click="logout">
-            Sair
-          </v-btn>
+          </button>
+          <button class="app-button" type="button" @click="goToCreateProject">Novo projeto</button>
+          <button class="app-button app-button--outline" type="button" @click="logout">Sair</button>
         </div>
       </header>
       <slot />

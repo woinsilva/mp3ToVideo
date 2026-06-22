@@ -31,6 +31,9 @@
           <v-card-text>
             <h3 class="section-title">Projeto criado</h3>
             <p class="section-copy">O proximo passo e enviar o arquivo MP3 original.</p>
+            <p class="section-copy">
+              Depois do upload, voce sera levado automaticamente para a tela de processamento.
+            </p>
           </v-card-text>
         </v-card>
       </v-col>
@@ -43,23 +46,23 @@
               <p class="section-copy">O projeto muda de rota automaticamente conforme o status.</p>
             </div>
 
-            <v-btn
+            <button
               v-if="isProcessing"
-              color="primary"
-              prepend-icon="mdi-timeline-clock"
+              class="app-button"
+              type="button"
               @click="openProcessing"
             >
               Acompanhar processamento
-            </v-btn>
+            </button>
 
-            <v-btn
+            <button
               v-if="projectStatus === 'completed'"
-              color="secondary"
-              prepend-icon="mdi-play-circle"
+              class="app-button app-button--success"
+              type="button"
               @click="openResult"
             >
               Ver resultado
-            </v-btn>
+            </button>
           </v-card-text>
         </v-card>
       </v-col>
