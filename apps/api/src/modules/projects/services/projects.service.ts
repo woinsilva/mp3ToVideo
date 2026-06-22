@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException
 } from '@nestjs/common';
-import { Prisma, ProjectStatus } from '@prisma/client';
+import { AssetType, Prisma, ProjectStatus } from '@prisma/client';
 import { PROJECT_PROCESS_JOB_NAME, PROJECT_QUEUE_NAME } from '@video/shared';
 
 import { PrismaService } from '../../../database/prisma.service';
@@ -69,19 +69,90 @@ export class ProjectsService {
   }
 
   async getProjectById(projectId: string, organizationId: string) {
-    const project = await this.prismaService.project.findFirst({
+    const project = await this.getOwnedProject(projectId, organizationId);
+
+    return this.projectPresenter.summary(project);
+  }
+
+  async getProjectStatus(projectId: string, organizationId: string) {
+    const project = await this.getOwnedProject(projectId, organizationId);
+    const processingJob = await this.prismaService.processingJob.findFirst({
       where: {
-        id: projectId,
-        organizationId,
-        deletedAt: null
+        projectId,
+        queueName: PROJECT_QUEUE_NAME,
+        jobName: PROJECT_PROCESS_JOB_NAME
+      },
+      orderBy: {
+        updatedAt: 'desc'
       }
     });
 
-    if (!project) {
-      throw new NotFoundException('Project not found');
+    return this.projectPresenter.status(project, processingJob);
+  }
+
+  async listProjectScenes(projectId: string, organizationId: string) {
+    await this.getOwnedProject(projectId, organizationId);
+
+    const scenes = await this.prismaService.scene.findMany({
+      where: {
+        projectId
+      },
+      include: {
+        prompt: true
+      },
+      orderBy: {
+        index: 'asc'
+      }
+    });
+
+    return scenes.map((scene) => this.projectPresenter.scene(scene));
+  }
+
+  async getProjectRender(projectId: string, organizationId: string) {
+    await this.getOwnedProject(projectId, organizationId);
+
+    const render = await this.prismaService.render.findFirst({
+      where: {
+        projectId
+      },
+      include: {
+        asset: true
+      },
+      orderBy: {
+        updatedAt: 'desc'
+      }
+    });
+
+    if (!render) {
+      throw new NotFoundException('Render not found');
     }
 
-    return this.projectPresenter.summary(project);
+    return this.projectPresenter.render(render);
+  }
+
+  async getProjectDownload(projectId: string, organizationId: string) {
+    await this.getOwnedProject(projectId, organizationId);
+
+    const renderAsset = await this.prismaService.asset.findFirst({
+      where: {
+        projectId,
+        organizationId,
+        type: AssetType.render
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+
+    if (!renderAsset) {
+      throw new NotFoundException('Rendered video not found');
+    }
+
+    return {
+      fileName: `${projectId}.mp4`,
+      absolutePath: this.localStorageService.getAbsolutePath(renderAsset.storagePath),
+      mimeType: renderAsset.mimeType
+    };
   }
 
   async uploadTrack(input: UploadTrackInput) {
@@ -190,5 +261,21 @@ export class ProjectsService {
       result.id,
       ProjectStatus.queued
     );
+  }
+
+  private async getOwnedProject(projectId: string, organizationId: string) {
+    const project = await this.prismaService.project.findFirst({
+      where: {
+        id: projectId,
+        organizationId,
+        deletedAt: null
+      }
+    });
+
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    return project;
   }
 }

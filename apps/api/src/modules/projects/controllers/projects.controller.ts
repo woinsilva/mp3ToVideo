@@ -6,12 +6,14 @@ import {
   Inject,
   Param,
   Post,
+  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
@@ -49,6 +51,35 @@ export class ProjectsController {
   @Get(':id')
   getProject(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.projectsService.getProjectById(id, user.organizationId);
+  }
+
+  @Get(':id/status')
+  getProjectStatus(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.projectsService.getProjectStatus(id, user.organizationId);
+  }
+
+  @Get(':id/scenes')
+  getProjectScenes(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.projectsService.listProjectScenes(id, user.organizationId);
+  }
+
+  @Get(':id/render')
+  getProjectRender(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.projectsService.getProjectRender(id, user.organizationId);
+  }
+
+  @Get(':id/download')
+  async downloadProjectRender(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Res() response: Response
+  ) {
+    const download = await this.projectsService.getProjectDownload(id, user.organizationId);
+
+    response.setHeader('Content-Type', download.mimeType);
+    response.setHeader('Content-Disposition', `attachment; filename="${download.fileName}"`);
+
+    return response.sendFile(download.absolutePath);
   }
 
   @Post(':id/upload-track')

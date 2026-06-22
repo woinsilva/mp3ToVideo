@@ -62,6 +62,7 @@ describe('Projects integration', () => {
   let app: INestApplication;
   let authToken: string;
   let organizationId: string;
+  let secondAuthToken: string;
   let uploadedFilePath: string;
   let sampleMp3Path: string;
 
@@ -95,6 +96,14 @@ describe('Projects integration', () => {
 
     authToken = registerResponse.body.accessToken;
     organizationId = registerResponse.body.organization.id;
+
+    const secondRegisterResponse = await request(app.getHttpServer()).post('/auth/register').send({
+      name: 'Other Owner',
+      email: 'other-owner@example.com',
+      password: '12345678'
+    });
+
+    secondAuthToken = secondRegisterResponse.body.accessToken;
 
     sampleMp3Path = resolve('tests', 'tmp', `sample-${randomUUID()}.mp3`);
     mkdirSync(dirname(sampleMp3Path), { recursive: true });
@@ -238,5 +247,160 @@ describe('Projects integration', () => {
         rmSync(sampleTxtPath, { force: true });
       }
     }
+  });
+
+  it('returns project status, scenes, render metadata and downloads the final mp4', async () => {
+    const project = await prisma.project.create({
+      data: {
+        organizationId,
+        createdByUserId: (
+          await prisma.user.findUniqueOrThrow({
+            where: {
+              email: 'owner@example.com'
+            }
+          })
+        ).id,
+        title: 'Ready Project',
+        status: 'completed'
+      }
+    });
+
+    await prisma.processingJob.create({
+      data: {
+        projectId: project.id,
+        queueName: 'project-processing',
+        jobName: 'project.process',
+        bullJobId: 'bull-job-1',
+        status: 'completed',
+        progress: 100
+      }
+    });
+
+    await prisma.storyboard.create({
+      data: {
+        projectId: project.id,
+        concept: 'Concept',
+        visualStyle: 'cinematic music video',
+        mood: 'emotional',
+        colorPalette: 'deep blue',
+        narrativeSummary: 'Narrative'
+      }
+    });
+
+    const section = await prisma.musicSection.create({
+      data: {
+        projectId: project.id,
+        type: 'verse',
+        title: 'Verse 1',
+        startSeconds: 0,
+        endSeconds: 8,
+        lyricsExcerpt: 'sample line',
+        energy: 0.55
+      }
+    });
+
+    const renderPath = resolve('storage', 'renders', organizationId, project.id, 'final.mp4');
+    mkdirSync(dirname(renderPath), { recursive: true });
+    writeFileSync(renderPath, Buffer.from('final-mp4-content'));
+
+    const sceneAsset = await prisma.asset.create({
+      data: {
+        organizationId,
+        projectId: project.id,
+        type: 'video_scene',
+        mimeType: 'video/mp4',
+        storagePath: `storage/generated-scenes/${organizationId}/${project.id}/scene-001.mp4`,
+        sizeBytes: 123
+      }
+    });
+
+    const scene = await prisma.scene.create({
+      data: {
+        projectId: project.id,
+        musicSectionId: section.id,
+        index: 0,
+        title: 'Verse 1 Scene 1',
+        description: 'Scene description',
+        startSeconds: 0,
+        endSeconds: 8,
+        durationSeconds: 8,
+        status: 'completed',
+        videoAssetId: sceneAsset.id
+      }
+    });
+
+    await prisma.scenePrompt.create({
+      data: {
+        sceneId: scene.id,
+        provider: 'mock',
+        positivePrompt: 'positive prompt',
+        negativePrompt: 'negative prompt',
+        style: 'cinematic music video',
+        camera: 'cinematic medium shot'
+      }
+    });
+
+    const renderAsset = await prisma.asset.create({
+      data: {
+        organizationId,
+        projectId: project.id,
+        type: 'render',
+        mimeType: 'video/mp4',
+        storagePath: `storage/renders/${organizationId}/${project.id}/final.mp4`,
+        sizeBytes: 18
+      }
+    });
+
+    await prisma.render.create({
+      data: {
+        projectId: project.id,
+        status: 'completed',
+        assetId: renderAsset.id,
+        durationSeconds: 8
+      }
+    });
+
+    const statusResponse = await request(app.getHttpServer())
+      .get(`/projects/${project.id}/status`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .expect(200);
+
+    expect(statusResponse.body).toEqual({
+      projectId: project.id,
+      status: 'completed',
+      progress: 100,
+      currentStep: 'Completed',
+      errorMessage: null
+    });
+
+    const scenesResponse = await request(app.getHttpServer())
+      .get(`/projects/${project.id}/scenes`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .expect(200);
+
+    expect(scenesResponse.body).toHaveLength(1);
+    expect(scenesResponse.body[0].prompt.provider).toBe('mock');
+    expect(scenesResponse.body[0].videoAssetId).toBe(sceneAsset.id);
+
+    const renderResponse = await request(app.getHttpServer())
+      .get(`/projects/${project.id}/render`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .expect(200);
+
+    expect(renderResponse.body.status).toBe('completed');
+    expect(renderResponse.body.asset.id).toBe(renderAsset.id);
+
+    const downloadResponse = await request(app.getHttpServer())
+      .get(`/projects/${project.id}/download`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .expect(200);
+
+    expect(downloadResponse.headers['content-type']).toContain('video/mp4');
+    expect(downloadResponse.body).toEqual(Buffer.from('final-mp4-content'));
+
+    await request(app.getHttpServer())
+      .get(`/projects/${project.id}/status`)
+      .set('Authorization', `Bearer ${secondAuthToken}`)
+      .expect(404);
   });
 });
