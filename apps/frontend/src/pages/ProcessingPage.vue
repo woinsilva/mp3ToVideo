@@ -100,6 +100,8 @@ export default class ProcessingPage extends Vue {
 
       if (status.status === 'completed') {
         void this.$router.push({ name: 'video-result', params: { id: this.projectId } });
+      } else if (status.status === 'failed') {
+        await this.projectsStore.fetchProject(this.projectId, this.authStore.token);
       }
     }
   }

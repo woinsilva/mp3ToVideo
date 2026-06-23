@@ -44,6 +44,16 @@ class ProjectsService {
     );
   }
 
+  retry(projectId: string, token: string) {
+    return apiService.request<ProjectSummary>(
+      `/projects/${projectId}/retry`,
+      {
+        method: 'POST'
+      },
+      token
+    );
+  }
+
   status(projectId: string, token: string) {
     return apiService.request<ProjectStatusResponse>(`/projects/${projectId}/status`, {}, token);
   }

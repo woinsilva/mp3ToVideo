@@ -116,6 +116,23 @@ export const useProjectsStore = defineStore('projects', {
         this.isLoading = false;
       }
     },
+    async retryProject(projectId: string, token: string) {
+      this.isLoading = true;
+      this.errorMessage = null;
+
+      try {
+        const project = await projectsService.retry(projectId, token);
+        this.currentProject = project;
+        this.syncProjectStatus(projectId, project.status);
+        this.currentStatus = null;
+        return project;
+      } catch (error) {
+        this.errorMessage = error instanceof Error ? error.message : 'Falha ao reenfileirar projeto';
+        throw error;
+      } finally {
+        this.isLoading = false;
+      }
+    },
     async fetchStatus(projectId: string, token: string) {
       this.currentStatus = await projectsService.status(projectId, token);
       this.syncProjectStatus(projectId, this.currentStatus.status);

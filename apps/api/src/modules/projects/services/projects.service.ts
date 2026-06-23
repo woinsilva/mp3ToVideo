@@ -266,6 +266,64 @@ export class ProjectsService {
     );
   }
 
+  async retryProject(projectId: string, organizationId: string) {
+    const project = await this.prismaService.project.findUnique({
+      where: {
+        id: projectId
+      },
+      include: {
+        track: true
+      }
+    });
+
+    if (!project || project.deletedAt) {
+      throw new NotFoundException('Project not found');
+    }
+
+    if (project.organizationId !== organizationId) {
+      throw new ForbiddenException('Project does not belong to the authenticated organization');
+    }
+
+    if (!project.track) {
+      throw new BadRequestException('Project does not have an uploaded track');
+    }
+
+    const payload = this.projectProcessingPayloadFactory.build({
+      projectId,
+      organizationId,
+      requestedByUserId: project.createdByUserId
+    });
+
+    const queuedJob = await this.projectProcessingQueueService.enqueue(payload);
+
+    await this.prismaService.$transaction([
+      this.prismaService.processingJob.create({
+        data: {
+          projectId,
+          queueName: PROJECT_QUEUE_NAME,
+          jobName: PROJECT_PROCESS_JOB_NAME,
+          bullJobId: queuedJob.bullJobId,
+          status: 'queued',
+          progress: 0,
+          errorMessage: null
+        }
+      }),
+      this.prismaService.project.update({
+        where: {
+          id: projectId
+        },
+        data: {
+          status: ProjectStatus.queued,
+          errorMessage: null
+        }
+      })
+    ]);
+
+    return this.projectPresenter.summary(
+      await this.getOwnedProject(projectId, organizationId)
+    );
+  }
+
   private async getOwnedProject(projectId: string, organizationId: string) {
     const project = await this.prismaService.project.findFirst({
       where: {

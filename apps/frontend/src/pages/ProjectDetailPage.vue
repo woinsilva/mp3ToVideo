@@ -58,6 +58,15 @@
             </button>
 
             <button
+              v-if="projectStatus === 'failed'"
+              class="app-button"
+              type="button"
+              @click="retryProject"
+            >
+              Tentar novamente
+            </button>
+
+            <button
               v-if="projectStatus === 'completed'"
               class="app-button app-button--success"
               type="button"
@@ -174,6 +183,25 @@ export default class ProjectDetailPage extends Vue {
 
   openResult() {
     void this.$router.push({ name: 'video-result', params: { id: this.projectId } });
+  }
+
+  async retryProject() {
+    if (!this.authStore.token) {
+      return;
+    }
+
+    this.loading = true;
+    this.errorMessage = null;
+
+    try {
+      await this.projectsStore.retryProject(this.projectId, this.authStore.token);
+      void this.$router.push({ name: 'processing', params: { id: this.projectId } });
+    } catch (error) {
+      this.errorMessage =
+        error instanceof Error ? error.message : 'Falha ao reenfileirar projeto';
+    } finally {
+      this.loading = false;
+    }
   }
 }
 </script>

@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname, extname, join, resolve } from 'node:path';
+import { basename, dirname, extname, join } from 'node:path';
 
 @Injectable()
 export class LocalStorageService {
@@ -11,7 +11,18 @@ export class LocalStorageService {
   ) {}
 
   getAbsolutePath(relativePath: string): string {
-    return resolve(relativePath);
+    const root = this.configService.get<string>('storage.root');
+    const normalizedPath = relativePath.replace(/\\/g, '/');
+
+    if (root && normalizedPath.startsWith(root.replace(/\\/g, '/'))) {
+      return normalizedPath.replace(/\//g, '\\');
+    }
+
+    if (root && normalizedPath.startsWith(`${basename(root)}/`)) {
+      return join(dirname(root), normalizedPath);
+    }
+
+    return join(root ?? '', normalizedPath);
   }
 
   async saveProjectTrack(

@@ -318,7 +318,7 @@ describe('Project processing integration', () => {
       new ProjectProcessingPipelineService(
         prisma as unknown as WorkerPrismaService,
         new ProjectPipelineStateService(prisma as unknown as WorkerPrismaService),
-        new AudioMetadataService(configService),
+        new AudioMetadataService(configService, renderStorageService),
         {
           buildInitialExcerpt: async () => sampleMp3Path
         } as AudioExcerptService,

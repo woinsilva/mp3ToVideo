@@ -1,5 +1,4 @@
 import { stat, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
 
 import { Inject, Injectable } from '@nestjs/common';
 import { AssetType, RenderStatus, SceneStatus } from '@prisma/client';
@@ -195,7 +194,7 @@ export class ProjectRenderService {
 
       await this.ffmpegRenderingService.muxAudio(
         intermediateVideoAbsolutePath,
-        resolve(input.audioPath),
+        this.renderStorageService.getAbsolutePath(input.audioPath),
         finalRenderAbsolutePath
       );
       await this.processingProgressService.heartbeat(input.projectId, 99);

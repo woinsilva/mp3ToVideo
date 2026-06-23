@@ -1,5 +1,5 @@
 import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname, extname, join, resolve } from 'node:path';
+import { basename, dirname, extname, join } from 'node:path';
 
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -12,7 +12,22 @@ export class RenderStorageService {
   ) {}
 
   getAbsolutePath(relativePath: string): string {
-    return resolve(relativePath);
+    const root = this.configService.get<string>('storage.root', './storage');
+    const normalizedRoot = root.replace(/\\/g, '/');
+    const normalizedPath = relativePath.replace(/\\/g, '/');
+
+    if (
+      normalizedPath === normalizedRoot ||
+      normalizedPath.startsWith(`${normalizedRoot}/`)
+    ) {
+      return normalizedPath.replace(/\//g, '\\');
+    }
+
+    if (normalizedPath.startsWith(`${basename(root)}/`)) {
+      return join(dirname(root), normalizedPath);
+    }
+
+    return join(root, relativePath);
   }
 
   buildSceneClipPath(organizationId: string, projectId: string, sceneIndex: number): string {

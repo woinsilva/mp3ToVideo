@@ -453,4 +453,57 @@ describe('Projects integration', () => {
       .set('Authorization', `Bearer ${secondAuthToken}`)
       .expect(404);
   });
+
+  it('requeues a failed project that already has an uploaded track', async () => {
+    const owner = await prisma.user.findUniqueOrThrow({
+      where: {
+        email: 'owner@example.com'
+      }
+    });
+
+    const project = await prisma.project.create({
+      data: {
+        organizationId,
+        createdByUserId: owner.id,
+        title: 'Retry Project',
+        status: 'failed',
+        errorMessage: 'render failed',
+        track: {
+          create: {
+            originalFileName: 'song.mp3',
+            mimeType: 'audio/mpeg',
+            sizeBytes: 1234,
+            storagePath: 'storage/uploads/demo/retry/original.mp3'
+          }
+        }
+      }
+    });
+
+    const retryResponse = await request(app.getHttpServer())
+      .post(`/projects/${project.id}/retry`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .expect(201);
+
+    expect(retryResponse.body.id).toBe(project.id);
+    expect(retryResponse.body.status).toBe('queued');
+
+    const refreshedProject = await prisma.project.findUniqueOrThrow({
+      where: {
+        id: project.id
+      }
+    });
+    const processingJob = await prisma.processingJob.findFirst({
+      where: {
+        projectId: project.id
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+
+    expect(refreshedProject.status).toBe('queued');
+    expect(refreshedProject.errorMessage).toBeNull();
+    expect(processingJob?.status).toBe('queued');
+    expect(processingJob?.progress).toBe(0);
+  });
 });

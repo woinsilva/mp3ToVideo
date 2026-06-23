@@ -1,6 +1,8 @@
+import { resolveFromWorkspaceRoot } from '../utils/workspace-path.util';
+
 export const configuration = () => ({
   storage: {
-    root: process.env.STORAGE_ROOT ?? './storage'
+    root: resolveFromWorkspaceRoot(process.env.STORAGE_ROOT ?? './storage')
   },
   audio: {
     ffprobePath: process.env.FFPROBE_PATH ?? 'ffprobe',
@@ -29,7 +31,9 @@ export const configuration = () => ({
   visual: {
     provider: process.env.SCENE_VISUAL_PROVIDER ?? 'procedural',
     comfyuiBaseUrl: process.env.COMFYUI_BASE_URL ?? 'http://localhost:8188',
-    comfyuiOutputHostPath: process.env.COMFYUI_OUTPUT_HOST_PATH ?? './storage/comfyui/output',
+    comfyuiOutputHostPath: resolveFromWorkspaceRoot(
+      process.env.COMFYUI_OUTPUT_HOST_PATH ?? './storage/comfyui/output'
+    ),
     comfyuiTimeoutMs: Number(process.env.COMFYUI_TIMEOUT_MS ?? 300000),
     comfyuiPollIntervalMs: Number(process.env.COMFYUI_POLL_INTERVAL_MS ?? 3000),
     comfyuiCheckpointName:

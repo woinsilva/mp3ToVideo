@@ -1,9 +1,10 @@
 import { execFile } from 'node:child_process';
-import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { resolveFromWorkspaceRoot } from '../utils/workspace-path.util';
+import { RenderStorageService } from './render-storage.service';
 
 const execFileAsync = promisify(execFile);
 
@@ -24,7 +25,9 @@ export class WhisperTranscriptionService {
 
   constructor(
     @Inject(ConfigService)
-    private readonly configService: ConfigService
+    private readonly configService: ConfigService,
+    @Inject(RenderStorageService)
+    private readonly renderStorageService: RenderStorageService
   ) {}
 
   isEnabled(): boolean {
@@ -43,13 +46,15 @@ export class WhisperTranscriptionService {
     const timeoutMs = this.configService.get<number>('audio.whisperTimeoutMs', 600000);
     const language = this.configService.get<string>('audio.whisperLanguage', '');
     const allowFallbacks = this.configService.get<boolean>('ai.enableFallbacks', true);
-    const helperPath = resolve('apps', 'worker', 'scripts', 'transcribe_with_faster_whisper.py');
+    const helperPath = resolveFromWorkspaceRoot(
+      'apps/worker/scripts/transcribe_with_faster_whisper.py'
+    );
 
     try {
       const args = [
         helperPath,
         '--audio-path',
-        resolve(audioPath),
+        this.renderStorageService.getAbsolutePath(audioPath),
         '--model',
         model,
         '--device',

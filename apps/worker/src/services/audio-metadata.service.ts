@@ -1,9 +1,9 @@
 import { execFile } from 'node:child_process';
-import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { RenderStorageService } from './render-storage.service';
 
 const execFileAsync = promisify(execFile);
 
@@ -13,11 +13,13 @@ export class AudioMetadataService {
 
   constructor(
     @Inject(ConfigService)
-    private readonly configService: ConfigService
+    private readonly configService: ConfigService,
+    @Inject(RenderStorageService)
+    private readonly renderStorageService: RenderStorageService
   ) {}
 
   async resolveDurationSeconds(trackPath: string): Promise<number> {
-    const absoluteTrackPath = resolve(trackPath);
+    const absoluteTrackPath = this.renderStorageService.getAbsolutePath(trackPath);
     const ffprobePath = this.configService.get<string>('audio.ffprobePath', 'ffprobe');
     const fallbackDuration = this.configService.get<number>('audio.mockDurationSeconds', 30);
     const allowFallbacks = this.configService.get<boolean>('ai.enableFallbacks', true);

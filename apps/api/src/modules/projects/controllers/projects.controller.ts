@@ -115,4 +115,9 @@ export class ProjectsController {
       file
     });
   }
+
+  @Post(':id/retry')
+  retryProject(@CurrentUser() user: AuthenticatedUser, @Param('id') projectId: string) {
+    return this.projectsService.retryProject(projectId, user.organizationId);
+  }
 }
