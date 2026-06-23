@@ -63,6 +63,8 @@ Variaveis importantes:
 - `SCENE_VISUAL_PROVIDER`
 - `COMFYUI_BASE_URL`
 - `COMFYUI_CHECKPOINT_NAME`
+- `COMFYUI_MODELS_HOST_PATH`
+- `COMFYUI_CUSTOM_NODES_HOST_PATH`
 
 ## Subir ambiente local
 
@@ -95,10 +97,75 @@ Com GPU NVIDIA, o recomendado e usar CUDA configurado na maquina para o `faster-
 Se quiser geracao visual local por prompt:
 
 - deixe `SCENE_VISUAL_PROVIDER=comfyui`
-- suba o ComfyUI localmente em `http://localhost:8188`
+- suba o ComfyUI localmente em `http://localhost:8188` ou via Docker Compose com o profile `comfyui`
 - configure um checkpoint compativel em `COMFYUI_CHECKPOINT_NAME`
 
 Sem ComfyUI ativo, o worker continua no modo `procedural` e gera cenas baseadas em composicao simples no `ffmpeg`.
+
+### ComfyUI via Docker
+
+O projeto agora possui um servico opcional de `ComfyUI` no `docker-compose.yml`.
+
+Subir apenas o ComfyUI:
+
+```bash
+docker compose --profile comfyui up -d comfyui
+```
+
+Subir infra base + ComfyUI:
+
+```bash
+docker compose --profile comfyui up -d
+```
+
+O servico publica a interface em `http://localhost:8188`.
+
+#### Reaproveitar sua instalacao atual do Windows
+
+Se voce ja baixou modelos, custom nodes e workflows no ComfyUI do Windows, o ideal e reaproveitar esses mesmos diretorios por volume.
+
+Exemplo:
+
+```env
+COMFYUI_MODELS_HOST_PATH=C:/caminho/do/seu/ComfyUI/models
+COMFYUI_CUSTOM_NODES_HOST_PATH=C:/caminho/do/seu/ComfyUI/custom_nodes
+COMFYUI_INPUT_HOST_PATH=C:/caminho/do/seu/ComfyUI/input
+COMFYUI_OUTPUT_HOST_PATH=C:/caminho/do/seu/ComfyUI/output
+COMFYUI_USER_HOST_PATH=C:/caminho/do/seu/ComfyUI/user
+COMFYUI_TEMP_HOST_PATH=C:/caminho/do/seu/ComfyUI/temp
+```
+
+Se voce apontar esses caminhos para a instalacao que funcionou ontem:
+
+- nao precisa baixar os modelos de novo
+- nao precisa reinstalar os custom nodes de novo
+- nao precisa refazer os workflows ja salvos
+
+Se voce deixar os caminhos padrao `./storage/comfyui/...`, o container vai usar um ambiente separado. Nesse caso, os modelos e custom nodes precisarao existir nessas pastas.
+
+#### Exportar o workflow JSON correto
+
+Para integrarmos o workflow no backend, eu preciso do JSON em formato de API do ComfyUI.
+
+Passo a passo:
+
+1. abra o workflow no ComfyUI
+2. va em `File -> Export Workflow (API)`
+3. salve o arquivo `.json`
+4. me envie esse arquivo
+
+Se voce tiver apenas o workflow visual salvo no formato normal:
+
+1. abra o `.json` com `File -> Load`
+2. depois exporte com `File -> Export Workflow (API)`
+
+#### O que precisa ser refeito ao migrar para Docker
+
+- modelos: nao, se os volumes apontarem para suas pastas atuais
+- custom nodes: nao, se os volumes apontarem para suas pastas atuais
+- workflows salvos: nao, se eles estiverem nas pastas montadas ou se voce me exportar o JSON
+- endpoint local: sim, porque agora o acesso sera pelo servico do Docker em `localhost:8188`
+- dependencias Python de custom nodes: talvez, mas o entrypoint tenta instalar automaticamente os `requirements.txt` encontrados
 
 Banco:
 
@@ -181,6 +248,7 @@ Implementado parcialmente:
 - o worker usa fallback local quando `ffprobe` nao consegue ler duracao real do audio
 - o frontend baixa o MP4 autenticado via `fetch`, nao via link publico
 - o `docker-compose.yml` sobe Postgres, Redis e Ollama; API, worker e frontend rodam por `pnpm dev`
+- o `docker-compose.yml` tambem pode subir um `ComfyUI` opcional via profile `comfyui`
 - o modelo padrao sugerido para GPU local com 12 GB e `qwen3:8b`
 - o modelo padrao sugerido para transcricao local e `distil-large-v3`
 - para a camada visual local, a estrategia mais pragmatica no momento e `ComfyUI -> imagem por cena -> animacao no ffmpeg`

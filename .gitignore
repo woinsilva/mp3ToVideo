@@ -11,6 +11,7 @@ coverage/
 
 storage/uploads/
 storage/generated-scenes/
+storage/comfyui/
 storage/renders/
 storage/temp/
 !storage/uploads/.gitkeep
