@@ -27,17 +27,33 @@
                 <p class="section-copy mb-0">
                   Atualizado em {{ formatDate(project.updatedAt) }}
                 </p>
+                <p v-if="project.clipDurationSeconds" class="section-copy mb-0">
+                  Recorte configurado: {{ project.clipDurationSeconds }}s
+                </p>
               </div>
-              <v-chip color="primary" variant="tonal">{{ project.status }}</v-chip>
+              <v-chip :color="statusTone(project.status)" variant="tonal">
+                {{ statusLabel(project.status) }}
+              </v-chip>
             </div>
 
-            <button class="app-button app-button--outline" type="button" @click="openProject(project.id)">
-              Abrir projeto
+            <button
+              class="app-button app-button--outline"
+              type="button"
+              @click="openProject(project.id, project.status)"
+            >
+              {{ openProjectLabel(project.status) }}
             </button>
           </v-card-text>
         </v-card>
       </v-col>
     </v-row>
+
+    <v-card v-if="loading" class="surface-card empty-state" rounded="xl">
+      <v-card-text>
+        <h3 class="section-title">Carregando projetos</h3>
+        <p class="section-copy">Buscando o estado mais recente da sua workspace.</p>
+      </v-card-text>
+    </v-card>
 
     <v-card v-if="!projects.length && !loading" class="surface-card empty-state" rounded="xl">
       <v-card-text>
@@ -57,6 +73,8 @@ import { Component, Vue } from 'vue-facing-decorator';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { useAuthStore } from '@/stores/auth.store';
 import { useProjectsStore } from '@/stores/projects.store';
+import { formatProjectStatusLabel, projectStatusTone } from '@/utils/project-status';
+import type { ProjectStatus } from '@/types/project.types';
 
 @Component({
   components: {
@@ -100,8 +118,57 @@ export default class DashboardPage extends Vue {
     void this.$router.push({ name: 'create-project' });
   }
 
-  openProject(projectId: string) {
-    void this.$router.push({ name: 'project-detail', params: { id: projectId } });
+  openProject(projectId: string, status: ProjectStatus) {
+    const routeName =
+      status === 'completed'
+        ? 'video-result'
+        : [
+              'uploaded',
+              'queued',
+              'processing',
+              'analyzing',
+              'storyboarding',
+              'generating_scenes',
+              'rendering'
+            ].includes(status)
+          ? 'processing'
+          : 'project-detail';
+
+    void this.$router.push({ name: routeName, params: { id: projectId } });
+  }
+
+  openProjectLabel(status: ProjectStatus): string {
+    if (status === 'completed') {
+      return 'Ver resultado';
+    }
+
+    if (
+      [
+        'uploaded',
+        'queued',
+        'processing',
+        'analyzing',
+        'storyboarding',
+        'generating_scenes',
+        'rendering'
+      ].includes(status)
+    ) {
+      return 'Acompanhar processamento';
+    }
+
+    if (status === 'failed') {
+      return 'Corrigir e reenviar';
+    }
+
+    return 'Abrir projeto';
+  }
+
+  statusLabel(status: ProjectStatus): string {
+    return formatProjectStatusLabel(status);
+  }
+
+  statusTone(status: ProjectStatus) {
+    return projectStatusTone(status);
   }
 
   formatDate(value: string): string {

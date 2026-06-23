@@ -65,7 +65,7 @@ describe('ProjectPresenter', () => {
       projectId: 'project-1',
       status: 'rendering',
       progress: 95,
-      currentStep: 'Rendering final video',
+      currentStep: 'Renderizando video final',
       errorMessage: null,
       lastUpdatedAt: now,
       isPossiblyStalled: false

@@ -7,7 +7,7 @@
           <p class="section-copy">{{ currentStep }}</p>
           <p class="section-copy status-meta">{{ lastUpdateLabel }}</p>
         </div>
-        <v-chip :color="tone" variant="tonal">{{ status }}</v-chip>
+        <v-chip :color="tone" variant="tonal">{{ statusLabel }}</v-chip>
       </div>
 
       <v-progress-linear :model-value="progress" :color="tone" height="12" rounded />
@@ -39,6 +39,7 @@ import { Component, Prop, Vue } from 'vue-facing-decorator';
 
 import {
   buildProjectStatusSteps,
+  formatProjectStatusLabel,
   formatRelativeStatusUpdate,
   projectStatusTone
 } from '@/utils/project-status';
@@ -65,11 +66,15 @@ export default class ProjectStatusTimeline extends Vue {
   readonly isPossiblyStalled!: boolean;
 
   get steps() {
-    return buildProjectStatusSteps(this.status);
+    return buildProjectStatusSteps(this.status, this.progress);
   }
 
   get tone() {
     return projectStatusTone(this.status);
+  }
+
+  get statusLabel() {
+    return formatProjectStatusLabel(this.status);
   }
 
   get lastUpdateLabel() {

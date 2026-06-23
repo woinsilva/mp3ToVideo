@@ -7,38 +7,92 @@ export interface StatusStep {
   active: boolean;
 }
 
-const statusOrder: ProjectStatus[] = [
-  'draft',
-  'uploaded',
-  'queued',
-  'processing',
-  'analyzing',
-  'storyboarding',
-  'generating_scenes',
-  'rendering',
-  'completed',
-  'failed'
-];
+const statusLabels: Record<ProjectStatus, string> = {
+  draft: 'Rascunho',
+  uploaded: 'Upload concluido',
+  queued: 'Na fila',
+  processing: 'Processando',
+  analyzing: 'Analisando audio',
+  storyboarding: 'Criando storyboard',
+  generating_scenes: 'Gerando cenas',
+  rendering: 'Renderizando',
+  completed: 'Concluido',
+  failed: 'Falhou'
+};
+
+const stepThresholds = {
+  upload: 5,
+  analyzing: 25,
+  storyboarding: 55,
+  generatingScenes: 85,
+  rendering: 95
+};
 
 export function isTerminalProjectStatus(status: ProjectStatus): boolean {
   return status === 'completed' || status === 'failed';
 }
 
-export function buildProjectStatusSteps(status: ProjectStatus): StatusStep[] {
-  const activeIndex = statusOrder.indexOf(status);
+export function formatProjectStatusLabel(status: ProjectStatus): string {
+  return statusLabels[status];
+}
+
+export function buildProjectStatusSteps(
+  status: ProjectStatus,
+  progress = 0
+): StatusStep[] {
+  const safeProgress = Math.max(0, Math.min(100, progress));
+  const reachedUpload =
+    status !== 'draft' && (safeProgress >= stepThresholds.upload || status === 'completed');
+  const reachedAnalyzing =
+    ['analyzing', 'storyboarding', 'generating_scenes', 'rendering', 'completed'].includes(
+      status
+    ) || safeProgress >= stepThresholds.analyzing;
+  const reachedStoryboarding =
+    ['storyboarding', 'generating_scenes', 'rendering', 'completed'].includes(status) ||
+    safeProgress >= stepThresholds.storyboarding;
+  const reachedGeneratingScenes =
+    ['generating_scenes', 'rendering', 'completed'].includes(status) ||
+    safeProgress >= stepThresholds.generatingScenes;
+  const reachedRendering =
+    ['rendering', 'completed'].includes(status) || safeProgress >= stepThresholds.rendering;
 
   return [
-    { key: 'uploaded', label: 'Upload', reached: activeIndex >= 1, active: status === 'uploaded' },
-    { key: 'analyzing', label: 'Analise', reached: activeIndex >= 4, active: status === 'analyzing' },
-    { key: 'storyboarding', label: 'Storyboard', reached: activeIndex >= 5, active: status === 'storyboarding' },
+    {
+      key: 'uploaded',
+      label: 'Upload',
+      reached: reachedUpload,
+      active: ['uploaded', 'queued', 'processing'].includes(status)
+    },
+    {
+      key: 'analyzing',
+      label: 'Analise',
+      reached: reachedAnalyzing,
+      active: status === 'analyzing'
+    },
+    {
+      key: 'storyboarding',
+      label: 'Storyboard',
+      reached: reachedStoryboarding,
+      active: status === 'storyboarding'
+    },
     {
       key: 'generating_scenes',
       label: 'Cenas',
-      reached: activeIndex >= 6,
+      reached: reachedGeneratingScenes,
       active: status === 'generating_scenes'
     },
-    { key: 'rendering', label: 'Renderizacao', reached: activeIndex >= 7, active: status === 'rendering' },
-    { key: 'completed', label: 'Concluido', reached: activeIndex >= 8, active: status === 'completed' }
+    {
+      key: 'rendering',
+      label: 'Renderizacao',
+      reached: reachedRendering,
+      active: status === 'rendering'
+    },
+    {
+      key: 'completed',
+      label: 'Concluido',
+      reached: status === 'completed',
+      active: status === 'completed'
+    }
   ];
 }
 

@@ -6,6 +6,14 @@
         <h2 class="page-title">{{ projectTitle }}</h2>
         <p class="page-subtitle">Player do MP4 final e lista das cenas geradas pelo pipeline.</p>
       </div>
+      <div class="app-button-row">
+        <button class="app-button app-button--ghost" type="button" @click="reloadPage">
+          Atualizar
+        </button>
+        <button class="app-button app-button--outline" type="button" @click="goToProject">
+          Voltar ao projeto
+        </button>
+      </div>
     </section>
 
     <v-alert v-if="errorMessage" type="error" variant="tonal" class="mb-4">
@@ -32,6 +40,30 @@
     <section class="mt-6">
       <SceneList :scenes="scenes" />
     </section>
+
+    <v-card
+      v-if="statusPayload && statusPayload.status !== 'completed'"
+      class="surface-card mt-4"
+      rounded="xl"
+    >
+      <v-card-text class="d-flex flex-column ga-3">
+        <h3 class="section-title">Resultado ainda indisponivel</h3>
+        <p class="section-copy">{{ resultBlockedMessage }}</p>
+        <div class="app-button-row">
+          <button
+            v-if="statusPayload.status !== 'draft' && statusPayload.status !== 'failed'"
+            class="app-button"
+            type="button"
+            @click="goToProcessing"
+          >
+            Ir para processamento
+          </button>
+          <button class="app-button app-button--outline" type="button" @click="goToProject">
+            Abrir detalhes do projeto
+          </button>
+        </div>
+      </v-card-text>
+    </v-card>
   </AppLayout>
 </template>
 
@@ -85,6 +117,22 @@ export default class VideoResultPage extends Vue {
     return this.projectsStore.currentScenes;
   }
 
+  get resultBlockedMessage(): string {
+    if (!this.statusPayload) {
+      return 'O status do projeto ainda esta sendo carregado.';
+    }
+
+    if (this.statusPayload.status === 'failed') {
+      return 'A ultima tentativa falhou. Volte aos detalhes para reenviar o audio ou tentar novamente.';
+    }
+
+    if (this.statusPayload.status === 'draft') {
+      return 'Envie o audio primeiro para iniciar a geracao do videoclipe.';
+    }
+
+    return 'O video final ainda nao terminou de processar. Acompanhe a renderizacao em tempo real.';
+  }
+
   async mounted() {
     await this.loadPage();
   }
@@ -108,7 +156,26 @@ export default class VideoResultPage extends Vue {
 
     try {
       await this.projectsStore.fetchProject(this.projectId, this.authStore.token);
-      await this.projectsStore.fetchStatus(this.projectId, this.authStore.token);
+      const status = await this.projectsStore.fetchStatus(this.projectId, this.authStore.token);
+
+      if (status.status === 'draft') {
+        this.projectsStore.clearProjectArtifacts();
+        void this.$router.push({ name: 'project-detail', params: { id: this.projectId } });
+        return;
+      }
+
+      if (status.status !== 'completed') {
+        this.projectsStore.clearProjectArtifacts();
+        this.videoBlob = null;
+
+        if (this.videoUrl) {
+          URL.revokeObjectURL(this.videoUrl);
+          this.videoUrl = null;
+        }
+
+        return;
+      }
+
       await this.projectsStore.fetchRender(this.projectId, this.authStore.token);
       await this.projectsStore.fetchScenes(this.projectId, this.authStore.token);
       await this.loadVideoBlob();
@@ -153,6 +220,18 @@ export default class VideoResultPage extends Vue {
     anchor.download = `${this.projectId}.mp4`;
     anchor.click();
     URL.revokeObjectURL(url);
+  }
+
+  reloadPage() {
+    void this.loadPage();
+  }
+
+  goToProcessing() {
+    void this.$router.push({ name: 'processing', params: { id: this.projectId } });
+  }
+
+  goToProject() {
+    void this.$router.push({ name: 'project-detail', params: { id: this.projectId } });
   }
 }
 </script>

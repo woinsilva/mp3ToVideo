@@ -52,7 +52,7 @@ export class ProjectProcessor {
         job.data.projectId,
         bullJobId,
         ProcessingJobStatus.failed,
-        100,
+        undefined,
         message
       );
       await this.updateProject(job.data.projectId, {
@@ -80,7 +80,7 @@ export class ProjectProcessor {
     projectId: string,
     bullJobId: string,
     status: ProcessingJobStatus,
-    progress: number,
+    progress: number | undefined,
     errorMessage?: string
   ): Promise<void> {
     const existingJob = await this.prismaService.processingJob.findFirst({
@@ -99,7 +99,7 @@ export class ProjectProcessor {
         },
         data: {
           status,
-          progress,
+          progress: progress ?? existingJob.progress,
           errorMessage: errorMessage ?? null
         }
       });
@@ -114,7 +114,7 @@ export class ProjectProcessor {
         jobName: PROJECT_PROCESS_JOB_NAME,
         bullJobId,
         status,
-        progress,
+        progress: progress ?? 0,
         errorMessage
       }
     });

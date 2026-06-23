@@ -474,7 +474,7 @@ describe('Project processing integration', () => {
     expect(project?.status).toBe('failed');
     expect(project?.errorMessage).toBe('worker pipeline failed');
     expect(processingJob?.status).toBe('failed');
-    expect(processingJob?.progress).toBe(100);
+    expect(processingJob?.progress).toBe(10);
     expect(processingJob?.errorMessage).toBe('worker pipeline failed');
   });
 });

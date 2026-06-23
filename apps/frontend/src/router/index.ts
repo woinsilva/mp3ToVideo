@@ -51,6 +51,15 @@ const routes: RouteRecordRaw[] = [
     name: 'video-result',
     component: VideoResultPage,
     meta: { requiresAuth: true }
+  },
+  {
+    path: '/:pathMatch(.*)*',
+    name: 'not-found',
+    redirect: () => {
+      const authStore = useAuthStore();
+      authStore.hydrateFromStorage();
+      return authStore.isAuthenticated ? { name: 'dashboard' } : { name: 'login' };
+    }
   }
 ];
 
@@ -64,7 +73,11 @@ router.beforeEach(async (to) => {
   authStore.hydrateFromStorage();
 
   if (authStore.token && !authStore.user) {
-    await authStore.bootstrapSession();
+    try {
+      await authStore.bootstrapSession();
+    } catch {
+      authStore.logout();
+    }
   }
 
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {

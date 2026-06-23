@@ -6,9 +6,14 @@
         <h2 class="page-title">{{ projectTitle }}</h2>
         <p class="page-subtitle">Polling automatico do status do projeto em tempo real.</p>
       </div>
-      <button class="app-button app-button--outline" type="button" @click="goBackToProject">
-        Voltar ao projeto
-      </button>
+      <div class="app-button-row">
+        <button class="app-button app-button--ghost" type="button" @click="refreshManually">
+          Atualizar agora
+        </button>
+        <button class="app-button app-button--outline" type="button" @click="goBackToProject">
+          Voltar ao projeto
+        </button>
+      </div>
     </section>
 
     <v-alert v-if="errorMessage" type="error" variant="tonal" class="mb-4">
@@ -27,6 +32,18 @@
 
     <v-card v-else class="surface-card" rounded="xl">
       <v-card-text>Carregando status do projeto...</v-card-text>
+    </v-card>
+
+    <v-card v-if="statusPayload?.status === 'failed'" class="surface-card mt-4" rounded="xl">
+      <v-card-text class="d-flex flex-column ga-3">
+        <h3 class="section-title">Processamento interrompido</h3>
+        <p class="section-copy">
+          O projeto voltou para a tela de detalhes para permitir retry ou reenvio do audio.
+        </p>
+        <div class="app-button-row">
+          <button class="app-button" type="button" @click="goBackToProject">Abrir detalhes</button>
+        </div>
+      </v-card-text>
     </v-card>
   </AppLayout>
 </template>
@@ -125,7 +142,17 @@ export default class ProcessingPage extends Vue {
       } else if (status.status === 'failed') {
         await this.projectsStore.fetchProject(this.projectId, this.authStore.token);
       }
+
+      return;
     }
+
+    if (status.status === 'draft') {
+      void this.$router.push({ name: 'project-detail', params: { id: this.projectId } });
+    }
+  }
+
+  refreshManually() {
+    void this.refreshStatus();
   }
 
   goBackToProject() {

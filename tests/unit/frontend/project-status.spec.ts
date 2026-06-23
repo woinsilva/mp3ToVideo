@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildProjectStatusSteps,
+  formatProjectStatusLabel,
   formatRelativeStatusUpdate,
   isTerminalProjectStatus,
   projectStatusTone
@@ -9,11 +10,19 @@ import {
 
 describe('frontend project status helpers', () => {
   it('builds a completed timeline with reached steps', () => {
-    const steps = buildProjectStatusSteps('completed');
+    const steps = buildProjectStatusSteps('completed', 100);
 
     expect(steps).toHaveLength(6);
     expect(steps.every((step) => step.reached)).toBe(true);
     expect(steps.at(-1)?.active).toBe(true);
+  });
+
+  it('does not mark the completed step as reached when a project fails', () => {
+    const steps = buildProjectStatusSteps('failed', 55);
+
+    expect(steps.find((step) => step.key === 'storyboarding')?.reached).toBe(true);
+    expect(steps.find((step) => step.key === 'completed')?.reached).toBe(false);
+    expect(steps.find((step) => step.key === 'completed')?.active).toBe(false);
   });
 
   it('classifies terminal statuses and tones', () => {
@@ -23,6 +32,7 @@ describe('frontend project status helpers', () => {
     expect(projectStatusTone('failed')).toBe('error');
     expect(projectStatusTone('completed')).toBe('success');
     expect(projectStatusTone('queued')).toBe('info');
+    expect(formatProjectStatusLabel('generating_scenes')).toBe('Gerando cenas');
   });
 
   it('formats relative update timestamps for the processing UI', () => {

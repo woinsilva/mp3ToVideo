@@ -107,7 +107,7 @@ export class ProjectPresenter {
       case 'completed':
         return 100;
       case 'failed':
-        return 100;
+        return 0;
       default:
         return 0;
     }
@@ -116,27 +116,27 @@ export class ProjectPresenter {
   private currentStep(status: ProjectStatus): string {
     switch (status) {
       case 'draft':
-        return 'Awaiting upload';
+        return 'Aguardando upload do audio';
       case 'uploaded':
-        return 'Upload completed';
+        return 'Upload concluido';
       case 'queued':
-        return 'Queued for processing';
+        return 'Na fila de processamento';
       case 'processing':
-        return 'Processing project';
+        return 'Preparando pipeline';
       case 'analyzing':
-        return 'Analyzing audio';
+        return 'Analisando audio';
       case 'storyboarding':
-        return 'Building storyboard';
+        return 'Montando storyboard';
       case 'generating_scenes':
-        return 'Generating scenes';
+        return 'Gerando cenas';
       case 'rendering':
-        return 'Rendering final video';
+        return 'Renderizando video final';
       case 'completed':
-        return 'Completed';
+        return 'Concluido';
       case 'failed':
-        return 'Failed';
+        return 'Falhou';
       default:
-        return 'Unknown';
+        return 'Status desconhecido';
     }
   }
 

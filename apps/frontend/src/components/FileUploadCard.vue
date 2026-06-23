@@ -2,7 +2,7 @@
   <v-card class="surface-card" rounded="xl">
     <v-card-text class="d-flex flex-column ga-4">
       <div>
-        <h3 class="section-title">Upload do MP3</h3>
+        <h3 class="section-title">Upload do audio</h3>
         <p class="section-copy">
           Aceita arquivos `.mp3` e `.wav`. O processamento comeca assim que o upload terminar.
         </p>
@@ -54,6 +54,7 @@ export default class FileUploadCard extends Vue {
     }
 
     this.$emit('upload', this.selectedFile);
+    this.selectedFile = null;
   }
 }
 </script>

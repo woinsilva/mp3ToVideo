@@ -492,7 +492,7 @@ describe('Projects integration', () => {
       projectId: project.id,
       status: 'completed',
       progress: 100,
-      currentStep: 'Completed',
+      currentStep: 'Concluido',
       errorMessage: null,
       lastUpdatedAt: expect.any(String),
       isPossiblyStalled: false

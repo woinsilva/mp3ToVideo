@@ -34,6 +34,10 @@ export const useProjectsStore = defineStore('projects', {
       this.currentScenes = [];
       this.currentRender = null;
     },
+    clearProjectArtifacts() {
+      this.currentScenes = [];
+      this.currentRender = null;
+    },
     async fetchProjects(token: string) {
       this.isLoading = true;
       this.errorMessage = null;

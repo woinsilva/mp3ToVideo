@@ -5,9 +5,16 @@ import { ProjectProcessor } from '../../../apps/worker/src/processors/project.pr
 describe('ProjectProcessor', () => {
   it('moves the project and processing job to completed when the pipeline succeeds', async () => {
     const processingJob = {
-      findFirst: vi.fn().mockResolvedValue({
-        id: 'processing-job-1'
-      }),
+      findFirst: vi
+        .fn()
+        .mockResolvedValueOnce({
+          id: 'processing-job-1',
+          progress: 0
+        })
+        .mockResolvedValueOnce({
+          id: 'processing-job-1',
+          progress: 10
+        }),
       update: vi.fn().mockResolvedValue(undefined),
       create: vi.fn().mockResolvedValue(undefined)
     };
@@ -79,9 +86,16 @@ describe('ProjectProcessor', () => {
 
   it('marks the project and processing job as failed when the pipeline throws', async () => {
     const processingJob = {
-      findFirst: vi.fn().mockResolvedValue({
-        id: 'processing-job-1'
-      }),
+      findFirst: vi
+        .fn()
+        .mockResolvedValueOnce({
+          id: 'processing-job-1',
+          progress: 0
+        })
+        .mockResolvedValueOnce({
+          id: 'processing-job-1',
+          progress: 10
+        }),
       update: vi.fn().mockResolvedValue(undefined),
       create: vi.fn().mockResolvedValue(undefined)
     };
@@ -136,7 +150,7 @@ describe('ProjectProcessor', () => {
       },
       data: {
         status: 'failed',
-        progress: 100,
+        progress: 10,
         errorMessage: 'pipeline failed'
       }
     });

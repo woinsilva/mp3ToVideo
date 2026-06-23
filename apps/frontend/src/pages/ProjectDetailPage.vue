@@ -6,7 +6,7 @@
         <h2 class="page-title">{{ projectTitle }}</h2>
         <p class="page-subtitle">Envie o MP3 e siga para o acompanhamento do processamento.</p>
       </div>
-      <v-chip color="primary" variant="tonal">{{ projectStatus }}</v-chip>
+      <v-chip :color="statusTone" variant="tonal">{{ statusLabel }}</v-chip>
     </section>
 
     <v-alert v-if="errorMessage" type="error" variant="tonal" class="mb-4">
@@ -47,7 +47,7 @@
           <v-card-text class="d-flex flex-column ga-4">
             <div>
               <h3 class="section-title">Proximos passos</h3>
-              <p class="section-copy">O projeto muda de rota automaticamente conforme o status.</p>
+              <p class="section-copy">{{ nextStepDescription }}</p>
             </div>
 
             <div v-if="projectStatus === 'failed'" class="d-flex flex-column ga-3">
@@ -76,6 +76,7 @@
             <button
               v-if="isProcessing"
               class="app-button"
+              :disabled="loading"
               type="button"
               @click="openProcessing"
             >
@@ -85,6 +86,7 @@
             <button
               v-if="projectStatus === 'failed'"
               class="app-button"
+              :disabled="loading"
               type="button"
               @click="retryProject"
             >
@@ -94,6 +96,7 @@
             <button
               v-if="projectStatus === 'completed'"
               class="app-button app-button--success"
+              :disabled="loading"
               type="button"
               @click="openResult"
             >
@@ -114,7 +117,11 @@ import ProjectStatusTimeline from '@/components/ProjectStatusTimeline.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { useAuthStore } from '@/stores/auth.store';
 import { useProjectsStore } from '@/stores/projects.store';
-import { isTerminalProjectStatus } from '@/utils/project-status';
+import {
+  formatProjectStatusLabel,
+  isTerminalProjectStatus,
+  projectStatusTone
+} from '@/utils/project-status';
 import type { ProjectStatus } from '@/types/project.types';
 
 @Component({
@@ -149,6 +156,14 @@ export default class ProjectDetailPage extends Vue {
     return this.statusPayload?.status ?? this.projectsStore.currentProject?.status ?? 'draft';
   }
 
+  get statusLabel(): string {
+    return formatProjectStatusLabel(this.projectStatus);
+  }
+
+  get statusTone() {
+    return projectStatusTone(this.projectStatus);
+  }
+
   get statusPayload() {
     return this.projectsStore.currentStatus?.projectId === this.projectId
       ? this.projectsStore.currentStatus
@@ -177,6 +192,27 @@ export default class ProjectDetailPage extends Vue {
     }
 
     return Math.floor(parsedValue);
+  }
+
+  get nextStepDescription(): string {
+    switch (this.projectStatus) {
+      case 'draft':
+        return 'Envie o audio para iniciar o pipeline de geracao do videoclipe.';
+      case 'uploaded':
+      case 'queued':
+      case 'processing':
+      case 'analyzing':
+      case 'storyboarding':
+      case 'generating_scenes':
+      case 'rendering':
+        return 'O processamento esta em andamento. Voce pode acompanhar o progresso em tempo real.';
+      case 'failed':
+        return 'A geracao falhou. Ajuste o recorte se necessario, reenvie o audio ou tente novamente.';
+      case 'completed':
+        return 'O videoclipe foi concluido. Abra o resultado para visualizar o MP4 e as cenas.';
+      default:
+        return 'Siga o proximo passo recomendado pelo status atual do projeto.';
+    }
   }
 
   async mounted() {
