@@ -38,7 +38,7 @@
             Informe um titulo para criar o projeto.
           </v-alert>
           <v-alert
-            v-if="submitted && clipDurationSecondsInput.trim() && normalizedClipDurationSeconds === null"
+            v-if="submitted && clipDurationSecondsRawValue && normalizedClipDurationSeconds === null"
             type="warning"
             variant="tonal"
           >
@@ -73,7 +73,7 @@ import { useProjectsStore } from '@/stores/projects.store';
 })
 export default class CreateProjectPage extends Vue {
   title = '';
-  clipDurationSecondsInput = '';
+  clipDurationSecondsInput: string | number = '';
   loading = false;
   errorMessage: string | null = null;
   submitted = false;
@@ -90,8 +90,12 @@ export default class CreateProjectPage extends Vue {
     return this.title.trim();
   }
 
+  get clipDurationSecondsRawValue(): string {
+    return String(this.clipDurationSecondsInput ?? '').trim();
+  }
+
   get normalizedClipDurationSeconds(): number | null {
-    const rawValue = this.clipDurationSecondsInput.trim();
+    const rawValue = this.clipDurationSecondsRawValue;
 
     if (!rawValue) {
       return null;
@@ -115,7 +119,7 @@ export default class CreateProjectPage extends Vue {
 
     if (
       !this.normalizedTitle ||
-      (this.clipDurationSecondsInput.trim() && this.normalizedClipDurationSeconds === null)
+      (this.clipDurationSecondsRawValue && this.normalizedClipDurationSeconds === null)
     ) {
       return;
     }

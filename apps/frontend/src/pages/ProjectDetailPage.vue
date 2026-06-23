@@ -48,6 +48,29 @@
               <p class="section-copy">O projeto muda de rota automaticamente conforme o status.</p>
             </div>
 
+            <div v-if="projectStatus === 'failed'" class="d-flex flex-column ga-3">
+              <label class="auth-input-group">
+                <span class="auth-input-label">Gerar apenas os primeiros segundos</span>
+                <input
+                  v-model="clipDurationSecondsInput"
+                  class="auth-input"
+                  type="number"
+                  min="1"
+                  max="600"
+                  step="1"
+                  placeholder="Opcional. Ex.: 20"
+                />
+              </label>
+
+              <v-alert
+                v-if="clipDurationSecondsRawValue && normalizedClipDurationSeconds === null"
+                type="warning"
+                variant="tonal"
+              >
+                Informe uma duracao entre 1 e 600 segundos antes de reenfileirar.
+              </v-alert>
+            </div>
+
             <button
               v-if="isProcessing"
               class="app-button"
@@ -102,6 +125,7 @@ import type { ProjectStatus } from '@/types/project.types';
 export default class ProjectDetailPage extends Vue {
   loading = false;
   errorMessage: string | null = null;
+  clipDurationSecondsInput: string | number = '';
 
   get projectId(): string {
     return String(this.$route.params.id);
@@ -133,6 +157,26 @@ export default class ProjectDetailPage extends Vue {
     return !isTerminalProjectStatus(this.projectStatus) && this.projectStatus !== 'draft';
   }
 
+  get clipDurationSecondsRawValue(): string {
+    return String(this.clipDurationSecondsInput ?? '').trim();
+  }
+
+  get normalizedClipDurationSeconds(): number | null {
+    const rawValue = this.clipDurationSecondsRawValue;
+
+    if (!rawValue) {
+      return null;
+    }
+
+    const parsedValue = Number(rawValue);
+
+    if (!Number.isFinite(parsedValue) || parsedValue < 1 || parsedValue > 600) {
+      return null;
+    }
+
+    return Math.floor(parsedValue);
+  }
+
   async mounted() {
     await this.loadProject();
   }
@@ -147,6 +191,8 @@ export default class ProjectDetailPage extends Vue {
 
     try {
       await this.projectsStore.fetchProject(this.projectId, this.authStore.token);
+      this.clipDurationSecondsInput =
+        this.projectsStore.currentProject?.clipDurationSeconds ?? '';
 
       if (this.projectsStore.currentProject?.status !== 'draft') {
         await this.projectsStore.fetchStatus(this.projectId, this.authStore.token);
@@ -190,11 +236,20 @@ export default class ProjectDetailPage extends Vue {
       return;
     }
 
+    if (this.clipDurationSecondsRawValue && this.normalizedClipDurationSeconds === null) {
+      this.errorMessage = 'Informe uma duracao entre 1 e 600 segundos antes de reenfileirar';
+      return;
+    }
+
     this.loading = true;
     this.errorMessage = null;
 
     try {
-      await this.projectsStore.retryProject(this.projectId, this.authStore.token);
+      await this.projectsStore.retryProject(
+        this.projectId,
+        this.normalizedClipDurationSeconds,
+        this.authStore.token
+      );
       void this.$router.push({ name: 'processing', params: { id: this.projectId } });
     } catch (error) {
       this.errorMessage =

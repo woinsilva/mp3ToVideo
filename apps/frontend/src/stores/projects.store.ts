@@ -116,12 +116,12 @@ export const useProjectsStore = defineStore('projects', {
         this.isLoading = false;
       }
     },
-    async retryProject(projectId: string, token: string) {
+    async retryProject(projectId: string, clipDurationSeconds: number | null, token: string) {
       this.isLoading = true;
       this.errorMessage = null;
 
       try {
-        const project = await projectsService.retry(projectId, token);
+        const project = await projectsService.retry(projectId, clipDurationSeconds, token);
         this.currentProject = project;
         this.syncProjectStatus(projectId, project.status);
         this.currentStatus = null;

@@ -19,6 +19,7 @@ import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import type { AuthenticatedUser } from '../../auth/types/authenticated-user.type';
 import { CreateProjectDto } from '../dtos/create-project.dto';
+import { RetryProjectDto } from '../dtos/retry-project.dto';
 import { ProjectsService } from '../services/projects.service';
 import { TrackUploadPolicyService } from '../services/track-upload-policy.service';
 
@@ -117,7 +118,11 @@ export class ProjectsController {
   }
 
   @Post(':id/retry')
-  retryProject(@CurrentUser() user: AuthenticatedUser, @Param('id') projectId: string) {
-    return this.projectsService.retryProject(projectId, user.organizationId);
+  retryProject(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') projectId: string,
+    @Body() input: RetryProjectDto
+  ) {
+    return this.projectsService.retryProject(projectId, user.organizationId, input);
   }
 }

@@ -44,11 +44,14 @@ class ProjectsService {
     );
   }
 
-  retry(projectId: string, token: string) {
+  retry(projectId: string, clipDurationSeconds: number | null, token: string) {
     return apiService.request<ProjectSummary>(
       `/projects/${projectId}/retry`,
       {
-        method: 'POST'
+        method: 'POST',
+        body: JSON.stringify({
+          clipDurationSeconds
+        })
       },
       token
     );

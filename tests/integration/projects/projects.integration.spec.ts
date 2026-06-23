@@ -461,14 +461,15 @@ describe('Projects integration', () => {
       }
     });
 
-    const project = await prisma.project.create({
-      data: {
-        organizationId,
-        createdByUserId: owner.id,
-        title: 'Retry Project',
-        status: 'failed',
-        errorMessage: 'render failed',
-        track: {
+      const project = await prisma.project.create({
+        data: {
+          organizationId,
+          createdByUserId: owner.id,
+          title: 'Retry Project',
+          clipDurationSeconds: 40,
+          status: 'failed',
+          errorMessage: 'render failed',
+          track: {
           create: {
             originalFileName: 'song.mp3',
             mimeType: 'audio/mpeg',
@@ -479,13 +480,17 @@ describe('Projects integration', () => {
       }
     });
 
-    const retryResponse = await request(app.getHttpServer())
-      .post(`/projects/${project.id}/retry`)
-      .set('Authorization', `Bearer ${authToken}`)
-      .expect(201);
+      const retryResponse = await request(app.getHttpServer())
+        .post(`/projects/${project.id}/retry`)
+        .set('Authorization', `Bearer ${authToken}`)
+        .send({
+          clipDurationSeconds: 20
+        })
+        .expect(201);
 
-    expect(retryResponse.body.id).toBe(project.id);
-    expect(retryResponse.body.status).toBe('queued');
+      expect(retryResponse.body.id).toBe(project.id);
+      expect(retryResponse.body.status).toBe('queued');
+      expect(retryResponse.body.clipDurationSeconds).toBe(20);
 
     const refreshedProject = await prisma.project.findUniqueOrThrow({
       where: {
@@ -501,8 +506,9 @@ describe('Projects integration', () => {
       }
     });
 
-    expect(refreshedProject.status).toBe('queued');
-    expect(refreshedProject.errorMessage).toBeNull();
+      expect(refreshedProject.status).toBe('queued');
+      expect(refreshedProject.clipDurationSeconds).toBe(20);
+      expect(refreshedProject.errorMessage).toBeNull();
     expect(processingJob?.status).toBe('queued');
     expect(processingJob?.progress).toBe(0);
   });

@@ -27,6 +27,10 @@ interface UploadTrackInput {
   file: Express.Multer.File;
 }
 
+interface RetryProjectInput {
+  clipDurationSeconds?: number;
+}
+
 @Injectable()
 export class ProjectsService {
   constructor(
@@ -266,7 +270,11 @@ export class ProjectsService {
     );
   }
 
-  async retryProject(projectId: string, organizationId: string) {
+  async retryProject(
+    projectId: string,
+    organizationId: string,
+    input: RetryProjectInput = {}
+  ) {
     const project = await this.prismaService.project.findUnique({
       where: {
         id: projectId
@@ -313,6 +321,10 @@ export class ProjectsService {
           id: projectId
         },
         data: {
+          clipDurationSeconds:
+            input.clipDurationSeconds !== undefined
+              ? input.clipDurationSeconds
+              : project.clipDurationSeconds,
           status: ProjectStatus.queued,
           errorMessage: null
         }
