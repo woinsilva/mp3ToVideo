@@ -1,4 +1,4 @@
-import { stat } from 'node:fs/promises';
+import { stat, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import { Inject, Injectable } from '@nestjs/common';
@@ -9,6 +9,7 @@ import { FfmpegRenderingService } from './ffmpeg-rendering.service';
 import { ProcessingProgressService } from './processing-progress.service';
 import { RenderStorageService } from './render-storage.service';
 import { SceneImageGenerationService } from './scene-image-generation.service';
+import { SceneVideoGenerationService } from './scene-video-generation.service';
 
 interface RenderSceneInput {
   id: string;
@@ -32,6 +33,8 @@ export class ProjectRenderService {
     private readonly prismaService: PrismaService,
     @Inject(RenderStorageService)
     private readonly renderStorageService: RenderStorageService,
+    @Inject(SceneVideoGenerationService)
+    private readonly sceneVideoGenerationService: SceneVideoGenerationService,
     @Inject(SceneImageGenerationService)
     private readonly sceneImageGenerationService: SceneImageGenerationService,
     @Inject(FfmpegRenderingService)
@@ -84,42 +87,57 @@ export class ProjectRenderService {
             sceneId: scene.id
           }
         });
-        const generatedSceneImage = scenePrompt
-          ? await this.sceneImageGenerationService.generate({
-              organizationId: input.organizationId,
-              projectId: input.projectId,
-              sceneIndex: index,
-              sceneTitle: scene.title,
+        const generatedSceneVideo = scenePrompt
+          ? await this.sceneVideoGenerationService.generate({
+              sceneId: scene.id,
               positivePrompt: scenePrompt.positivePrompt,
               negativePrompt: scenePrompt.negativePrompt,
-              style: scenePrompt.style,
-              camera: scenePrompt.camera
+              width: 1280,
+              height: 704,
+              durationSeconds: scene.durationSeconds
             })
           : null;
 
-        if (generatedSceneImage) {
-          await this.prismaService.asset.create({
-            data: {
-              organizationId: input.organizationId,
-              projectId: input.projectId,
-              type: AssetType.image,
-              mimeType: 'image/png',
-              storagePath: generatedSceneImage.storagePath,
-              sizeBytes: generatedSceneImage.sizeBytes
-            }
-          });
-
-          await this.ffmpegRenderingService.createSceneClipFromImage(
-            sceneClipAbsolutePath,
-            scene.durationSeconds,
-            this.renderStorageService.getAbsolutePath(generatedSceneImage.storagePath)
-          );
+        if (generatedSceneVideo) {
+          await writeFile(sceneClipAbsolutePath, generatedSceneVideo);
         } else {
-          await this.ffmpegRenderingService.createSceneClip(
-            sceneClipAbsolutePath,
-            scene.durationSeconds,
-            this.resolveSceneColor(scene.sectionType, index)
-          );
+          const generatedSceneImage = scenePrompt
+            ? await this.sceneImageGenerationService.generate({
+                organizationId: input.organizationId,
+                projectId: input.projectId,
+                sceneIndex: index,
+                sceneTitle: scene.title,
+                positivePrompt: scenePrompt.positivePrompt,
+                negativePrompt: scenePrompt.negativePrompt,
+                style: scenePrompt.style,
+                camera: scenePrompt.camera
+              })
+            : null;
+
+          if (generatedSceneImage) {
+            await this.prismaService.asset.create({
+              data: {
+                organizationId: input.organizationId,
+                projectId: input.projectId,
+                type: AssetType.image,
+                mimeType: 'image/png',
+                storagePath: generatedSceneImage.storagePath,
+                sizeBytes: generatedSceneImage.sizeBytes
+              }
+            });
+
+            await this.ffmpegRenderingService.createSceneClipFromImage(
+              sceneClipAbsolutePath,
+              scene.durationSeconds,
+              this.renderStorageService.getAbsolutePath(generatedSceneImage.storagePath)
+            );
+          } else {
+            await this.ffmpegRenderingService.createSceneClip(
+              sceneClipAbsolutePath,
+              scene.durationSeconds,
+              this.resolveSceneColor(scene.sectionType, index)
+            );
+          }
         }
 
         const sceneClipSize = Number((await stat(sceneClipAbsolutePath)).size);

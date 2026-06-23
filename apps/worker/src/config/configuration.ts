@@ -29,16 +29,25 @@ export const configuration = () => ({
   visual: {
     provider: process.env.SCENE_VISUAL_PROVIDER ?? 'procedural',
     comfyuiBaseUrl: process.env.COMFYUI_BASE_URL ?? 'http://localhost:8188',
+    comfyuiOutputHostPath: process.env.COMFYUI_OUTPUT_HOST_PATH ?? './storage/comfyui/output',
     comfyuiTimeoutMs: Number(process.env.COMFYUI_TIMEOUT_MS ?? 300000),
     comfyuiPollIntervalMs: Number(process.env.COMFYUI_POLL_INTERVAL_MS ?? 3000),
     comfyuiCheckpointName:
       process.env.COMFYUI_CHECKPOINT_NAME ?? 'sd_xl_turbo_1.0.safetensors',
+    comfyuiVideoUnetName:
+      process.env.COMFYUI_VIDEO_UNET_NAME ?? 'wan2.2_ti2v_5B_fp16.safetensors',
+    comfyuiVideoClipName:
+      process.env.COMFYUI_VIDEO_CLIP_NAME ?? 'umt5_xxl_fp8_e4m3fn_scaled.safetensors',
+    comfyuiVideoClipType: process.env.COMFYUI_VIDEO_CLIP_TYPE ?? 'wan',
+    comfyuiVideoVaeName: process.env.COMFYUI_VIDEO_VAE_NAME ?? 'wan2.2_vae.safetensors',
+    comfyuiVideoModelShift: Number(process.env.COMFYUI_VIDEO_MODEL_SHIFT ?? 8),
+    comfyuiVideoFps: Number(process.env.COMFYUI_VIDEO_FPS ?? 24),
     comfyuiWidth: Number(process.env.COMFYUI_WIDTH ?? 1024),
     comfyuiHeight: Number(process.env.COMFYUI_HEIGHT ?? 576),
-    comfyuiSteps: Number(process.env.COMFYUI_STEPS ?? 8),
-    comfyuiCfg: Number(process.env.COMFYUI_CFG ?? 1.8),
-    comfyuiSampler: process.env.COMFYUI_SAMPLER ?? 'euler',
-    comfyuiScheduler: process.env.COMFYUI_SCHEDULER ?? 'normal'
+    comfyuiSteps: Number(process.env.COMFYUI_STEPS ?? 20),
+    comfyuiCfg: Number(process.env.COMFYUI_CFG ?? 5),
+    comfyuiSampler: process.env.COMFYUI_SAMPLER ?? 'uni_pc',
+    comfyuiScheduler: process.env.COMFYUI_SCHEDULER ?? 'simple'
   },
   redis: {
     host: process.env.REDIS_HOST ?? 'localhost',

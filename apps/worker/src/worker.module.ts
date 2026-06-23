@@ -22,6 +22,7 @@ import { SceneImageGenerationService } from './services/scene-image-generation.s
 import { ScenePlanningService } from './services/scene-planning.service';
 import { ScenePromptGenerationService } from './services/scene-prompt-generation.service';
 import { ScenePromptService } from './services/scene-prompt.service';
+import { SceneVideoGenerationService } from './services/scene-video-generation.service';
 import { StoryboardGenerationService } from './services/storyboard-generation.service';
 import { StoryboardFallbackService } from './services/storyboard-fallback.service';
 import { WhisperTranscriptionService } from './services/whisper-transcription.service';
@@ -56,6 +57,7 @@ import { RedisConnectionService } from './workers/redis-connection.service';
     ProjectRenderService,
     RenderStorageService,
     SceneImageGenerationService,
+    SceneVideoGenerationService,
     ScenePlanningService,
     ScenePromptGenerationService,
     ScenePromptService,

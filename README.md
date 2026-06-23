@@ -240,7 +240,7 @@ Implementado parcialmente:
 
 - integracao real com Ollama para storyboard e prompts de cena
 - integracao real com faster-whisper para transcricao quando habilitado
-- geracao visual local por prompt via ComfyUI, convertendo imagem gerada em clipe animado
+- geracao visual local por prompt via ComfyUI, com tentativa de video direto por workflow Wan2.2 e fallback para imagem animada
 - fallback automatico para modo mock quando Ollama estiver desabilitado ou indisponivel
 
 ## Observacoes
@@ -251,4 +251,4 @@ Implementado parcialmente:
 - o `docker-compose.yml` tambem pode subir um `ComfyUI` opcional via profile `comfyui`
 - o modelo padrao sugerido para GPU local com 12 GB e `qwen3:8b`
 - o modelo padrao sugerido para transcricao local e `distil-large-v3`
-- para a camada visual local, a estrategia mais pragmatica no momento e `ComfyUI -> imagem por cena -> animacao no ffmpeg`
+- para a camada visual local, o worker agora tenta `ComfyUI Wan2.2 -> video por cena`, depois cai para `ComfyUI -> imagem por cena -> animacao no ffmpeg`

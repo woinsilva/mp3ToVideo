@@ -236,6 +236,24 @@ describe('Project processing integration', () => {
           'ai.ollamaModel': 'qwen3:8b',
           'ai.ollamaTimeoutMs': 180000,
           'ai.enableFallbacks': true,
+          'visual.provider': 'procedural',
+          'visual.comfyuiBaseUrl': 'http://localhost:8188',
+          'visual.comfyuiOutputHostPath': './storage/comfyui/output',
+          'visual.comfyuiTimeoutMs': 300000,
+          'visual.comfyuiPollIntervalMs': 3000,
+          'visual.comfyuiCheckpointName': 'sd_xl_turbo_1.0.safetensors',
+          'visual.comfyuiVideoUnetName': 'wan2.2_ti2v_5B_fp16.safetensors',
+          'visual.comfyuiVideoClipName': 'umt5_xxl_fp8_e4m3fn_scaled.safetensors',
+          'visual.comfyuiVideoClipType': 'wan',
+          'visual.comfyuiVideoVaeName': 'wan2.2_vae.safetensors',
+          'visual.comfyuiVideoModelShift': 8,
+          'visual.comfyuiVideoFps': 24,
+          'visual.comfyuiWidth': 1280,
+          'visual.comfyuiHeight': 704,
+          'visual.comfyuiSteps': 20,
+          'visual.comfyuiCfg': 5,
+          'visual.comfyuiSampler': 'uni_pc',
+          'visual.comfyuiScheduler': 'simple',
           'rendering.ffmpegPath': 'ffmpeg',
           'rendering.width': 1280,
           'rendering.height': 720,
@@ -265,6 +283,9 @@ describe('Project processing integration', () => {
     const projectRenderService = new ProjectRenderService(
       prisma as unknown as WorkerPrismaService,
       renderStorageService,
+      {
+        generate: async () => null
+      } as never,
       {
         generate: async () => null
       } as never,
