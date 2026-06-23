@@ -20,6 +20,7 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import type { AuthenticatedUser } from '../../auth/types/authenticated-user.type';
 import { CreateProjectDto } from '../dtos/create-project.dto';
 import { RetryProjectDto } from '../dtos/retry-project.dto';
+import { UploadTrackDto } from '../dtos/upload-track.dto';
 import { ProjectsService } from '../services/projects.service';
 import { TrackUploadPolicyService } from '../services/track-upload-policy.service';
 
@@ -89,6 +90,7 @@ export class ProjectsController {
   uploadTrack(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') projectId: string,
+    @Body() input: UploadTrackDto,
     @UploadedFile() file: Express.Multer.File | undefined
   ) {
     if (!file) {
@@ -113,6 +115,7 @@ export class ProjectsController {
     return this.projectsService.uploadTrack({
       organizationId: user.organizationId,
       projectId,
+      clipDurationSeconds: input.clipDurationSeconds,
       file
     });
   }

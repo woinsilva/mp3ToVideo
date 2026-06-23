@@ -30,9 +30,12 @@ class ProjectsService {
     return apiService.request<ProjectSummary>(`/projects/${projectId}`, {}, token);
   }
 
-  upload(projectId: string, file: File, token: string) {
+  upload(projectId: string, file: File, clipDurationSeconds: number | null, token: string) {
     const formData = new FormData();
     formData.append('file', file);
+    if (clipDurationSeconds !== null) {
+      formData.append('clipDurationSeconds', String(clipDurationSeconds));
+    }
 
     return apiService.request<TrackUploadResult>(
       `/projects/${projectId}/upload-track`,

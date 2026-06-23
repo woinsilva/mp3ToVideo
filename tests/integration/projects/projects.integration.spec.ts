@@ -233,6 +233,81 @@ describe('Projects integration', () => {
     expect(readFileSync(uploadedFilePath).length).toBeGreaterThan(0);
   });
 
+  it('reuploads audio for a failed project and requeues processing', async () => {
+    const owner = await prisma.user.findUniqueOrThrow({
+      where: {
+        email: 'owner@example.com'
+      }
+    });
+
+    const project = await prisma.project.create({
+      data: {
+        organizationId,
+        createdByUserId: owner.id,
+        title: 'Failed Upload Recovery',
+        clipDurationSeconds: 45,
+        status: 'failed',
+        errorMessage: 'missing source file',
+        track: {
+          create: {
+            originalFileName: 'old.wav',
+            mimeType: 'audio/wav',
+            sizeBytes: 111,
+            storagePath: 'storage/uploads/old/path/original.wav'
+          }
+        }
+      }
+    });
+
+    await prisma.asset.create({
+      data: {
+        organizationId,
+        projectId: project.id,
+        type: 'audio',
+        mimeType: 'audio/wav',
+        storagePath: 'storage/uploads/old/path/original.wav',
+        sizeBytes: 111
+      }
+    });
+
+    const uploadResponse = await request(app.getHttpServer())
+      .post(`/projects/${project.id}/upload-track`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .field('clipDurationSeconds', '20')
+      .attach('file', sampleMp3Path, {
+        filename: 'replacement.mp3',
+        contentType: 'audio/mpeg'
+      })
+      .expect(201);
+
+    expect(uploadResponse.body.projectId).toBe(project.id);
+    expect(uploadResponse.body.status).toBe('queued');
+
+    const refreshedProject = await prisma.project.findUniqueOrThrow({
+      where: {
+        id: project.id
+      }
+    });
+    const refreshedTrack = await prisma.track.findUniqueOrThrow({
+      where: {
+        projectId: project.id
+      }
+    });
+    const audioAssets = await prisma.asset.findMany({
+      where: {
+        projectId: project.id,
+        type: 'audio'
+      }
+    });
+
+    expect(refreshedProject.status).toBe('queued');
+    expect(refreshedProject.errorMessage).toBeNull();
+    expect(refreshedProject.clipDurationSeconds).toBe(20);
+    expect(refreshedTrack.originalFileName).toBe('replacement.mp3');
+    expect(refreshedTrack.mimeType).toBe('audio/mpeg');
+    expect(audioAssets).toHaveLength(1);
+  });
+
   it('uploads a WAV track, stores it with the original extension and updates project state', async () => {
     const createResponse = await request(app.getHttpServer())
       .post('/projects')
@@ -461,15 +536,15 @@ describe('Projects integration', () => {
       }
     });
 
-      const project = await prisma.project.create({
-        data: {
-          organizationId,
-          createdByUserId: owner.id,
-          title: 'Retry Project',
-          clipDurationSeconds: 40,
-          status: 'failed',
-          errorMessage: 'render failed',
-          track: {
+    const project = await prisma.project.create({
+      data: {
+        organizationId,
+        createdByUserId: owner.id,
+        title: 'Retry Project',
+        clipDurationSeconds: 40,
+        status: 'failed',
+        errorMessage: 'render failed',
+        track: {
           create: {
             originalFileName: 'song.mp3',
             mimeType: 'audio/mpeg',
@@ -480,17 +555,17 @@ describe('Projects integration', () => {
       }
     });
 
-      const retryResponse = await request(app.getHttpServer())
-        .post(`/projects/${project.id}/retry`)
-        .set('Authorization', `Bearer ${authToken}`)
-        .send({
-          clipDurationSeconds: 20
-        })
-        .expect(201);
+    const retryResponse = await request(app.getHttpServer())
+      .post(`/projects/${project.id}/retry`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({
+        clipDurationSeconds: 20
+      })
+      .expect(201);
 
-      expect(retryResponse.body.id).toBe(project.id);
-      expect(retryResponse.body.status).toBe('queued');
-      expect(retryResponse.body.clipDurationSeconds).toBe(20);
+    expect(retryResponse.body.id).toBe(project.id);
+    expect(retryResponse.body.status).toBe('queued');
+    expect(retryResponse.body.clipDurationSeconds).toBe(20);
 
     const refreshedProject = await prisma.project.findUniqueOrThrow({
       where: {
@@ -506,10 +581,25 @@ describe('Projects integration', () => {
       }
     });
 
-      expect(refreshedProject.status).toBe('queued');
-      expect(refreshedProject.clipDurationSeconds).toBe(20);
-      expect(refreshedProject.errorMessage).toBeNull();
+    expect(refreshedProject.status).toBe('queued');
+    expect(refreshedProject.clipDurationSeconds).toBe(20);
+    expect(refreshedProject.errorMessage).toBeNull();
     expect(processingJob?.status).toBe('queued');
     expect(processingJob?.progress).toBe(0);
+  });
+
+  it('rejects retry for projects that are not failed', async () => {
+    const createResponse = await request(app.getHttpServer())
+      .post('/projects')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({
+        title: 'Retry Guard Project'
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/projects/${createResponse.body.id}/retry`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .expect(400);
   });
 });

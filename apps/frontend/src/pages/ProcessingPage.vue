@@ -11,6 +11,10 @@
       </button>
     </section>
 
+    <v-alert v-if="errorMessage" type="error" variant="tonal" class="mb-4">
+      {{ errorMessage }}
+    </v-alert>
+
     <ProjectStatusTimeline
       v-if="statusPayload"
       :status="statusPayload.status"
@@ -44,6 +48,7 @@ import { isTerminalProjectStatus } from '@/utils/project-status';
 })
 export default class ProcessingPage extends Vue {
   intervalId: ReturnType<typeof setInterval> | null = null;
+  errorMessage: string | null = null;
 
   get authStore(): any {
     return useAuthStore();
@@ -62,7 +67,9 @@ export default class ProcessingPage extends Vue {
   }
 
   get statusPayload() {
-    return this.projectsStore.currentStatus;
+    return this.projectsStore.currentStatus?.projectId === this.projectId
+      ? this.projectsStore.currentStatus
+      : null;
   }
 
   async mounted() {
@@ -70,8 +77,14 @@ export default class ProcessingPage extends Vue {
       return;
     }
 
-    await this.projectsStore.fetchProject(this.projectId, this.authStore.token);
-    await this.refreshStatus();
+    try {
+      await this.projectsStore.fetchProject(this.projectId, this.authStore.token);
+      await this.refreshStatus();
+    } catch (error) {
+      this.errorMessage =
+        error instanceof Error ? error.message : 'Falha ao carregar processamento';
+      return;
+    }
 
     this.intervalId = setInterval(() => {
       void this.refreshStatus();
@@ -90,7 +103,16 @@ export default class ProcessingPage extends Vue {
       return;
     }
 
-    const status = await this.projectsStore.fetchStatus(this.projectId, this.authStore.token);
+    let status;
+
+    try {
+      status = await this.projectsStore.fetchStatus(this.projectId, this.authStore.token);
+      this.errorMessage = null;
+    } catch (error) {
+      this.errorMessage =
+        error instanceof Error ? error.message : 'Falha ao consultar status do projeto';
+      return;
+    }
 
     if (isTerminalProjectStatus(status.status)) {
       if (this.intervalId) {

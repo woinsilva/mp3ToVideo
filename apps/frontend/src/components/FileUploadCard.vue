@@ -19,7 +19,7 @@
       </div>
 
       <button class="app-button" type="button" :disabled="!selectedFile || loading" @click="emitUpload">
-        {{ loading ? 'Enviando MP3...' : 'Enviar MP3' }}
+        {{ loading ? loadingLabel : submitLabel }}
       </button>
     </v-card-text>
   </v-card>
@@ -34,6 +34,12 @@ import { Component, Prop, Vue } from 'vue-facing-decorator';
 export default class FileUploadCard extends Vue {
   @Prop({ default: false })
   readonly loading!: boolean;
+
+  @Prop({ default: 'Enviar MP3' })
+  readonly submitLabel!: string;
+
+  @Prop({ default: 'Enviando MP3...' })
+  readonly loadingLabel!: string;
 
   selectedFile: File | null = null;
 

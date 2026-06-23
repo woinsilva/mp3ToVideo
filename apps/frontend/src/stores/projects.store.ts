@@ -83,12 +83,17 @@ export const useProjectsStore = defineStore('projects', {
         this.isLoading = false;
       }
     },
-    async uploadTrack(projectId: string, file: File, token: string) {
+    async uploadTrack(
+      projectId: string,
+      file: File,
+      clipDurationSeconds: number | null,
+      token: string
+    ) {
       this.isLoading = true;
       this.errorMessage = null;
 
       try {
-        const result = await projectsService.upload(projectId, file, token);
+        const result = await projectsService.upload(projectId, file, clipDurationSeconds, token);
 
         if (this.currentProject && this.currentProject.id === projectId) {
           this.currentProject = {

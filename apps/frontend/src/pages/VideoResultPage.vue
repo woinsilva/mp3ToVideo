@@ -76,7 +76,9 @@ export default class VideoResultPage extends Vue {
   }
 
   get statusPayload() {
-    return this.projectsStore.currentStatus;
+    return this.projectsStore.currentStatus?.projectId === this.projectId
+      ? this.projectsStore.currentStatus
+      : null;
   }
 
   get scenes() {

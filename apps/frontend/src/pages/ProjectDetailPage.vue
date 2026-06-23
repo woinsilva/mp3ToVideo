@@ -16,8 +16,10 @@
     <v-row>
       <v-col cols="12" lg="7">
         <FileUploadCard
-          v-if="projectStatus === 'draft'"
+          v-if="projectStatus === 'draft' || projectStatus === 'failed'"
           :loading="loading"
+          :submit-label="projectStatus === 'failed' ? 'Reenviar audio' : 'Enviar MP3'"
+          :loading-label="projectStatus === 'failed' ? 'Reenviando audio...' : 'Enviando MP3...'"
           @upload="uploadTrack"
         />
         <ProjectStatusTimeline
@@ -213,7 +215,12 @@ export default class ProjectDetailPage extends Vue {
     this.errorMessage = null;
 
     try {
-      await this.projectsStore.uploadTrack(this.projectId, file, this.authStore.token);
+      await this.projectsStore.uploadTrack(
+        this.projectId,
+        file,
+        this.normalizedClipDurationSeconds,
+        this.authStore.token
+      );
       await this.projectsStore.fetchStatus(this.projectId, this.authStore.token);
       void this.$router.push({ name: 'processing', params: { id: this.projectId } });
     } catch (error) {

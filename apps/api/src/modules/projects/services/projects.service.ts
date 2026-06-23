@@ -24,6 +24,7 @@ interface CreateProjectInput {
 interface UploadTrackInput {
   organizationId: string;
   projectId: string;
+  clipDurationSeconds?: number;
   file: Express.Multer.File;
 }
 
@@ -47,12 +48,14 @@ export class ProjectsService {
   ) {}
 
   async createProject(input: CreateProjectInput) {
+    const clipDurationSeconds = this.normalizeClipDurationSeconds(input.clipDurationSeconds);
+
     const project = await this.prismaService.project.create({
       data: {
         organizationId: input.organizationId,
         createdByUserId: input.createdByUserId,
         title: input.title.trim(),
-        clipDurationSeconds: input.clipDurationSeconds ?? null,
+        clipDurationSeconds,
         status: ProjectStatus.draft
       }
     });
@@ -129,7 +132,7 @@ export class ProjectsService {
       }
     });
 
-    if (!render) {
+    if (!render || !render.asset) {
       throw new NotFoundException('Render not found');
     }
 
@@ -139,29 +142,31 @@ export class ProjectsService {
   async getProjectDownload(projectId: string, organizationId: string) {
     await this.getOwnedProject(projectId, organizationId);
 
-    const renderAsset = await this.prismaService.asset.findFirst({
+    const render = await this.prismaService.render.findFirst({
       where: {
-        projectId,
-        organizationId,
-        type: AssetType.render
+        projectId
+      },
+      include: {
+        asset: true
       },
       orderBy: {
-        createdAt: 'desc'
+        updatedAt: 'desc'
       }
     });
 
-    if (!renderAsset) {
+    if (!render || render.status !== 'completed' || !render.asset) {
       throw new NotFoundException('Rendered video not found');
     }
 
     return {
       fileName: `${projectId}.mp4`,
-      absolutePath: this.localStorageService.getAbsolutePath(renderAsset.storagePath),
-      mimeType: renderAsset.mimeType
+      absolutePath: this.localStorageService.getAbsolutePath(render.asset.storagePath),
+      mimeType: render.asset.mimeType
     };
   }
 
   async uploadTrack(input: UploadTrackInput) {
+    const clipDurationSeconds = this.normalizeClipDurationSeconds(input.clipDurationSeconds);
     const project = await this.prismaService.project.findUnique({
       where: {
         id: input.projectId
@@ -179,8 +184,18 @@ export class ProjectsService {
       throw new ForbiddenException('Project does not belong to the authenticated organization');
     }
 
-    if (project.track) {
+    if (project.track && project.status !== ProjectStatus.failed) {
       throw new BadRequestException('Project already has an uploaded track');
+    }
+
+    if (project.status !== ProjectStatus.draft && project.status !== ProjectStatus.failed) {
+      throw new BadRequestException('Track upload is only allowed for draft or failed projects');
+    }
+
+    if (project.track && project.status === ProjectStatus.failed) {
+      await this.localStorageService.removePath(
+        this.localStorageService.buildProjectUploadDirectory(input.organizationId, input.projectId)
+      );
     }
 
     const storagePath = await this.localStorageService.saveProjectTrack(
@@ -199,7 +214,8 @@ export class ProjectsService {
           originalFileName: input.file.originalname,
           mimeType: input.file.mimetype,
           sizeBytes: input.file.size,
-          storagePath
+          storagePath,
+          durationSeconds: null
         },
         create: {
           projectId: input.projectId,
@@ -207,6 +223,14 @@ export class ProjectsService {
           mimeType: input.file.mimetype,
           sizeBytes: input.file.size,
           storagePath
+        }
+      });
+
+      await tx.asset.deleteMany({
+        where: {
+          projectId: input.projectId,
+          organizationId: input.organizationId,
+          type: AssetType.audio
         }
       });
 
@@ -226,6 +250,8 @@ export class ProjectsService {
           id: input.projectId
         },
         data: {
+          clipDurationSeconds:
+            clipDurationSeconds !== null ? clipDurationSeconds : project.clipDurationSeconds,
           status: ProjectStatus.uploaded
         }
       });
@@ -233,35 +259,17 @@ export class ProjectsService {
       return track;
     });
 
-    const payload = this.projectProcessingPayloadFactory.build({
-      projectId: input.projectId,
-      organizationId: input.organizationId,
-      requestedByUserId: project.createdByUserId
+    await this.resetDerivedProjectState(input.projectId, input.organizationId, {
+      preserveAudio: true
     });
 
-    const queuedJob = await this.projectProcessingQueueService.enqueue(payload);
-
-    await this.prismaService.$transaction([
-      this.prismaService.processingJob.create({
-        data: {
-          projectId: input.projectId,
-          queueName: PROJECT_QUEUE_NAME,
-          jobName: PROJECT_PROCESS_JOB_NAME,
-          bullJobId: queuedJob.bullJobId,
-          status: 'queued',
-          progress: 0
-        }
-      }),
-      this.prismaService.project.update({
-        where: {
-          id: input.projectId
-        },
-        data: {
-          status: ProjectStatus.queued,
-          errorMessage: null
-        }
-      })
-    ]);
+    await this.queueProjectProcessing({
+      projectId: input.projectId,
+      organizationId: input.organizationId,
+      requestedByUserId: project.createdByUserId,
+      clipDurationSeconds:
+        clipDurationSeconds !== null ? clipDurationSeconds : project.clipDurationSeconds
+    });
 
     return this.projectPresenter.uploadResult(
       input.projectId,
@@ -275,6 +283,7 @@ export class ProjectsService {
     organizationId: string,
     input: RetryProjectInput = {}
   ) {
+    const clipDurationSeconds = this.normalizeClipDurationSeconds(input.clipDurationSeconds);
     const project = await this.prismaService.project.findUnique({
       where: {
         id: projectId
@@ -296,44 +305,156 @@ export class ProjectsService {
       throw new BadRequestException('Project does not have an uploaded track');
     }
 
-    const payload = this.projectProcessingPayloadFactory.build({
-      projectId,
-      organizationId,
-      requestedByUserId: project.createdByUserId
+    if (project.status !== ProjectStatus.failed) {
+      throw new BadRequestException('Only failed projects can be retried');
+    }
+
+    await this.resetDerivedProjectState(projectId, organizationId, {
+      preserveAudio: true
     });
 
-    const queuedJob = await this.projectProcessingQueueService.enqueue(payload);
-
-    await this.prismaService.$transaction([
-      this.prismaService.processingJob.create({
-        data: {
-          projectId,
-          queueName: PROJECT_QUEUE_NAME,
-          jobName: PROJECT_PROCESS_JOB_NAME,
-          bullJobId: queuedJob.bullJobId,
-          status: 'queued',
-          progress: 0,
-          errorMessage: null
-        }
-      }),
-      this.prismaService.project.update({
-        where: {
-          id: projectId
-        },
-        data: {
-          clipDurationSeconds:
-            input.clipDurationSeconds !== undefined
-              ? input.clipDurationSeconds
-              : project.clipDurationSeconds,
-          status: ProjectStatus.queued,
-          errorMessage: null
-        }
-      })
-    ]);
+    await this.queueProjectProcessing({
+      projectId,
+      organizationId,
+      requestedByUserId: project.createdByUserId,
+      clipDurationSeconds:
+        clipDurationSeconds !== null ? clipDurationSeconds : project.clipDurationSeconds
+    });
 
     return this.projectPresenter.summary(
       await this.getOwnedProject(projectId, organizationId)
     );
+  }
+
+  private async queueProjectProcessing(input: {
+    projectId: string;
+    organizationId: string;
+    requestedByUserId: string;
+    clipDurationSeconds?: number | null;
+  }) {
+    const payload = this.projectProcessingPayloadFactory.build({
+      projectId: input.projectId,
+      organizationId: input.organizationId,
+      requestedByUserId: input.requestedByUserId
+    });
+
+    try {
+      const queuedJob = await this.projectProcessingQueueService.enqueue(payload);
+
+      await this.prismaService.$transaction([
+        this.prismaService.processingJob.create({
+          data: {
+            projectId: input.projectId,
+            queueName: PROJECT_QUEUE_NAME,
+            jobName: PROJECT_PROCESS_JOB_NAME,
+            bullJobId: queuedJob.bullJobId,
+            status: 'queued',
+            progress: 0,
+            errorMessage: null
+          }
+        }),
+        this.prismaService.project.update({
+          where: {
+            id: input.projectId
+          },
+          data: {
+            clipDurationSeconds: input.clipDurationSeconds ?? null,
+            status: ProjectStatus.queued,
+            errorMessage: null
+          }
+        })
+      ]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Queue error';
+
+      await this.prismaService.project.update({
+        where: {
+          id: input.projectId
+        },
+        data: {
+          clipDurationSeconds: input.clipDurationSeconds ?? null,
+          status: ProjectStatus.failed,
+          errorMessage: `Failed to enqueue project processing: ${message}`
+        }
+      });
+
+      throw error;
+    }
+  }
+
+  private async resetDerivedProjectState(
+    projectId: string,
+    organizationId: string,
+    options: { preserveAudio: boolean }
+  ) {
+    const removableAssetTypes = [
+      AssetType.image,
+      AssetType.video_scene,
+      AssetType.render,
+      AssetType.subtitle,
+      AssetType.temp
+    ];
+
+    await this.prismaService.$transaction(async (tx) => {
+      await tx.render.deleteMany({
+        where: {
+          projectId
+        }
+      });
+
+      await tx.scene.deleteMany({
+        where: {
+          projectId
+        }
+      });
+
+      await tx.musicSection.deleteMany({
+        where: {
+          projectId
+        }
+      });
+
+      await tx.storyboard.deleteMany({
+        where: {
+          projectId
+        }
+      });
+
+      await tx.lyrics.deleteMany({
+        where: {
+          projectId
+        }
+      });
+
+      await tx.asset.deleteMany({
+        where: {
+          projectId,
+          organizationId,
+          ...(options.preserveAudio
+            ? {
+                type: {
+                  in: removableAssetTypes
+                }
+              }
+            : {})
+        }
+      });
+    });
+
+    await Promise.all([
+      this.localStorageService.removePath(
+        this.localStorageService.buildProjectGeneratedScenesDirectory(organizationId, projectId)
+      ),
+      this.localStorageService.removePath(
+        this.localStorageService.buildProjectGeneratedImagesDirectory(organizationId, projectId)
+      ),
+      this.localStorageService.removePath(
+        this.localStorageService.buildProjectRendersDirectory(organizationId, projectId)
+      ),
+      this.localStorageService.removePath(
+        this.localStorageService.buildProjectTempDirectory(projectId)
+      )
+    ]);
   }
 
   private async getOwnedProject(projectId: string, organizationId: string) {
@@ -350,5 +471,23 @@ export class ProjectsService {
     }
 
     return project;
+  }
+
+  private normalizeClipDurationSeconds(value: number | string | null | undefined): number | null {
+    if (value === undefined || value === null || value === '') {
+      return null;
+    }
+
+    const normalizedValue = typeof value === 'number' ? value : Number(value);
+
+    if (!Number.isFinite(normalizedValue)) {
+      throw new BadRequestException('Clip duration must be a valid number');
+    }
+
+    if (normalizedValue < 1 || normalizedValue > 600) {
+      throw new BadRequestException('Clip duration must be between 1 and 600 seconds');
+    }
+
+    return normalizedValue;
   }
 }

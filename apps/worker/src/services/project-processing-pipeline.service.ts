@@ -81,14 +81,23 @@ export class ProjectProcessingPipelineService {
         )
       : project.track.storagePath;
 
+    const generatedLyrics =
+      project.lyrics?.source === 'manual'
+        ? null
+        : await this.lyricsGenerationService.build(project.title, effectiveAudioPath);
     const lyrics =
-      project.lyrics ??
-      (await this.prismaService.lyrics.create({
-        data: {
-          projectId: project.id,
-          ...(await this.lyricsGenerationService.build(project.title, effectiveAudioPath))
-        }
-      }));
+      project.lyrics?.source === 'manual'
+        ? project.lyrics
+        : await this.prismaService.lyrics.upsert({
+            where: {
+              projectId: project.id
+            },
+            update: generatedLyrics!,
+            create: {
+              projectId: project.id,
+              ...generatedLyrics!
+            }
+          });
 
     const sections = this.musicStructureService.build(
       effectiveDurationSeconds,
