@@ -29,6 +29,12 @@ interface BuildMuxAudioCommandInput {
   outputPath: string;
 }
 
+interface BuildTrimAudioCommandInput {
+  audioPath: string;
+  durationSeconds: number;
+  outputPath: string;
+}
+
 @Injectable()
 export class FfmpegCommandBuilderService {
   buildSceneClipArgs(input: BuildSceneClipCommandInput): string[] {
@@ -101,6 +107,18 @@ export class FfmpegCommandBuilderService {
       '-c:a',
       'aac',
       '-shortest',
+      input.outputPath
+    ];
+  }
+
+  buildTrimAudioArgs(input: BuildTrimAudioCommandInput): string[] {
+    return [
+      '-y',
+      '-i',
+      input.audioPath,
+      '-t',
+      String(input.durationSeconds),
+      '-vn',
       input.outputPath
     ];
   }

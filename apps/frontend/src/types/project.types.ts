@@ -13,6 +13,7 @@ export type ProjectStatus =
 export interface ProjectSummary {
   id: string;
   title: string;
+  clipDurationSeconds: number | null;
   status: ProjectStatus;
   createdAt: string;
   updatedAt: string;

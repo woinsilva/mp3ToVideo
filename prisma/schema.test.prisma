@@ -116,6 +116,7 @@ model Project {
   organizationId  String
   createdByUserId String
   title           String
+  clipDurationSeconds Float?
   status          ProjectStatus   @default(draft)
   errorMessage    String?
   createdAt       DateTime        @default(now())

@@ -18,6 +18,7 @@ interface CreateProjectInput {
   organizationId: string;
   createdByUserId: string;
   title: string;
+  clipDurationSeconds?: number;
 }
 
 interface UploadTrackInput {
@@ -47,6 +48,7 @@ export class ProjectsService {
         organizationId: input.organizationId,
         createdByUserId: input.createdByUserId,
         title: input.title.trim(),
+        clipDurationSeconds: input.clipDurationSeconds ?? null,
         status: ProjectStatus.draft
       }
     });

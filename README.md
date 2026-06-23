@@ -6,10 +6,11 @@ Fluxo atual:
 
 1. usuario cria conta
 2. usuario cria projeto
-3. usuario envia MP3
-4. API salva o audio e cria job BullMQ
-5. worker processa audio, storyboard, cenas e render
-6. frontend acompanha progresso e permite baixar o MP4 final
+3. usuario pode definir quantos primeiros segundos da musica quer transformar em clipe
+4. usuario envia MP3
+5. API salva o audio e cria job BullMQ
+6. worker processa audio, storyboard, cenas e render
+7. frontend acompanha progresso e permite baixar o MP4 final
 
 ## Stack
 
@@ -229,6 +230,7 @@ Implementado:
 - renderizacao MP4 com FFmpeg
 - API de status, cenas, render e download
 - frontend MVP para executar o fluxo completo
+- opcao de limitar o clipe aos primeiros segundos da musica
 - testes unitarios e integrados no monorepo
 
 Ainda nao implementado:

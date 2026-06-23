@@ -1,5 +1,5 @@
 import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, extname, join, resolve } from 'node:path';
 
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -49,6 +49,13 @@ export class RenderStorageService {
     const root = this.configService.get<string>('storage.root', './storage');
 
     return join(root, 'temp', projectId, 'video-track.mp4').replace(/\\/g, '/');
+  }
+
+  buildTrimmedAudioPath(projectId: string, sourceAudioPath: string): string {
+    const root = this.configService.get<string>('storage.root', './storage');
+    const extension = extname(sourceAudioPath) || '.mp3';
+
+    return join(root, 'temp', projectId, `trimmed-audio${extension}`).replace(/\\/g, '/');
   }
 
   buildFinalRenderPath(organizationId: string, projectId: string): string {

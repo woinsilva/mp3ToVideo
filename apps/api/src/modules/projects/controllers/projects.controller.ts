@@ -39,7 +39,8 @@ export class ProjectsController {
     return this.projectsService.createProject({
       organizationId: user.organizationId,
       createdByUserId: user.userId,
-      title: input.title
+      title: input.title,
+      clipDurationSeconds: input.clipDurationSeconds
     });
   }
 

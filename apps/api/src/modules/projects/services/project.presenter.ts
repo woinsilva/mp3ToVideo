@@ -16,6 +16,7 @@ export class ProjectPresenter {
     return {
       id: project.id,
       title: project.title,
+      clipDurationSeconds: project.clipDurationSeconds,
       status: project.status,
       createdAt: project.createdAt,
       updatedAt: project.updatedAt

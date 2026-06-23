@@ -12,12 +12,15 @@ class ProjectsService {
     return apiService.request<ProjectSummary[]>('/projects', {}, token);
   }
 
-  create(title: string, token: string) {
+  create(title: string, clipDurationSeconds: number | null, token: string) {
     return apiService.request<ProjectSummary>(
       '/projects',
       {
         method: 'POST',
-        body: JSON.stringify({ title })
+        body: JSON.stringify({
+          title,
+          clipDurationSeconds
+        })
       },
       token
     );

@@ -3,6 +3,7 @@ import { ProjectStatus, SceneStatus } from '@prisma/client';
 import type { ProjectProcessingJobPayload } from '@video/shared';
 
 import { PrismaService } from '../database/prisma.service';
+import { AudioExcerptService } from './audio-excerpt.service';
 import { AudioMetadataService } from './audio-metadata.service';
 import { LyricsGenerationService } from './lyrics-generation.service';
 import { MusicStructureService } from './music-structure.service';
@@ -21,6 +22,8 @@ export class ProjectProcessingPipelineService {
     private readonly projectPipelineStateService: ProjectPipelineStateService,
     @Inject(AudioMetadataService)
     private readonly audioMetadataService: AudioMetadataService,
+    @Inject(AudioExcerptService)
+    private readonly audioExcerptService: AudioExcerptService,
     @Inject(LyricsGenerationService)
     private readonly lyricsGenerationService: LyricsGenerationService,
     @Inject(MusicStructureService)
@@ -54,26 +57,43 @@ export class ProjectProcessingPipelineService {
 
     await this.projectPipelineStateService.update(project.id, ProjectStatus.analyzing, 25);
 
-    const durationSeconds = await this.audioMetadataService.resolveDurationSeconds(project.track.storagePath);
+    const sourceDurationSeconds = await this.audioMetadataService.resolveDurationSeconds(
+      project.track.storagePath
+    );
     await this.prismaService.track.update({
       where: {
         id: project.track.id
       },
       data: {
-        durationSeconds
+        durationSeconds: sourceDurationSeconds
       }
     });
+
+    const requestedClipDurationSeconds = project.clipDurationSeconds
+      ? Math.min(project.clipDurationSeconds, sourceDurationSeconds)
+      : null;
+    const effectiveDurationSeconds = requestedClipDurationSeconds ?? sourceDurationSeconds;
+    const effectiveAudioPath = requestedClipDurationSeconds
+      ? await this.audioExcerptService.buildInitialExcerpt(
+          project.id,
+          project.track.storagePath,
+          effectiveDurationSeconds
+        )
+      : project.track.storagePath;
 
     const lyrics =
       project.lyrics ??
       (await this.prismaService.lyrics.create({
         data: {
           projectId: project.id,
-          ...(await this.lyricsGenerationService.build(project.title, project.track.storagePath))
+          ...(await this.lyricsGenerationService.build(project.title, effectiveAudioPath))
         }
       }));
 
-    const sections = this.musicStructureService.build(durationSeconds, lyrics.normalizedText);
+    const sections = this.musicStructureService.build(
+      effectiveDurationSeconds,
+      lyrics.normalizedText
+    );
 
     const createdSections = await this.prismaService.$transaction(async (tx) => {
       await tx.scenePrompt.deleteMany({
@@ -136,7 +156,7 @@ export class ProjectProcessingPipelineService {
     await this.projectPipelineStateService.update(project.id, ProjectStatus.generating_scenes, 85);
 
     const scenes = this.scenePlanningService.build(
-      durationSeconds,
+      effectiveDurationSeconds,
       sections,
       storyboard.narrativeSummary
     );
@@ -181,8 +201,8 @@ export class ProjectProcessingPipelineService {
     await this.projectRenderService.render({
       organizationId: payload.organizationId,
       projectId: project.id,
-      audioPath: project.track.storagePath,
-      durationSeconds,
+      audioPath: effectiveAudioPath,
+      durationSeconds: effectiveDurationSeconds,
       scenes: persistedScenes.map((scene) => ({
         id: scene.id,
         title: scene.title,

@@ -104,4 +104,24 @@ describe('FfmpegCommandBuilderService', () => {
       'C:/tmp/final.mp4'
     ]);
   });
+
+  it('builds trim audio commands for excerpt generation', () => {
+    const service = new FfmpegCommandBuilderService();
+
+    expect(
+      service.buildTrimAudioArgs({
+        audioPath: 'C:/tmp/original.mp3',
+        durationSeconds: 20,
+        outputPath: 'C:/tmp/trimmed.mp3'
+      })
+    ).toEqual([
+      '-y',
+      '-i',
+      'C:/tmp/original.mp3',
+      '-t',
+      '20',
+      '-vn',
+      'C:/tmp/trimmed.mp3'
+    ]);
+  });
 });

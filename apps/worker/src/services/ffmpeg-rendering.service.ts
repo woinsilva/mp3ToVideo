@@ -87,4 +87,17 @@ export class FfmpegRenderingService {
       })
     );
   }
+
+  async trimAudio(audioPath: string, durationSeconds: number, outputPath: string): Promise<void> {
+    const ffmpegPath = this.configService.get<string>('rendering.ffmpegPath', 'ffmpeg');
+
+    await execFileAsync(
+      ffmpegPath,
+      this.ffmpegCommandBuilderService.buildTrimAudioArgs({
+        audioPath,
+        durationSeconds,
+        outputPath
+      })
+    );
+  }
 }

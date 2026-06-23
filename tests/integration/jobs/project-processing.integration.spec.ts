@@ -16,6 +16,7 @@ import { ProjectProcessingQueueService } from '../../../apps/api/src/modules/job
 import { PrismaService as WorkerPrismaService } from '../../../apps/worker/src/database/prisma.service';
 import { ProjectProcessor } from '../../../apps/worker/src/processors/project.processor';
 import { AudioMetadataService } from '../../../apps/worker/src/services/audio-metadata.service';
+import { AudioExcerptService } from '../../../apps/worker/src/services/audio-excerpt.service';
 import { LyricsFallbackService } from '../../../apps/worker/src/services/lyrics-fallback.service';
 import { LyricsGenerationService } from '../../../apps/worker/src/services/lyrics-generation.service';
 import { MusicStructureService } from '../../../apps/worker/src/services/music-structure.service';
@@ -130,7 +131,8 @@ describe('Project processing integration', () => {
       .post('/projects')
       .set('Authorization', `Bearer ${authToken}`)
       .send({
-        title: 'Queued Project'
+        title: 'Queued Project',
+        clipDurationSeconds: 20
       })
       .expect(201);
 
@@ -317,6 +319,9 @@ describe('Project processing integration', () => {
         prisma as unknown as WorkerPrismaService,
         new ProjectPipelineStateService(prisma as unknown as WorkerPrismaService),
         new AudioMetadataService(configService),
+        {
+          buildInitialExcerpt: async () => sampleMp3Path
+        } as AudioExcerptService,
         lyricsGenerationService,
         new MusicStructureService(),
         storyboardGenerationService,
@@ -403,18 +408,18 @@ describe('Project processing integration', () => {
     expect(lyrics?.source).toBe('mock');
     expect(sections.length).toBeGreaterThan(0);
     expect(sections[0]?.startSeconds).toBe(0);
-    expect(sections.at(-1)?.endSeconds).toBe(30);
+    expect(sections.at(-1)?.endSeconds).toBe(20);
     expect(storyboard?.visualStyle).toBe('cinematic music video');
     expect(scenes.length).toBeGreaterThan(0);
     expect(scenes.every((scene) => scene.prompt)).toBe(true);
     expect(scenes.every((scene) => scene.status === 'completed')).toBe(true);
     expect(scenes.every((scene) => scene.videoAssetId)).toBe(true);
     expect(scenes[0]?.startSeconds).toBe(0);
-    expect(scenes.at(-1)?.endSeconds).toBe(30);
+    expect(scenes.at(-1)?.endSeconds).toBe(20);
     expect(scenes.every((scene) => scene.durationSeconds >= 4 && scene.durationSeconds <= 10)).toBe(true);
     expect(sceneAssets).toHaveLength(scenes.length);
     expect(render?.status).toBe('completed');
-    expect(render?.durationSeconds).toBe(30);
+    expect(render?.durationSeconds).toBe(20);
     expect(render?.assetId).toBe(renderAsset?.id);
     expect(renderAsset?.mimeType).toBe('video/mp4');
     expect(readFileSync(resolve(renderAsset?.storagePath ?? '')).length).toBeGreaterThan(0);

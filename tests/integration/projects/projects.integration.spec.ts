@@ -145,11 +145,13 @@ describe('Projects integration', () => {
       .post('/projects')
       .set('Authorization', `Bearer ${authToken}`)
       .send({
-        title: 'My First Clip'
+        title: 'My First Clip',
+        clipDurationSeconds: 20
       })
       .expect(201);
 
     expect(createResponse.body.title).toBe('My First Clip');
+    expect(createResponse.body.clipDurationSeconds).toBe(20);
     expect(createResponse.body.status).toBe('draft');
 
     const listResponse = await request(app.getHttpServer())
@@ -159,6 +161,7 @@ describe('Projects integration', () => {
 
     expect(listResponse.body).toHaveLength(1);
     expect(listResponse.body[0].title).toBe('My First Clip');
+    expect(listResponse.body[0].clipDurationSeconds).toBe(20);
 
     const detailResponse = await request(app.getHttpServer())
       .get(`/projects/${createResponse.body.id}`)
@@ -166,6 +169,7 @@ describe('Projects integration', () => {
       .expect(200);
 
     expect(detailResponse.body.id).toBe(createResponse.body.id);
+    expect(detailResponse.body.clipDurationSeconds).toBe(20);
     expect(detailResponse.body.status).toBe('draft');
   });
 

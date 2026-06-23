@@ -114,6 +114,7 @@ describe('Prisma schema integration', () => {
         organizationId: organization.id,
         createdByUserId: user.id,
         title: 'Integration Project',
+        clipDurationSeconds: 20,
         status: ProjectStatus.uploaded,
         track: {
           create: {
@@ -225,6 +226,7 @@ describe('Prisma schema integration', () => {
     });
 
     expect(hydratedProject?.track?.originalFileName).toBe('song.mp3');
+    expect(hydratedProject?.clipDurationSeconds).toBe(20);
     expect(hydratedProject?.lyrics?.source).toBe('manual');
     expect(hydratedProject?.musicSections).toHaveLength(1);
     expect(hydratedProject?.storyboard?.concept).toBe('Night drive');

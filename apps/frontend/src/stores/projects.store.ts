@@ -47,12 +47,12 @@ export const useProjectsStore = defineStore('projects', {
         this.isLoading = false;
       }
     },
-    async createProject(title: string, token: string) {
+    async createProject(title: string, clipDurationSeconds: number | null, token: string) {
       this.isLoading = true;
       this.errorMessage = null;
 
       try {
-        const project = await projectsService.create(title, token);
+        const project = await projectsService.create(title, clipDurationSeconds, token);
         this.projects = [project, ...this.projects];
         this.currentProject = project;
 
