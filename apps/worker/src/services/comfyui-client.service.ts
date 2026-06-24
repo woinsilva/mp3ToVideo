@@ -71,10 +71,25 @@ export class ComfyUiClientService {
       return null;
     }
 
-    const checkpointName = this.configService.get<string>(
-      'visual.comfyuiCheckpointName',
-      'sd_xl_turbo_1.0.safetensors'
+    const imageFallbackEnabled = this.configService.get<boolean>(
+      'visual.comfyuiEnableImageFallback',
+      false
     );
+
+    if (!imageFallbackEnabled) {
+      this.logger.debug('[ComfyUI Image] Image fallback disabled by COMFYUI_ENABLE_IMAGE_FALLBACK=false');
+      return null;
+    }
+
+    const checkpointName = this.configService.get<string>('visual.comfyuiCheckpointName', '').trim();
+
+    if (!checkpointName) {
+      this.logger.warn(
+        '[ComfyUI Image] Image fallback enabled, but COMFYUI_CHECKPOINT_NAME is empty. Skipping image generation.'
+      );
+      return null;
+    }
+
     const width = this.configService.get<number>('visual.comfyuiWidth', 1024);
     const height = this.configService.get<number>('visual.comfyuiHeight', 576);
     const steps = this.configService.get<number>('visual.comfyuiSteps', 20);
@@ -286,7 +301,7 @@ export class ComfyUiClientService {
 
   private async waitForHistory(promptId: string): Promise<ComfyUiHistoryEntry> {
     const baseUrl = this.configService.get<string>('visual.comfyuiBaseUrl', 'http://localhost:8188');
-    const timeoutMs = this.configService.get<number>('visual.comfyuiTimeoutMs', 300000);
+    const timeoutMs = this.configService.get<number>('visual.comfyuiTimeoutMs', 1200000);
     const pollIntervalMs = this.configService.get<number>('visual.comfyuiPollIntervalMs', 3000);
     const deadline = Date.now() + timeoutMs;
     let pollCount = 0;

@@ -34,11 +34,11 @@ export const configuration = () => ({
     comfyuiOutputHostPath: resolveFromWorkspaceRoot(
       process.env.COMFYUI_OUTPUT_HOST_PATH ?? './storage/comfyui/output'
     ),
-    comfyuiTimeoutMs: Number(process.env.COMFYUI_TIMEOUT_MS ?? 300000),
+    comfyuiTimeoutMs: Number(process.env.COMFYUI_TIMEOUT_MS ?? 1200000),
     comfyuiPollIntervalMs: Number(process.env.COMFYUI_POLL_INTERVAL_MS ?? 3000),
     comfyuiWorkflowPath: process.env.COMFYUI_WORKFLOW_PATH ?? '',
-    comfyuiCheckpointName:
-      process.env.COMFYUI_CHECKPOINT_NAME ?? 'sd_xl_turbo_1.0.safetensors',
+    comfyuiEnableImageFallback: process.env.COMFYUI_ENABLE_IMAGE_FALLBACK === 'true',
+    comfyuiCheckpointName: process.env.COMFYUI_CHECKPOINT_NAME ?? '',
     comfyuiVideoUnetName:
       process.env.COMFYUI_VIDEO_UNET_NAME ?? 'wan2.2_ti2v_5B_fp16.safetensors',
     comfyuiVideoClipName:

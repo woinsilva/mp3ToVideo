@@ -264,6 +264,21 @@ export class ProjectProcessingPipelineService {
       }
     );
 
+    for (const [index, scene] of scenes.entries()) {
+      const planningProgress = Math.min(89, 86 + Math.round(((index + 1) / scenes.length) * 3));
+      await this.processingProgressService.heartbeat(
+        project.id,
+        planningProgress,
+        `Cena ${index + 1} planejada: ${scene.title}.`,
+        {
+          stage: 'generating_scenes',
+          message:
+            `Cena ${index + 1}/${scenes.length} planejada: ${scene.title}. ` +
+            `Descricao: ${scene.description}`
+        }
+      );
+    }
+
     const scenePromptDrafts: ScenePromptDraft[] = [];
 
     for (const [index, scene] of scenes.entries()) {

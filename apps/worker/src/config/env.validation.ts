@@ -25,9 +25,10 @@ export const envValidationSchema = Joi.object({
     .uri({ scheme: ['http', 'https'] })
     .default('http://localhost:8188'),
   COMFYUI_OUTPUT_HOST_PATH: Joi.string().default('./storage/comfyui/output'),
-  COMFYUI_TIMEOUT_MS: Joi.number().integer().positive().default(300000),
+  COMFYUI_TIMEOUT_MS: Joi.number().integer().positive().default(1200000),
   COMFYUI_POLL_INTERVAL_MS: Joi.number().integer().positive().default(3000),
-  COMFYUI_CHECKPOINT_NAME: Joi.string().default('sd_xl_turbo_1.0.safetensors'),
+  COMFYUI_ENABLE_IMAGE_FALLBACK: Joi.boolean().truthy('true').falsy('false').default(false),
+  COMFYUI_CHECKPOINT_NAME: Joi.string().allow('').default(''),
   COMFYUI_VIDEO_UNET_NAME: Joi.string().default('wan2.2_ti2v_5B_fp16.safetensors'),
   COMFYUI_VIDEO_CLIP_NAME: Joi.string().default('umt5_xxl_fp8_e4m3fn_scaled.safetensors'),
   COMFYUI_VIDEO_CLIP_TYPE: Joi.string().default('wan'),

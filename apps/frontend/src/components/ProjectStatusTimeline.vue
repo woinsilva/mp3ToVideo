@@ -32,26 +32,48 @@
         {{ errorMessage }}
       </v-alert>
 
-      <div v-if="recentActivity.length" class="d-flex flex-column ga-2">
-        <h4 class="section-title activity-title">Atividade recente</h4>
-        <div
-          v-for="entry in recentActivity"
-          :key="entry.timestamp + entry.message"
-          class="activity-entry"
-        >
-          <div class="activity-entry__topline">
-            <span>{{ formatActivityTimestamp(entry.timestamp) }}</span>
-            <v-chip
-              v-if="entry.provider"
-              :color="getProviderColor(entry.provider)"
-              size="x-small"
-              class="text-uppercase font-weight-bold px-2"
-              variant="flat"
-            >
-              {{ formatProvider(entry.provider) }}
-            </v-chip>
+      <div v-if="allActivity.length" class="d-flex flex-column ga-2">
+        <div class="activity-header">
+          <h4 class="section-title activity-title">Historico completo do pipeline</h4>
+          <v-chip size="small" variant="tonal">{{ allActivity.length }} eventos</v-chip>
+        </div>
+        <div class="activity-list">
+          <div
+            v-for="entry in allActivity"
+            :key="entry.timestamp + entry.message"
+            class="activity-entry"
+          >
+            <div class="activity-entry__topline">
+              <span>{{ formatActivityTimestamp(entry.timestamp) }}</span>
+              <div class="activity-entry__chips">
+                <v-chip
+                  size="x-small"
+                  class="text-uppercase font-weight-bold px-2"
+                  variant="outlined"
+                >
+                  {{ formatStage(entry.stage) }}
+                </v-chip>
+                <v-chip
+                  v-if="entry.progress !== null"
+                  size="x-small"
+                  class="text-uppercase font-weight-bold px-2"
+                  variant="outlined"
+                >
+                  {{ entry.progress }}%
+                </v-chip>
+                <v-chip
+                  v-if="entry.provider"
+                  :color="getProviderColor(entry.provider)"
+                  size="x-small"
+                  class="text-uppercase font-weight-bold px-2"
+                  variant="flat"
+                >
+                  {{ formatProvider(entry.provider) }}
+                </v-chip>
+              </div>
+            </div>
+            <p class="activity-entry__message">{{ entry.message }}</p>
           </div>
-          <p class="activity-entry__message">{{ entry.message }}</p>
         </div>
       </div>
     </v-card-text>
@@ -111,8 +133,8 @@ export default class ProjectStatusTimeline extends Vue {
     return formatRelativeStatusUpdate(this.lastUpdatedAt);
   }
 
-  get recentActivity(): ProjectStatusActivityEntry[] {
-    return [...this.activityLog].slice(-6).reverse();
+  get allActivity(): ProjectStatusActivityEntry[] {
+    return [...this.activityLog].reverse();
   }
 
   formatActivityTimestamp(value: string): string {
@@ -136,6 +158,17 @@ export default class ProjectStatusTimeline extends Vue {
     if (provider === 'procedural') return 'Fallback';
     return provider;
   }
+
+  formatStage(stage: string): string {
+    if (stage === 'processing') return 'Preparacao';
+    if (stage === 'analyzing') return 'Analise';
+    if (stage === 'storyboarding') return 'Storyboard';
+    if (stage === 'generating_scenes') return 'Cenas';
+    if (stage === 'rendering') return 'Render';
+    if (stage === 'completed') return 'Concluido';
+    if (stage === 'failed') return 'Falhou';
+    return stage;
+  }
 }
 </script>
 
@@ -148,6 +181,22 @@ export default class ProjectStatusTimeline extends Vue {
   font-size: 0.95rem;
 }
 
+.activity-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.activity-list {
+  max-height: 32rem;
+  overflow-y: auto;
+  padding-right: 0.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
 .activity-entry {
   border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
   border-radius: 16px;
@@ -158,6 +207,7 @@ export default class ProjectStatusTimeline extends Vue {
 .activity-entry__topline {
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
   gap: 1rem;
   color: rgba(var(--v-theme-on-surface), 0.56);
   font-size: 0.8rem;
@@ -165,8 +215,33 @@ export default class ProjectStatusTimeline extends Vue {
   letter-spacing: 0.04em;
 }
 
+.activity-entry__chips {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
 .activity-entry__message {
   margin: 0.35rem 0 0;
   color: rgba(var(--v-theme-on-surface), 0.88);
+  white-space: pre-line;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.activity-list::-webkit-scrollbar {
+  width: 10px;
+}
+
+.activity-list::-webkit-scrollbar-thumb {
+  background: rgba(var(--v-theme-on-surface), 0.18);
+  border-radius: 999px;
+}
+
+.activity-list::-webkit-scrollbar-track {
+  background: rgba(var(--v-theme-on-surface), 0.04);
+  border-radius: 999px;
 }
 </style>

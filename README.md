@@ -63,6 +63,7 @@ Variaveis importantes:
 - `WHISPER_MODEL`
 - `SCENE_VISUAL_PROVIDER`
 - `COMFYUI_BASE_URL`
+- `COMFYUI_ENABLE_IMAGE_FALLBACK`
 - `COMFYUI_CHECKPOINT_NAME`
 - `COMFYUI_MODELS_HOST_PATH`
 - `COMFYUI_CUSTOM_NODES_HOST_PATH`
@@ -112,7 +113,8 @@ Se quiser geracao visual local por prompt:
 
 - deixe `SCENE_VISUAL_PROVIDER=comfyui`
 - suba o ComfyUI localmente em `http://localhost:8188` ou via Docker Compose com o profile `comfyui`
-- configure um checkpoint compativel em `COMFYUI_CHECKPOINT_NAME`
+- se quiser fallback por imagem, habilite `COMFYUI_ENABLE_IMAGE_FALLBACK=true` e configure um checkpoint compativel em `COMFYUI_CHECKPOINT_NAME`
+- se estiver usando apenas o workflow WAN de video, deixe `COMFYUI_ENABLE_IMAGE_FALLBACK=false`
 
 Sem ComfyUI ativo, o worker continua no modo `procedural` e gera cenas baseadas em composicao simples no `ffmpeg`.
 

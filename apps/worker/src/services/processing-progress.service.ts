@@ -11,6 +11,8 @@ interface ProcessingActivityInput {
   provider?: string | null;
 }
 
+const ACTIVITY_LOG_LIMIT = 200;
+
 @Injectable()
 export class ProcessingProgressService {
   constructor(
@@ -73,6 +75,6 @@ export class ProcessingProgressService {
       timestamp: new Date().toISOString()
     });
 
-    return entries.slice(-20) as Prisma.InputJsonValue;
+    return entries.slice(-ACTIVITY_LOG_LIMIT) as Prisma.InputJsonValue;
   }
 }
