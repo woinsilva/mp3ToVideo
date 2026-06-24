@@ -39,19 +39,18 @@ services:
       start_period: 20s
 
   ollama-model:
-    image: ollama/ollama
+    image: curlimages/curl:8.12.1
     container_name: video-ollama-model
     depends_on:
       ollama:
         condition: service_healthy
     restart: "no"
     environment:
-      OLLAMA_HOST: http://ollama:11434
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:8b}
-    entrypoint: ["/bin/sh", "-c"]
-    command: ollama pull "$${OLLAMA_MODEL}"
-    volumes:
-      - ollama_data:/root/.ollama
+    command:
+      - /bin/sh
+      - -c
+      - 'curl -fsS http://ollama:11434/api/pull -d "{\"model\":\"$${OLLAMA_MODEL}\",\"stream\":false}"'
 
   comfyui:
     profiles: ["comfyui"]

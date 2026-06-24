@@ -81,6 +81,19 @@ Se quiser preparar o modelo local do Ollama junto com a infra, use:
 docker compose up -d ollama ollama-model
 ```
 
+Se o objetivo for apenas baixar ou atualizar o modelo do `Ollama`, o caminho recomendado e:
+
+```bash
+docker compose up -d ollama
+docker compose up ollama-model
+```
+
+Validar modelos instalados:
+
+```bash
+docker exec video-ollama ollama list
+```
+
 Dependencias:
 
 ```bash
