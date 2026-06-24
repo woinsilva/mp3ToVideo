@@ -24,6 +24,9 @@ export class ProjectProcessor {
 
   async process(job: Pick<Job<ProjectProcessingJobPayload>, 'id' | 'data'>): Promise<void> {
     const bullJobId = String(job.id);
+    console.log(
+      `[worker] starting project processing projectId=${job.data.projectId} bullJobId=${bullJobId}`
+    );
 
     await this.upsertProcessingJob(job.data.projectId, bullJobId, ProcessingJobStatus.active, 10);
     await this.processingProgressService.heartbeat(job.data.projectId, 10);
@@ -47,6 +50,9 @@ export class ProjectProcessor {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown processing error';
+      console.error(
+        `[worker] project processing failed projectId=${job.data.projectId} bullJobId=${bullJobId}: ${message}`
+      );
 
       await this.upsertProcessingJob(
         job.data.projectId,
@@ -62,6 +68,10 @@ export class ProjectProcessor {
 
       throw error;
     }
+
+    console.log(
+      `[worker] completed project processing projectId=${job.data.projectId} bullJobId=${bullJobId}`
+    );
   }
 
   private async updateProject(

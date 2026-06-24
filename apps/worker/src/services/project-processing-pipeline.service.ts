@@ -11,6 +11,7 @@ import { ProjectPipelineStateService } from './project-pipeline-state.service';
 import { ProjectRenderService } from './project-render.service';
 import { ScenePlanningService } from './scene-planning.service';
 import { ScenePromptGenerationService } from './scene-prompt-generation.service';
+import type { ScenePromptDraft } from './scene-prompt.service';
 import { StoryboardGenerationService } from './storyboard-generation.service';
 
 @Injectable()
@@ -170,9 +171,15 @@ export class ProjectProcessingPipelineService {
       storyboard.narrativeSummary
     );
 
+    const scenePromptDrafts: ScenePromptDraft[] = [];
+
+    for (const scene of scenes) {
+      const promptDraft = await this.scenePromptGenerationService.build(scene, storyboard);
+      scenePromptDrafts.push(promptDraft);
+    }
+
     await this.prismaService.$transaction(async (tx) => {
       for (const [index, scene] of scenes.entries()) {
-        const promptDraft = await this.scenePromptGenerationService.build(scene, storyboard);
         const createdScene = await tx.scene.create({
           data: {
             projectId: project.id,
@@ -190,7 +197,7 @@ export class ProjectProcessingPipelineService {
         await tx.scenePrompt.create({
           data: {
             sceneId: createdScene.id,
-            ...promptDraft
+            ...scenePromptDrafts[index]
           }
         });
       }
