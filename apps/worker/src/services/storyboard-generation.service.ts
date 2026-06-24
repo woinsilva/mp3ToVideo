@@ -7,11 +7,11 @@ import {
 } from './storyboard-fallback.service';
 
 interface StoryboardOllamaResponse {
-  concept?: string;
-  visualStyle?: string;
-  mood?: string;
-  colorPalette?: string;
-  narrativeSummary?: string;
+  concept?: unknown;
+  visualStyle?: unknown;
+  mood?: unknown;
+  colorPalette?: unknown;
+  narrativeSummary?: unknown;
 }
 
 @Injectable()
@@ -43,22 +43,58 @@ export class StoryboardGenerationService {
       }
     ]);
 
-    if (
-      generated?.concept &&
-      generated.visualStyle &&
-      generated.mood &&
-      generated.colorPalette &&
-      generated.narrativeSummary
-    ) {
+    const concept = this.normalizeTextField(generated?.concept);
+    const visualStyle = this.normalizeTextField(generated?.visualStyle);
+    const mood = this.normalizeTextField(generated?.mood);
+    const colorPalette = this.normalizeTextField(generated?.colorPalette);
+    const narrativeSummary = this.normalizeTextField(generated?.narrativeSummary);
+
+    if (concept && visualStyle && mood && colorPalette && narrativeSummary) {
       return {
-        concept: generated.concept.trim(),
-        visualStyle: generated.visualStyle.trim(),
-        mood: generated.mood.trim(),
-        colorPalette: generated.colorPalette.trim(),
-        narrativeSummary: generated.narrativeSummary.trim()
+        concept,
+        visualStyle,
+        mood,
+        colorPalette,
+        narrativeSummary
       };
     }
 
     return this.storyboardFallbackService.build(projectTitle, normalizedLyrics);
+  }
+
+  private normalizeTextField(value: unknown): string | null {
+    if (typeof value === 'string') {
+      const normalized = value.trim();
+      return normalized ? normalized : null;
+    }
+
+    if (Array.isArray(value)) {
+      const normalized = value
+        .map((item) => this.normalizeTextField(item))
+        .filter((item): item is string => Boolean(item))
+        .join(', ')
+        .trim();
+
+      return normalized ? normalized : null;
+    }
+
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return String(value);
+    }
+
+    if (value && typeof value === 'object') {
+      const record = value as Record<string, unknown>;
+      const preferredKeys = ['text', 'value', 'label', 'name', 'summary', 'description'];
+
+      for (const key of preferredKeys) {
+        const normalized = this.normalizeTextField(record[key]);
+
+        if (normalized) {
+          return normalized;
+        }
+      }
+    }
+
+    return null;
   }
 }
