@@ -432,20 +432,12 @@ export class ComfyUiClientService {
   private handleFailure(error: unknown, operation: string): ComfyUiGenerationResult | null {
     const message = error instanceof Error ? error.message : `Unknown ComfyUI ${operation} error`;
     const stack = error instanceof Error ? error.stack : undefined;
-    const allowFallbacks = this.configService.get<boolean>('ai.enableFallbacks', true);
 
     this.logger.error(
       `[ComfyUI] ${operation} FAILED: ${message}${stack ? `\nStack: ${stack}` : ''}`
     );
 
-    if (!allowFallbacks) {
-      throw new Error(`ComfyUI ${operation} failed (fallbacks disabled): ${message}`);
-    }
-
-    this.logger.warn(
-      `[ComfyUI] Allowing fallback after ${operation} failure because ENABLE_AI_FALLBACKS=true`
-    );
-    return null;
+    throw new Error(`ComfyUI ${operation} failed: ${message}`);
   }
 
   private randomSeed(): number {

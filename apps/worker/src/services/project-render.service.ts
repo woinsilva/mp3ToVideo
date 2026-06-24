@@ -1,6 +1,7 @@
 import { stat, writeFile } from 'node:fs/promises';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { AssetType, RenderStatus, SceneStatus } from '@prisma/client';
 
 import { PrismaService } from '../database/prisma.service';
@@ -32,6 +33,8 @@ export class ProjectRenderService {
   constructor(
     @Inject(PrismaService)
     private readonly prismaService: PrismaService,
+    @Inject(ConfigService)
+    private readonly configService: ConfigService,
     @Inject(RenderStorageService)
     private readonly renderStorageService: RenderStorageService,
     @Inject(SceneVideoGenerationService)
@@ -98,19 +101,44 @@ export class ProjectRenderService {
           }
         });
 
-        let visualProvider: string = 'procedural';
+        let visualProvider = 'procedural';
+        let videoGenerationError: string | null = null;
+        let imageGenerationError: string | null = null;
 
-        // Attempt 1: Generate video directly via ComfyUI
-        const generatedSceneVideo = scenePrompt
-          ? await this.sceneVideoGenerationService.generate({
+        if (!scenePrompt && !this.shouldAllowProceduralFallback()) {
+          const message = `Cena ${index + 1} falhou: prompt da cena nao encontrado para gerar o video no ComfyUI.`;
+          await this.failScene(input.projectId, scene.id, message, index, input.scenes.length);
+          throw new Error(message);
+        }
+
+        let generatedSceneVideo = null;
+        if (scenePrompt) {
+          try {
+            generatedSceneVideo = await this.sceneVideoGenerationService.generate({
               sceneId: scene.id,
               positivePrompt: scenePrompt.positivePrompt,
               negativePrompt: scenePrompt.negativePrompt,
               width: 1280,
               height: 704,
               durationSeconds: scene.durationSeconds
-            })
-          : null;
+            });
+          } catch (error) {
+            videoGenerationError = this.toErrorMessage(error);
+            await this.processingProgressService.heartbeat(
+              input.projectId,
+              this.sceneRenderProgress(index, input.scenes.length),
+              `Falha ao gerar a cena ${index + 1} em video no ComfyUI.`,
+              {
+                stage: 'rendering',
+                message: `Falha de video IA na cena ${index + 1}: ${videoGenerationError}`,
+                provider: 'comfyui-video'
+              }
+            );
+            this.logger.warn(
+              `Scene ${index + 1}/${input.scenes.length} [${scene.title}] video generation failed: ${videoGenerationError}`
+            );
+          }
+        }
 
         if (generatedSceneVideo) {
           visualProvider = generatedSceneVideo.provider;
@@ -129,9 +157,10 @@ export class ProjectRenderService {
             `Scene ${index + 1}/${input.scenes.length} [${scene.title}]: provider=${generatedSceneVideo.provider}`
           );
         } else {
-          // Attempt 2: Generate image via ComfyUI, then create video clip from still image
-          const generatedSceneImage = scenePrompt
-            ? await this.sceneImageGenerationService.generate({
+          let generatedSceneImage = null;
+          if (scenePrompt) {
+            try {
+              generatedSceneImage = await this.sceneImageGenerationService.generate({
                 organizationId: input.organizationId,
                 projectId: input.projectId,
                 sceneIndex: index,
@@ -140,8 +169,24 @@ export class ProjectRenderService {
                 negativePrompt: scenePrompt.negativePrompt,
                 style: scenePrompt.style,
                 camera: scenePrompt.camera
-              })
-            : null;
+              });
+            } catch (error) {
+              imageGenerationError = this.toErrorMessage(error);
+              await this.processingProgressService.heartbeat(
+                input.projectId,
+                this.sceneRenderProgress(index, input.scenes.length),
+                `Falha ao gerar a cena ${index + 1} em imagem no ComfyUI.`,
+                {
+                  stage: 'rendering',
+                  message: `Falha de imagem IA na cena ${index + 1}: ${imageGenerationError}`,
+                  provider: 'comfyui-image'
+                }
+              );
+              this.logger.warn(
+                `Scene ${index + 1}/${input.scenes.length} [${scene.title}] image generation failed: ${imageGenerationError}`
+              );
+            }
+          }
 
           if (generatedSceneImage) {
             visualProvider = generatedSceneImage.provider;
@@ -176,12 +221,29 @@ export class ProjectRenderService {
               `Scene ${index + 1}/${input.scenes.length} [${scene.title}]: provider=${generatedSceneImage.provider}`
             );
           } else {
-            // Attempt 3: Procedural fallback — solid color
+            const generationFailureMessage = this.buildSceneGenerationFailureMessage(
+              index,
+              scene.title,
+              videoGenerationError,
+              imageGenerationError
+            );
+
+            if (!this.shouldAllowProceduralFallback()) {
+              await this.failScene(
+                input.projectId,
+                scene.id,
+                generationFailureMessage,
+                index,
+                input.scenes.length
+              );
+              throw new Error(generationFailureMessage);
+            }
+
             visualProvider = 'procedural';
 
             this.logger.warn(
               `Scene ${index + 1}/${input.scenes.length} [${scene.title}]: ` +
-                `FALLBACK to procedural (solid color). Both ComfyUI video and image generation failed or returned null.`
+                `FALLBACK to procedural (solid color). ${generationFailureMessage}`
             );
 
             await this.ffmpegRenderingService.createSceneClip(
@@ -192,10 +254,12 @@ export class ProjectRenderService {
             await this.processingProgressService.heartbeat(
               input.projectId,
               this.sceneRenderProgress(index + 1, input.scenes.length),
-              `⚠️ Cena ${index + 1} usou FALLBACK procedural (tela colorida). A geracao por IA falhou.`,
+              `Cena ${index + 1} usou FALLBACK procedural (tela colorida). A geracao por IA falhou.`,
               {
                 stage: 'rendering',
-                message: `⚠️ Cena ${index + 1} usou FALLBACK procedural (tela colorida). A geracao por IA falhou.`,
+                message:
+                  `Cena ${index + 1} usou FALLBACK procedural (tela colorida). ` +
+                  `Motivo: ${generationFailureMessage}`,
                 provider: 'procedural'
               }
             );
@@ -341,5 +405,62 @@ export class ProjectRenderService {
 
     const progress = 85 + Math.round((renderedScenes / totalScenes) * 10);
     return Math.min(progress, 95);
+  }
+
+  private shouldAllowProceduralFallback(): boolean {
+    const visualProvider = this.configService.get<string>('visual.provider', 'procedural');
+    const enableFallbacks = this.configService.get<boolean>('ai.enableFallbacks', true);
+
+    return visualProvider !== 'comfyui' && enableFallbacks;
+  }
+
+  private buildSceneGenerationFailureMessage(
+    sceneIndex: number,
+    sceneTitle: string,
+    videoGenerationError: string | null,
+    imageGenerationError: string | null
+  ): string {
+    const reasons = [
+      videoGenerationError ? `video: ${videoGenerationError}` : null,
+      imageGenerationError ? `imagem: ${imageGenerationError}` : null
+    ].filter(Boolean);
+
+    if (reasons.length === 0) {
+      reasons.push('nenhum artefato foi retornado pelo pipeline visual');
+    }
+
+    return `Cena ${sceneIndex + 1} (${sceneTitle}) falhou na geracao visual: ${reasons.join(' | ')}.`;
+  }
+
+  private async failScene(
+    projectId: string,
+    sceneId: string,
+    message: string,
+    sceneIndex: number,
+    totalScenes: number
+  ): Promise<void> {
+    await this.prismaService.scene.update({
+      where: {
+        id: sceneId
+      },
+      data: {
+        status: SceneStatus.failed
+      }
+    });
+
+    await this.processingProgressService.heartbeat(
+      projectId,
+      this.sceneRenderProgress(sceneIndex, totalScenes),
+      message,
+      {
+        stage: 'rendering',
+        message,
+        provider: 'comfyui'
+      }
+    );
+  }
+
+  private toErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
   }
 }

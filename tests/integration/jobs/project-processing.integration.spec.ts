@@ -6,6 +6,7 @@ import { dirname, resolve } from 'node:path';
 
 import type { INestApplication } from '@nestjs/common';
 import { ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { PrismaClient } from '../../generated/prisma';
 import request from 'supertest';
@@ -286,6 +287,7 @@ describe('Project processing integration', () => {
     const renderStorageService = new RenderStorageService(configService);
     const projectRenderService = new ProjectRenderService(
       prisma as unknown as WorkerPrismaService,
+      configService as unknown as ConfigService,
       renderStorageService,
       {
         generate: async () => null
