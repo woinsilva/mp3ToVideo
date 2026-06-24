@@ -46,7 +46,7 @@ describe('SceneImageGenerationService', () => {
 
     const service = new SceneImageGenerationService(
       {
-        generateImage: vi.fn().mockResolvedValue(Buffer.from('png-bytes'))
+        generateImage: vi.fn().mockResolvedValue({ buffer: Buffer.from('png-bytes'), provider: 'comfyui-image' })
       } as never,
       new RenderStorageService({
         get: vi.fn().mockImplementation((key: string, defaultValue?: unknown) =>
@@ -68,7 +68,8 @@ describe('SceneImageGenerationService', () => {
 
     expect(result).toEqual({
       storagePath: `${outputRoot.replace(/\\/g, '/')}/generated-images/org-1/project-1/scene-002.png`,
-      sizeBytes: 9
+      sizeBytes: 9,
+      provider: 'comfyui-image'
     });
     expect(
       existsSync(resolve(outputRoot, 'generated-images', 'org-1', 'project-1', 'scene-002.png'))

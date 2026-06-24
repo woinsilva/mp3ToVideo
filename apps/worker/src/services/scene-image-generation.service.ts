@@ -2,6 +2,7 @@ import { stat, writeFile } from 'node:fs/promises';
 
 import { Inject, Injectable } from '@nestjs/common';
 
+import type { ComfyUiGenerationResult } from './comfyui-client.service';
 import { ComfyUiClientService } from './comfyui-client.service';
 import { RenderStorageService } from './render-storage.service';
 
@@ -16,9 +17,10 @@ interface SceneImageInput {
   camera: string;
 }
 
-interface SceneImageResult {
+export interface SceneImageResult {
   storagePath: string;
   sizeBytes: number;
+  provider: 'comfyui-image';
 }
 
 @Injectable()
@@ -31,17 +33,18 @@ export class SceneImageGenerationService {
   ) {}
 
   async generate(input: SceneImageInput): Promise<SceneImageResult | null> {
-    const imageBuffer = await this.comfyUiClientService.generateImage(
-      [
-        input.positivePrompt,
-        `style: ${input.style}`,
-        `camera: ${input.camera}`,
-        `scene title: ${input.sceneTitle}`
-      ].join(', '),
-      input.negativePrompt
-    );
+    const result: ComfyUiGenerationResult | null =
+      await this.comfyUiClientService.generateImage(
+        [
+          input.positivePrompt,
+          `style: ${input.style}`,
+          `camera: ${input.camera}`,
+          `scene title: ${input.sceneTitle}`
+        ].join(', '),
+        input.negativePrompt
+      );
 
-    if (!imageBuffer) {
+    if (!result) {
       return null;
     }
 
@@ -52,11 +55,12 @@ export class SceneImageGenerationService {
     );
     const absolutePath = await this.renderStorageService.ensureParentDirectory(storagePath);
 
-    await writeFile(absolutePath, imageBuffer);
+    await writeFile(absolutePath, result.buffer);
 
     return {
       storagePath,
-      sizeBytes: Number((await stat(absolutePath)).size)
+      sizeBytes: Number((await stat(absolutePath)).size),
+      provider: 'comfyui-image'
     };
   }
 }

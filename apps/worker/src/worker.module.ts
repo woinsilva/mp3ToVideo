@@ -8,6 +8,7 @@ import { ProjectProcessor } from './processors/project.processor';
 import { AudioMetadataService } from './services/audio-metadata.service';
 import { AudioExcerptService } from './services/audio-excerpt.service';
 import { ComfyUiClientService } from './services/comfyui-client.service';
+import { ComfyUiWorkflowLoaderService } from './services/comfyui-workflow-loader.service';
 import { FfmpegCommandBuilderService } from './services/ffmpeg-command-builder.service';
 import { FfmpegRenderingService } from './services/ffmpeg-rendering.service';
 import { LyricsGenerationService } from './services/lyrics-generation.service';
@@ -46,6 +47,7 @@ import { RedisConnectionService } from './workers/redis-connection.service';
     ProjectProcessor,
     AudioMetadataService,
     AudioExcerptService,
+    ComfyUiWorkflowLoaderService,
     ComfyUiClientService,
     FfmpegCommandBuilderService,
     FfmpegRenderingService,

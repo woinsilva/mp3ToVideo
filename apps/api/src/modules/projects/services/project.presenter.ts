@@ -68,6 +68,7 @@ export class ProjectPresenter {
       endSeconds: scene.endSeconds,
       durationSeconds: scene.durationSeconds,
       status: scene.status,
+      visualProvider: scene.visualProvider,
       videoAssetId: scene.videoAssetId,
       prompt: scene.prompt
         ? {

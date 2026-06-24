@@ -41,7 +41,15 @@
         >
           <div class="activity-entry__topline">
             <span>{{ formatActivityTimestamp(entry.timestamp) }}</span>
-            <span v-if="entry.provider">{{ entry.provider }}</span>
+            <v-chip
+              v-if="entry.provider"
+              :color="getProviderColor(entry.provider)"
+              size="x-small"
+              class="text-uppercase font-weight-bold px-2"
+              variant="flat"
+            >
+              {{ formatProvider(entry.provider) }}
+            </v-chip>
           </div>
           <p class="activity-entry__message">{{ entry.message }}</p>
         </div>
@@ -113,6 +121,20 @@ export default class ProjectStatusTimeline extends Vue {
       minute: '2-digit',
       second: '2-digit'
     }).format(new Date(value));
+  }
+
+  getProviderColor(provider: string): string {
+    if (provider === 'comfyui-video') return 'green';
+    if (provider === 'comfyui-image') return 'blue';
+    if (provider === 'procedural') return 'deep-orange';
+    return 'grey';
+  }
+
+  formatProvider(provider: string): string {
+    if (provider === 'comfyui-video') return 'IA Video';
+    if (provider === 'comfyui-image') return 'IA Image';
+    if (provider === 'procedural') return 'Fallback';
+    return provider;
   }
 }
 </script>

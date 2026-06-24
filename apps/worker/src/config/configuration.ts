@@ -36,6 +36,7 @@ export const configuration = () => ({
     ),
     comfyuiTimeoutMs: Number(process.env.COMFYUI_TIMEOUT_MS ?? 300000),
     comfyuiPollIntervalMs: Number(process.env.COMFYUI_POLL_INTERVAL_MS ?? 3000),
+    comfyuiWorkflowPath: process.env.COMFYUI_WORKFLOW_PATH ?? '',
     comfyuiCheckpointName:
       process.env.COMFYUI_CHECKPOINT_NAME ?? 'sd_xl_turbo_1.0.safetensors',
     comfyuiVideoUnetName:

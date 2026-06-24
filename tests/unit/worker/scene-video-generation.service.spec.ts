@@ -4,7 +4,7 @@ import { SceneVideoGenerationService } from '../../../apps/worker/src/services/s
 
 describe('SceneVideoGenerationService', () => {
   it('delegates scene video generation to the ComfyUI client', async () => {
-    const generateVideo = vi.fn().mockResolvedValue(Buffer.from('video-bytes'));
+    const generateVideo = vi.fn().mockResolvedValue({ buffer: Buffer.from('video-bytes'), provider: 'comfyui-video' });
     const service = new SceneVideoGenerationService({
       generateVideo
     } as never);
@@ -18,7 +18,7 @@ describe('SceneVideoGenerationService', () => {
       durationSeconds: 5
     });
 
-    expect(result).toEqual(Buffer.from('video-bytes'));
+    expect(result).toEqual({ buffer: Buffer.from('video-bytes'), provider: 'comfyui-video' });
     expect(generateVideo).toHaveBeenCalledWith({
       sceneId: 'scene-1',
       positivePrompt: 'cowboy riding a horse at sunset',

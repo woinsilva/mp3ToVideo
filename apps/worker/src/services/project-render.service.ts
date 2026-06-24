@@ -1,6 +1,6 @@
 import { stat, writeFile } from 'node:fs/promises';
 
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { AssetType, RenderStatus, SceneStatus } from '@prisma/client';
 
 import { PrismaService } from '../database/prisma.service';
@@ -27,6 +27,8 @@ interface RenderProjectInput {
 
 @Injectable()
 export class ProjectRenderService {
+  private readonly logger = new Logger(ProjectRenderService.name);
+
   constructor(
     @Inject(PrismaService)
     private readonly prismaService: PrismaService,
@@ -95,6 +97,10 @@ export class ProjectRenderService {
             sceneId: scene.id
           }
         });
+
+        let visualProvider: string = 'procedural';
+
+        // Attempt 1: Generate video directly via ComfyUI
         const generatedSceneVideo = scenePrompt
           ? await this.sceneVideoGenerationService.generate({
               sceneId: scene.id,
@@ -107,17 +113,23 @@ export class ProjectRenderService {
           : null;
 
         if (generatedSceneVideo) {
-          await writeFile(sceneClipAbsolutePath, generatedSceneVideo);
+          visualProvider = generatedSceneVideo.provider;
+          await writeFile(sceneClipAbsolutePath, generatedSceneVideo.buffer);
           await this.processingProgressService.heartbeat(
             input.projectId,
             this.sceneRenderProgress(index + 1, input.scenes.length),
             `Cena ${index + 1} gerada diretamente em video por IA.`,
             {
               stage: 'rendering',
-              message: `Cena ${index + 1} gerada diretamente em video por IA.`
+              message: `Cena ${index + 1} gerada diretamente em video por IA.`,
+              provider: generatedSceneVideo.provider
             }
           );
+          this.logger.log(
+            `Scene ${index + 1}/${input.scenes.length} [${scene.title}]: provider=${generatedSceneVideo.provider}`
+          );
         } else {
+          // Attempt 2: Generate image via ComfyUI, then create video clip from still image
           const generatedSceneImage = scenePrompt
             ? await this.sceneImageGenerationService.generate({
                 organizationId: input.organizationId,
@@ -132,6 +144,8 @@ export class ProjectRenderService {
             : null;
 
           if (generatedSceneImage) {
+            visualProvider = generatedSceneImage.provider;
+
             await this.prismaService.asset.create({
               data: {
                 organizationId: input.organizationId,
@@ -151,13 +165,25 @@ export class ProjectRenderService {
             await this.processingProgressService.heartbeat(
               input.projectId,
               this.sceneRenderProgress(index + 1, input.scenes.length),
-              `Cena ${index + 1} renderizada a partir de imagem gerada.`,
+              `Cena ${index + 1} renderizada a partir de imagem gerada por IA.`,
               {
                 stage: 'rendering',
-                message: `Cena ${index + 1} renderizada a partir de imagem gerada.`
+                message: `Cena ${index + 1} renderizada a partir de imagem gerada por IA.`,
+                provider: generatedSceneImage.provider
               }
             );
+            this.logger.log(
+              `Scene ${index + 1}/${input.scenes.length} [${scene.title}]: provider=${generatedSceneImage.provider}`
+            );
           } else {
+            // Attempt 3: Procedural fallback — solid color
+            visualProvider = 'procedural';
+
+            this.logger.warn(
+              `Scene ${index + 1}/${input.scenes.length} [${scene.title}]: ` +
+                `FALLBACK to procedural (solid color). Both ComfyUI video and image generation failed or returned null.`
+            );
+
             await this.ffmpegRenderingService.createSceneClip(
               sceneClipAbsolutePath,
               scene.durationSeconds,
@@ -166,10 +192,10 @@ export class ProjectRenderService {
             await this.processingProgressService.heartbeat(
               input.projectId,
               this.sceneRenderProgress(index + 1, input.scenes.length),
-              `Cena ${index + 1} renderizada com fallback procedural.`,
+              `⚠️ Cena ${index + 1} usou FALLBACK procedural (tela colorida). A geracao por IA falhou.`,
               {
                 stage: 'rendering',
-                message: `Cena ${index + 1} renderizada com fallback procedural.`,
+                message: `⚠️ Cena ${index + 1} usou FALLBACK procedural (tela colorida). A geracao por IA falhou.`,
                 provider: 'procedural'
               }
             );
@@ -194,6 +220,7 @@ export class ProjectRenderService {
           },
           data: {
             status: SceneStatus.completed,
+            visualProvider,
             videoAssetId: sceneAsset.id
           }
         });
@@ -202,10 +229,10 @@ export class ProjectRenderService {
         await this.processingProgressService.heartbeat(
           input.projectId,
           this.sceneRenderProgress(index + 1, input.scenes.length),
-          `Cena ${index + 1} concluida e anexada ao render final.`,
+          `Cena ${index + 1} concluida (provider: ${visualProvider}) e anexada ao render final.`,
           {
             stage: 'rendering',
-            message: `Cena ${index + 1} concluida e anexada ao render final.`
+            message: `Cena ${index + 1} concluida (provider: ${visualProvider}) e anexada ao render final.`
           }
         );
       }

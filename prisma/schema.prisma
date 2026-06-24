@@ -197,6 +197,7 @@ model Scene {
   endSeconds      Float
   durationSeconds Float
   status          SceneStatus   @default(pending)
+  visualProvider  String?
   videoAssetId    String?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt

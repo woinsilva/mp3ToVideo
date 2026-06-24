@@ -62,6 +62,7 @@ export interface ProjectScene {
   endSeconds: number;
   durationSeconds: number;
   status: string;
+  visualProvider: string | null;
   videoAssetId: string | null;
   prompt: ScenePromptView | null;
 }

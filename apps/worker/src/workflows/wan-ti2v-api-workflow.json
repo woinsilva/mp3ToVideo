@@ -1,0 +1,93 @@
+{
+  "37": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "{{unetName}}",
+      "weight_dtype": "default"
+    }
+  },
+  "38": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "{{clipName}}",
+      "type": "{{clipType}}",
+      "device": "default"
+    }
+  },
+  "39": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "{{vaeName}}"
+    }
+  },
+  "48": {
+    "class_type": "ModelSamplingSD3",
+    "inputs": {
+      "shift": "{{shift}}",
+      "model": ["37", 0]
+    }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "{{positivePrompt}}",
+      "clip": ["38", 0]
+    }
+  },
+  "7": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "{{negativePrompt}}",
+      "clip": ["38", 0]
+    }
+  },
+  "55": {
+    "class_type": "Wan22ImageToVideoLatent",
+    "inputs": {
+      "width": "{{width}}",
+      "height": "{{height}}",
+      "length": "{{length}}",
+      "batch_size": 1,
+      "vae": ["39", 0]
+    }
+  },
+  "3": {
+    "class_type": "KSampler",
+    "inputs": {
+      "seed": "{{seed}}",
+      "steps": "{{steps}}",
+      "cfg": "{{cfg}}",
+      "sampler_name": "{{sampler}}",
+      "scheduler": "{{scheduler}}",
+      "denoise": 1,
+      "model": ["48", 0],
+      "positive": ["6", 0],
+      "negative": ["7", 0],
+      "latent_image": ["55", 0]
+    }
+  },
+  "8": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": ["3", 0],
+      "vae": ["39", 0]
+    }
+  },
+  "57": {
+    "class_type": "CreateVideo",
+    "inputs": {
+      "fps": "{{fps}}",
+      "bit_depth": 8,
+      "images": ["8", 0]
+    }
+  },
+  "58": {
+    "class_type": "SaveVideo",
+    "inputs": {
+      "filename_prefix": "{{filenamePrefix}}",
+      "format": "auto",
+      "codec": "auto",
+      "video": ["57", 0]
+    }
+  }
+}
