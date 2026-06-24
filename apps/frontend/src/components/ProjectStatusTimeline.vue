@@ -5,6 +5,7 @@
         <div>
           <h3 class="section-title">Processamento</h3>
           <p class="section-copy">{{ currentStep }}</p>
+          <p v-if="detailMessage" class="section-copy detail-copy">{{ detailMessage }}</p>
           <p class="section-copy status-meta">{{ lastUpdateLabel }}</p>
         </div>
         <v-chip :color="tone" variant="tonal">{{ statusLabel }}</v-chip>
@@ -30,6 +31,21 @@
       <v-alert v-if="errorMessage" type="error" variant="tonal">
         {{ errorMessage }}
       </v-alert>
+
+      <div v-if="recentActivity.length" class="d-flex flex-column ga-2">
+        <h4 class="section-title activity-title">Atividade recente</h4>
+        <div
+          v-for="entry in recentActivity"
+          :key="entry.timestamp + entry.message"
+          class="activity-entry"
+        >
+          <div class="activity-entry__topline">
+            <span>{{ formatActivityTimestamp(entry.timestamp) }}</span>
+            <span v-if="entry.provider">{{ entry.provider }}</span>
+          </div>
+          <p class="activity-entry__message">{{ entry.message }}</p>
+        </div>
+      </div>
     </v-card-text>
   </v-card>
 </template>
@@ -43,7 +59,7 @@ import {
   formatRelativeStatusUpdate,
   projectStatusTone
 } from '@/utils/project-status';
-import type { ProjectStatus } from '@/types/project.types';
+import type { ProjectStatus, ProjectStatusActivityEntry } from '@/types/project.types';
 
 @Component
 export default class ProjectStatusTimeline extends Vue {
@@ -55,6 +71,12 @@ export default class ProjectStatusTimeline extends Vue {
 
   @Prop({ required: true })
   readonly currentStep!: string;
+
+  @Prop({ default: null })
+  readonly detailMessage!: string | null;
+
+  @Prop({ default: () => [] })
+  readonly activityLog!: ProjectStatusActivityEntry[];
 
   @Prop({ default: null })
   readonly errorMessage!: string | null;
@@ -80,5 +102,49 @@ export default class ProjectStatusTimeline extends Vue {
   get lastUpdateLabel() {
     return formatRelativeStatusUpdate(this.lastUpdatedAt);
   }
+
+  get recentActivity(): ProjectStatusActivityEntry[] {
+    return [...this.activityLog].slice(-6).reverse();
+  }
+
+  formatActivityTimestamp(value: string): string {
+    return new Intl.DateTimeFormat('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    }).format(new Date(value));
+  }
 }
 </script>
+
+<style scoped>
+.detail-copy {
+  color: rgba(var(--v-theme-on-surface), 0.82);
+}
+
+.activity-title {
+  font-size: 0.95rem;
+}
+
+.activity-entry {
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  border-radius: 16px;
+  padding: 0.85rem 1rem;
+  background: rgba(var(--v-theme-on-surface), 0.02);
+}
+
+.activity-entry__topline {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  color: rgba(var(--v-theme-on-surface), 0.56);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.activity-entry__message {
+  margin: 0.35rem 0 0;
+  color: rgba(var(--v-theme-on-surface), 0.88);
+}
+</style>

@@ -56,6 +56,16 @@ describe('ProjectPresenter', () => {
           bullJobId: '1',
           status: 'active',
           progress: 95,
+          detailMessage: 'Muxando audio final.',
+          activityLog: [
+            {
+              stage: 'rendering',
+              message: 'Concatenando cenas.',
+              provider: null,
+              progress: 96,
+              timestamp: now.toISOString()
+            }
+          ],
           errorMessage: null,
           createdAt: now,
           updatedAt: now
@@ -66,6 +76,16 @@ describe('ProjectPresenter', () => {
       status: 'rendering',
       progress: 95,
       currentStep: 'Renderizando video final',
+      detailMessage: 'Muxando audio final.',
+      activityLog: [
+        {
+          stage: 'rendering',
+          message: 'Concatenando cenas.',
+          provider: null,
+          progress: 96,
+          timestamp: now.toISOString()
+        }
+      ],
       errorMessage: null,
       lastUpdatedAt: now,
       isPossiblyStalled: false

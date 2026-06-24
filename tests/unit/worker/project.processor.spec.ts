@@ -68,6 +68,8 @@ describe('ProjectProcessor', () => {
       data: {
         status: 'active',
         progress: 10,
+        detailMessage: 'Worker iniciado. Preparando pipeline do projeto.',
+        activityLog: expect.any(Array),
         errorMessage: null
       }
     });
@@ -78,10 +80,16 @@ describe('ProjectProcessor', () => {
       data: {
         status: 'completed',
         progress: 100,
+        detailMessage: 'Pipeline concluido. O videoclipe final esta pronto para download.',
+        activityLog: expect.any(Array),
         errorMessage: null
       }
     });
-    expect(processingProgressService.heartbeat).toHaveBeenCalledWith('project-1', 10);
+    expect(processingProgressService.heartbeat).toHaveBeenCalledWith(
+      'project-1',
+      10,
+      'Worker iniciado. Preparando pipeline do projeto.'
+    );
   });
 
   it('marks the project and processing job as failed when the pipeline throws', async () => {
@@ -151,6 +159,8 @@ describe('ProjectProcessor', () => {
       data: {
         status: 'failed',
         progress: 10,
+        detailMessage: 'Falha no pipeline: pipeline failed',
+        activityLog: expect.any(Array),
         errorMessage: 'pipeline failed'
       }
     });

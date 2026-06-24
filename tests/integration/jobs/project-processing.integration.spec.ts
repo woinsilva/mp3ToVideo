@@ -208,6 +208,8 @@ describe('Project processing integration', () => {
     expect(processingJob?.bullJobId).toBe('bull-job-1');
     expect(processingJob?.status).toBe('queued');
     expect(processingJob?.progress).toBe(0);
+    expect(processingJob?.detailMessage).toBe('Projeto enfileirado. Aguardando worker iniciar o pipeline.');
+    expect(Array.isArray(processingJob?.activityLog)).toBe(true);
   });
 
   it('marks the project as completed when the worker pipeline succeeds', async () => {
@@ -318,6 +320,7 @@ describe('Project processing integration', () => {
       new ProjectProcessingPipelineService(
         prisma as unknown as WorkerPrismaService,
         new ProjectPipelineStateService(prisma as unknown as WorkerPrismaService),
+        processingProgressService,
         new AudioMetadataService(configService, renderStorageService),
         {
           buildInitialExcerpt: async () => sampleMp3Path
@@ -425,6 +428,11 @@ describe('Project processing integration', () => {
     expect(readFileSync(resolve(renderAsset?.storagePath ?? '')).length).toBeGreaterThan(0);
     expect(processingJob?.status).toBe('completed');
     expect(processingJob?.progress).toBe(100);
+    expect(processingJob?.detailMessage).toBe(
+      'Pipeline concluido. O videoclipe final esta pronto para download.'
+    );
+    expect(Array.isArray(processingJob?.activityLog)).toBe(true);
+    expect((processingJob?.activityLog as Array<{ message: string }>).length).toBeGreaterThan(0);
     expect(processingJob?.errorMessage).toBeNull();
     expect(processingJob?.updatedAt.getTime()).toBeGreaterThan(processingJob?.createdAt.getTime() ?? 0);
   });
@@ -475,6 +483,7 @@ describe('Project processing integration', () => {
     expect(project?.errorMessage).toBe('worker pipeline failed');
     expect(processingJob?.status).toBe('failed');
     expect(processingJob?.progress).toBe(10);
+    expect(processingJob?.detailMessage).toBe('Falha no pipeline: worker pipeline failed');
     expect(processingJob?.errorMessage).toBe('worker pipeline failed');
   });
 });

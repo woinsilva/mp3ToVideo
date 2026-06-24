@@ -7,6 +7,7 @@ import { AudioExcerptService } from './audio-excerpt.service';
 import { AudioMetadataService } from './audio-metadata.service';
 import { LyricsGenerationService } from './lyrics-generation.service';
 import { MusicStructureService } from './music-structure.service';
+import { ProcessingProgressService } from './processing-progress.service';
 import { ProjectPipelineStateService } from './project-pipeline-state.service';
 import { ProjectRenderService } from './project-render.service';
 import { ScenePlanningService } from './scene-planning.service';
@@ -21,6 +22,8 @@ export class ProjectProcessingPipelineService {
     private readonly prismaService: PrismaService,
     @Inject(ProjectPipelineStateService)
     private readonly projectPipelineStateService: ProjectPipelineStateService,
+    @Inject(ProcessingProgressService)
+    private readonly processingProgressService: ProcessingProgressService,
     @Inject(AudioMetadataService)
     private readonly audioMetadataService: AudioMetadataService,
     @Inject(AudioExcerptService)
@@ -56,10 +59,28 @@ export class ProjectProcessingPipelineService {
       throw new NotFoundException('Project track not found for processing');
     }
 
-    await this.projectPipelineStateService.update(project.id, ProjectStatus.analyzing, 25);
+    await this.projectPipelineStateService.update(
+      project.id,
+      ProjectStatus.analyzing,
+      25,
+      'Lendo metadados do audio e preparando o intervalo que sera usado no clipe.',
+      {
+        stage: 'analyzing',
+        message: 'Lendo metadados do audio enviado e preparando a analise inicial.'
+      }
+    );
 
     const sourceDurationSeconds = await this.audioMetadataService.resolveDurationSeconds(
       project.track.storagePath
+    );
+    await this.processingProgressService.heartbeat(
+      project.id,
+      28,
+      `Duracao original detectada: ${Math.round(sourceDurationSeconds)}s.`,
+      {
+        stage: 'analyzing',
+        message: `Duracao original do audio detectada: ${Math.round(sourceDurationSeconds)}s.`
+      }
     );
     await this.prismaService.track.update({
       where: {
@@ -81,7 +102,34 @@ export class ProjectProcessingPipelineService {
           effectiveDurationSeconds
         )
       : project.track.storagePath;
+    await this.processingProgressService.heartbeat(
+      project.id,
+      32,
+      requestedClipDurationSeconds
+        ? `Recorte aplicado. O pipeline usara os primeiros ${Math.round(effectiveDurationSeconds)}s do audio.`
+        : 'Nenhum recorte aplicado. O audio inteiro sera usado no pipeline.',
+      {
+        stage: 'analyzing',
+        message: requestedClipDurationSeconds
+          ? `Recorte inicial aplicado para ${Math.round(effectiveDurationSeconds)}s.`
+          : 'Audio completo mantido para processamento.'
+      }
+    );
 
+    await this.processingProgressService.heartbeat(
+      project.id,
+      36,
+      project.lyrics?.source === 'manual'
+        ? 'Usando a letra manual fornecida no projeto.'
+        : 'Gerando ou normalizando a letra da musica para estruturar o clip.',
+      {
+        stage: 'analyzing',
+        message:
+          project.lyrics?.source === 'manual'
+            ? 'Usando letra manual existente.'
+            : 'Gerando letra da musica para analise estrutural.'
+      }
+    );
     const generatedLyrics =
       project.lyrics?.source === 'manual'
         ? null
@@ -99,6 +147,15 @@ export class ProjectProcessingPipelineService {
               ...generatedLyrics!
             }
           });
+    await this.processingProgressService.heartbeat(
+      project.id,
+      44,
+      'Letra pronta. Identificando secoes como intro, versos, refroes e finalizacao.',
+      {
+        stage: 'analyzing',
+        message: 'Letra pronta. Iniciando identificacao da estrutura musical.'
+      }
+    );
 
     const sections = this.musicStructureService.build(
       effectiveDurationSeconds,
@@ -145,11 +202,29 @@ export class ProjectProcessingPipelineService {
       return records;
     });
 
-    await this.projectPipelineStateService.update(project.id, ProjectStatus.storyboarding, 55);
+    await this.projectPipelineStateService.update(
+      project.id,
+      ProjectStatus.storyboarding,
+      55,
+      `Estrutura musical mapeada em ${sections.length} blocos. Gerando storyboard visual.`,
+      {
+        stage: 'storyboarding',
+        message: `Estrutura musical mapeada em ${sections.length} blocos. Gerando storyboard.`
+      }
+    );
 
     const storyboard = await this.storyboardGenerationService.build(
       project.title,
       lyrics.normalizedText
+    );
+    await this.processingProgressService.heartbeat(
+      project.id,
+      66,
+      'Storyboard pronto. Planejando a narrativa visual e a distribuicao das cenas.',
+      {
+        stage: 'storyboarding',
+        message: 'Storyboard gerado. Planejando a narrativa visual do clipe.'
+      }
     );
 
     await this.prismaService.storyboard.upsert({
@@ -163,20 +238,68 @@ export class ProjectProcessingPipelineService {
       }
     });
 
-    await this.projectPipelineStateService.update(project.id, ProjectStatus.generating_scenes, 85);
+    await this.projectPipelineStateService.update(
+      project.id,
+      ProjectStatus.generating_scenes,
+      85,
+      'Storyboard salvo. Planejando cenas e prompts visuais para cada trecho da musica.',
+      {
+        stage: 'generating_scenes',
+        message: 'Storyboard salvo. Iniciando planejamento das cenas.'
+      }
+    );
 
     const scenes = this.scenePlanningService.build(
       effectiveDurationSeconds,
       sections,
       storyboard.narrativeSummary
     );
+    await this.processingProgressService.heartbeat(
+      project.id,
+      86,
+      `${scenes.length} cenas planejadas. Gerando prompts visuais para cada uma delas.`,
+      {
+        stage: 'generating_scenes',
+        message: `${scenes.length} cenas planejadas para o clipe.`
+      }
+    );
 
     const scenePromptDrafts: ScenePromptDraft[] = [];
 
-    for (const scene of scenes) {
+    for (const [index, scene] of scenes.entries()) {
+      const promptProgress = Math.min(92, 87 + Math.round(((index + 1) / scenes.length) * 5));
+      await this.processingProgressService.heartbeat(
+        project.id,
+        promptProgress,
+        `Gerando prompt da cena ${index + 1} de ${scenes.length}: ${scene.title}.`,
+        {
+          stage: 'generating_scenes',
+          message: `Gerando prompt da cena ${index + 1} de ${scenes.length}: ${scene.title}.`
+        }
+      );
       const promptDraft = await this.scenePromptGenerationService.build(scene, storyboard);
       scenePromptDrafts.push(promptDraft);
+      await this.processingProgressService.heartbeat(
+        project.id,
+        promptProgress,
+        `Prompt da cena ${index + 1} pronto com provider ${promptDraft.provider}.`,
+        {
+          stage: 'generating_scenes',
+          message: `Prompt da cena ${index + 1} pronto.`,
+          provider: promptDraft.provider
+        }
+      );
     }
+
+    await this.processingProgressService.heartbeat(
+      project.id,
+      93,
+      'Prompts prontos. Persistindo cenas e configuracoes visuais no banco.',
+      {
+        stage: 'generating_scenes',
+        message: 'Prompts prontos. Persistindo cenas no banco.'
+      }
+    );
 
     await this.prismaService.$transaction(async (tx) => {
       for (const [index, scene] of scenes.entries()) {
@@ -213,6 +336,15 @@ export class ProjectProcessingPipelineService {
     });
 
     await this.projectPipelineStateService.update(project.id, ProjectStatus.rendering, 95);
+    await this.processingProgressService.heartbeat(
+      project.id,
+      95,
+      'Cenas salvas. Iniciando geracao de video por cena e render final do MP4.',
+      {
+        stage: 'rendering',
+        message: 'Cenas salvas. Iniciando renderizacao final.'
+      }
+    );
 
     await this.projectRenderService.render({
       organizationId: payload.organizationId,

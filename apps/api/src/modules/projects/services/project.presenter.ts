@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import type {
   ProcessingJob,
   Project,
@@ -7,6 +8,14 @@ import type {
   Scene,
   ScenePrompt
 } from '@prisma/client';
+
+export interface ProcessingActivityEntry {
+  stage: string;
+  message: string;
+  provider: string | null;
+  progress: number | null;
+  timestamp: string;
+}
 
 @Injectable()
 export class ProjectPresenter {
@@ -39,6 +48,8 @@ export class ProjectPresenter {
       status: project.status,
       progress: processingJob?.progress ?? this.defaultProgress(project.status),
       currentStep: this.currentStep(project.status),
+      detailMessage: processingJob?.detailMessage ?? null,
+      activityLog: this.activityLog(processingJob?.activityLog),
       errorMessage: project.errorMessage ?? processingJob?.errorMessage ?? null,
       lastUpdatedAt,
       isPossiblyStalled:
@@ -142,5 +153,39 @@ export class ProjectPresenter {
 
   private isTerminalStatus(status: ProjectStatus): boolean {
     return status === 'completed' || status === 'failed';
+  }
+
+  private activityLog(activityLog: Prisma.JsonValue | null | undefined): ProcessingActivityEntry[] {
+    if (!Array.isArray(activityLog)) {
+      return [];
+    }
+
+    const entries: ProcessingActivityEntry[] = [];
+
+    for (const value of activityLog) {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        continue;
+      }
+
+      const entry = value as Record<string, unknown>;
+
+      if (
+        typeof entry.stage !== 'string' ||
+        typeof entry.message !== 'string' ||
+        typeof entry.timestamp !== 'string'
+      ) {
+        continue;
+      }
+
+      entries.push({
+        stage: entry.stage,
+        message: entry.message,
+        provider: typeof entry.provider === 'string' ? entry.provider : null,
+        progress: typeof entry.progress === 'number' ? entry.progress : null,
+        timestamp: entry.timestamp
+      });
+    }
+
+    return entries;
   }
 }

@@ -1,8 +1,15 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ProcessingJobStatus, ProjectStatus } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 import { PROJECT_PROCESS_JOB_NAME, PROJECT_QUEUE_NAME } from '@video/shared';
 
 import { PrismaService } from '../database/prisma.service';
+
+interface ProcessingActivityInput {
+  stage: string;
+  message: string;
+  provider?: string | null;
+}
 
 @Injectable()
 export class ProjectPipelineStateService {
@@ -11,7 +18,13 @@ export class ProjectPipelineStateService {
     private readonly prismaService: PrismaService
   ) {}
 
-  async update(projectId: string, status: ProjectStatus, progress: number): Promise<void> {
+  async update(
+    projectId: string,
+    status: ProjectStatus,
+    progress: number,
+    detailMessage?: string,
+    activity?: ProcessingActivityInput
+  ): Promise<void> {
     await this.prismaService.project.update({
       where: {
         id: projectId
@@ -44,8 +57,29 @@ export class ProjectPipelineStateService {
       data: {
         status: ProcessingJobStatus.active,
         progress,
+        detailMessage: detailMessage ?? processingJob.detailMessage,
+        activityLog: this.nextActivityLog(processingJob.activityLog, activity, progress),
         errorMessage: null
       }
     });
+  }
+
+  private nextActivityLog(
+    currentLog: Prisma.JsonValue | null | undefined,
+    activity: ProcessingActivityInput | undefined,
+    progress: number
+  ): Prisma.InputJsonValue | undefined {
+    if (!activity) {
+      return undefined;
+    }
+
+    const entries = Array.isArray(currentLog) ? [...currentLog] : [];
+    entries.push({
+      ...activity,
+      progress,
+      timestamp: new Date().toISOString()
+    });
+
+    return entries.slice(-20) as Prisma.InputJsonValue;
   }
 }

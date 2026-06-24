@@ -30,9 +30,19 @@ export interface ProjectStatusResponse {
   status: ProjectStatus;
   progress: number;
   currentStep: string;
+  detailMessage: string | null;
+  activityLog: ProjectStatusActivityEntry[];
   errorMessage: string | null;
   lastUpdatedAt: string;
   isPossiblyStalled: boolean;
+}
+
+export interface ProjectStatusActivityEntry {
+  stage: string;
+  message: string;
+  provider: string | null;
+  progress: number | null;
+  timestamp: string;
 }
 
 export interface ScenePromptView {

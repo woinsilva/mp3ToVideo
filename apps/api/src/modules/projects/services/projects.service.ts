@@ -350,6 +350,16 @@ export class ProjectsService {
             bullJobId: queuedJob.bullJobId,
             status: 'queued',
             progress: 0,
+            detailMessage: 'Projeto enfileirado. Aguardando worker iniciar o pipeline.',
+            activityLog: [
+              {
+                stage: 'queued',
+                message: 'Projeto enfileirado e aguardando inicio do worker.',
+                provider: null,
+                progress: 0,
+                timestamp: new Date().toISOString()
+              }
+            ] satisfies Prisma.InputJsonValue,
             errorMessage: null
           }
         }),

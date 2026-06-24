@@ -74,6 +74,15 @@ export class ProjectRenderService {
       const sceneClipPaths: string[] = [];
 
       for (const [index, scene] of input.scenes.entries()) {
+        await this.processingProgressService.heartbeat(
+          input.projectId,
+          this.sceneRenderProgress(index, input.scenes.length),
+          `Renderizando cena ${index + 1} de ${input.scenes.length}: ${scene.title}.`,
+          {
+            stage: 'rendering',
+            message: `Renderizando cena ${index + 1} de ${input.scenes.length}: ${scene.title}.`
+          }
+        );
         const sceneClipPath = this.renderStorageService.buildSceneClipPath(
           input.organizationId,
           input.projectId,
@@ -99,6 +108,15 @@ export class ProjectRenderService {
 
         if (generatedSceneVideo) {
           await writeFile(sceneClipAbsolutePath, generatedSceneVideo);
+          await this.processingProgressService.heartbeat(
+            input.projectId,
+            this.sceneRenderProgress(index + 1, input.scenes.length),
+            `Cena ${index + 1} gerada diretamente em video por IA.`,
+            {
+              stage: 'rendering',
+              message: `Cena ${index + 1} gerada diretamente em video por IA.`
+            }
+          );
         } else {
           const generatedSceneImage = scenePrompt
             ? await this.sceneImageGenerationService.generate({
@@ -130,11 +148,30 @@ export class ProjectRenderService {
               scene.durationSeconds,
               this.renderStorageService.getAbsolutePath(generatedSceneImage.storagePath)
             );
+            await this.processingProgressService.heartbeat(
+              input.projectId,
+              this.sceneRenderProgress(index + 1, input.scenes.length),
+              `Cena ${index + 1} renderizada a partir de imagem gerada.`,
+              {
+                stage: 'rendering',
+                message: `Cena ${index + 1} renderizada a partir de imagem gerada.`
+              }
+            );
           } else {
             await this.ffmpegRenderingService.createSceneClip(
               sceneClipAbsolutePath,
               scene.durationSeconds,
               this.resolveSceneColor(scene.sectionType, index)
+            );
+            await this.processingProgressService.heartbeat(
+              input.projectId,
+              this.sceneRenderProgress(index + 1, input.scenes.length),
+              `Cena ${index + 1} renderizada com fallback procedural.`,
+              {
+                stage: 'rendering',
+                message: `Cena ${index + 1} renderizada com fallback procedural.`,
+                provider: 'procedural'
+              }
             );
           }
         }
@@ -164,7 +201,12 @@ export class ProjectRenderService {
         sceneClipPaths.push(sceneClipPath);
         await this.processingProgressService.heartbeat(
           input.projectId,
-          this.sceneRenderProgress(index + 1, input.scenes.length)
+          this.sceneRenderProgress(index + 1, input.scenes.length),
+          `Cena ${index + 1} concluida e anexada ao render final.`,
+          {
+            stage: 'rendering',
+            message: `Cena ${index + 1} concluida e anexada ao render final.`
+          }
         );
       }
 
@@ -183,7 +225,15 @@ export class ProjectRenderService {
         concatListAbsolutePath,
         intermediateVideoAbsolutePath
       );
-      await this.processingProgressService.heartbeat(input.projectId, 96);
+      await this.processingProgressService.heartbeat(
+        input.projectId,
+        96,
+        'Todas as cenas foram concatenadas em um unico video intermediario.',
+        {
+          stage: 'rendering',
+          message: 'Concatenando todas as cenas em um unico video.'
+        }
+      );
 
       const finalRenderPath = this.renderStorageService.buildFinalRenderPath(
         input.organizationId,
@@ -197,7 +247,15 @@ export class ProjectRenderService {
         this.renderStorageService.getAbsolutePath(input.audioPath),
         finalRenderAbsolutePath
       );
-      await this.processingProgressService.heartbeat(input.projectId, 99);
+      await this.processingProgressService.heartbeat(
+        input.projectId,
+        99,
+        'Faixa de audio sincronizada. Finalizando o MP4 de saida.',
+        {
+          stage: 'rendering',
+          message: 'Sincronizando a faixa de audio com o video final.'
+        }
+      );
 
       const renderAsset = await this.prismaService.asset.create({
         data: {

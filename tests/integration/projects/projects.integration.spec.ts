@@ -227,6 +227,10 @@ describe('Projects integration', () => {
     });
 
     expect(processingJob?.status).toBe('queued');
+    expect(processingJob?.detailMessage).toBe(
+      'Projeto enfileirado. Aguardando worker iniciar o pipeline.'
+    );
+    expect(Array.isArray(processingJob?.activityLog)).toBe(true);
 
     uploadedFilePath = resolve(track?.storagePath ?? '');
     expect(existsSync(uploadedFilePath)).toBe(true);
@@ -395,7 +399,17 @@ describe('Projects integration', () => {
         jobName: 'project.process',
         bullJobId: 'bull-job-1',
         status: 'completed',
-        progress: 100
+        progress: 100,
+        detailMessage: 'Pipeline concluido.',
+        activityLog: [
+          {
+            stage: 'completed',
+            message: 'Pipeline concluido.',
+            provider: null,
+            progress: 100,
+            timestamp: new Date().toISOString()
+          }
+        ]
       }
     });
 
@@ -493,6 +507,16 @@ describe('Projects integration', () => {
       status: 'completed',
       progress: 100,
       currentStep: 'Concluido',
+      detailMessage: 'Pipeline concluido.',
+      activityLog: [
+        {
+          stage: 'completed',
+          message: 'Pipeline concluido.',
+          provider: null,
+          progress: 100,
+          timestamp: expect.any(String)
+        }
+      ],
       errorMessage: null,
       lastUpdatedAt: expect.any(String),
       isPossiblyStalled: false
@@ -586,6 +610,9 @@ describe('Projects integration', () => {
     expect(refreshedProject.errorMessage).toBeNull();
     expect(processingJob?.status).toBe('queued');
     expect(processingJob?.progress).toBe(0);
+    expect(processingJob?.detailMessage).toBe(
+      'Projeto enfileirado. Aguardando worker iniciar o pipeline.'
+    );
   });
 
   it('rejects retry for projects that are not failed', async () => {

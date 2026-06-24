@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ProjectStatus, ProcessingJobStatus } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 import {
   PROJECT_PROCESS_JOB_NAME,
   PROJECT_QUEUE_NAME,
@@ -10,6 +11,12 @@ import type { Job } from 'bullmq';
 import { PrismaService } from '../database/prisma.service';
 import { ProjectProcessingPipelineService } from '../services/project-processing-pipeline.service';
 import { ProcessingProgressService } from '../services/processing-progress.service';
+
+interface ProcessingActivityInput {
+  stage: string;
+  message: string;
+  provider?: string | null;
+}
 
 @Injectable()
 export class ProjectProcessor {
@@ -28,8 +35,23 @@ export class ProjectProcessor {
       `[worker] starting project processing projectId=${job.data.projectId} bullJobId=${bullJobId}`
     );
 
-    await this.upsertProcessingJob(job.data.projectId, bullJobId, ProcessingJobStatus.active, 10);
-    await this.processingProgressService.heartbeat(job.data.projectId, 10);
+    await this.upsertProcessingJob(
+      job.data.projectId,
+      bullJobId,
+      ProcessingJobStatus.active,
+      10,
+      null,
+      'Worker iniciado. Preparando pipeline do projeto.',
+      {
+        stage: 'processing',
+        message: 'Worker iniciou o pipeline e esta preparando o processamento.'
+      }
+    );
+    await this.processingProgressService.heartbeat(
+      job.data.projectId,
+      10,
+      'Worker iniciado. Preparando pipeline do projeto.'
+    );
     await this.updateProject(job.data.projectId, {
       status: ProjectStatus.processing,
       errorMessage: null
@@ -42,7 +64,13 @@ export class ProjectProcessor {
         job.data.projectId,
         bullJobId,
         ProcessingJobStatus.completed,
-        100
+        100,
+        null,
+        'Pipeline concluido. O videoclipe final esta pronto para download.',
+        {
+          stage: 'completed',
+          message: 'Pipeline concluido com sucesso. O MP4 final foi gerado.'
+        }
       );
       await this.updateProject(job.data.projectId, {
         status: ProjectStatus.completed,
@@ -59,7 +87,12 @@ export class ProjectProcessor {
         bullJobId,
         ProcessingJobStatus.failed,
         undefined,
-        message
+        message,
+        `Falha no pipeline: ${message}`,
+        {
+          stage: 'failed',
+          message: `Falha no pipeline: ${message}`
+        }
       );
       await this.updateProject(job.data.projectId, {
         status: ProjectStatus.failed,
@@ -91,7 +124,9 @@ export class ProjectProcessor {
     bullJobId: string,
     status: ProcessingJobStatus,
     progress: number | undefined,
-    errorMessage?: string
+    errorMessage?: string | null,
+    detailMessage?: string | null,
+    activity?: ProcessingActivityInput
   ): Promise<void> {
     const existingJob = await this.prismaService.processingJob.findFirst({
       where: {
@@ -110,6 +145,12 @@ export class ProjectProcessor {
         data: {
           status,
           progress: progress ?? existingJob.progress,
+          detailMessage: detailMessage ?? existingJob.detailMessage,
+          activityLog: this.nextActivityLog(
+            existingJob.activityLog,
+            activity,
+            progress ?? existingJob.progress
+          ),
           errorMessage: errorMessage ?? null
         }
       });
@@ -125,8 +166,37 @@ export class ProjectProcessor {
         bullJobId,
         status,
         progress: progress ?? 0,
+        detailMessage: detailMessage ?? null,
+        activityLog: activity
+          ? [
+              {
+                ...activity,
+                progress: progress ?? 0,
+                timestamp: new Date().toISOString()
+              }
+            ]
+          : undefined,
         errorMessage
       }
     });
+  }
+
+  private nextActivityLog(
+    currentLog: Prisma.JsonValue | null | undefined,
+    activity: ProcessingActivityInput | undefined,
+    progress: number
+  ): Prisma.InputJsonValue | undefined {
+    if (!activity) {
+      return undefined;
+    }
+
+    const entries = Array.isArray(currentLog) ? [...currentLog] : [];
+    entries.push({
+      ...activity,
+      progress,
+      timestamp: new Date().toISOString()
+    });
+
+    return entries.slice(-20) as Prisma.InputJsonValue;
   }
 }

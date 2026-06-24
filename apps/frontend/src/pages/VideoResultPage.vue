@@ -30,6 +30,8 @@
           :status="statusPayload.status"
           :progress="statusPayload.progress"
           :current-step="statusPayload.currentStep"
+          :detail-message="statusPayload.detailMessage"
+          :activity-log="statusPayload.activityLog"
           :error-message="statusPayload.errorMessage"
           :last-updated-at="statusPayload.lastUpdatedAt"
           :is-possibly-stalled="statusPayload.isPossiblyStalled"

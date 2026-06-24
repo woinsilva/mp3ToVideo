@@ -262,6 +262,8 @@ model ProcessingJob {
   bullJobId    String?
   status       ProcessingJobStatus
   progress     Int                 @default(0)
+  detailMessage String?
+  activityLog  Json?
   errorMessage String?
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt
