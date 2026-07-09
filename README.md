@@ -107,6 +107,20 @@ Se quiser transcricao local real com Whisper:
 python -m pip install -r apps/worker/scripts/requirements-whisper.txt
 ```
 
+Para testar so a transcricao, sem subir o pipeline inteiro:
+
+```bash
+corepack pnpm whisper:transcribe -- --audio-path C:/caminho/da/musica.mp3
+```
+
+O comando usa as mesmas configuracoes do `.env` e imprime:
+
+- device solicitado
+- device efetivo usado na transcricao
+- idioma detectado
+- `rawText`
+- `normalizedText`
+
 Com GPU NVIDIA, o recomendado e usar CUDA configurado na maquina para o `faster-whisper`.
 
 Se quiser geracao visual local por prompt:
