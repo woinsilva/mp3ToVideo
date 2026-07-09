@@ -2,16 +2,16 @@
   <AppLayout>
     <section class="hero-banner">
       <div>
-        <p class="page-eyebrow">Processamento</p>
+        <p class="page-eyebrow">Geração em andamento</p>
         <h2 class="page-title">{{ projectTitle }}</h2>
-        <p class="page-subtitle">Polling automatico do status do projeto em tempo real.</p>
+        <p class="page-subtitle">Você pode sair desta página. A geração continuará em segundo plano.</p>
       </div>
       <div class="app-button-row">
         <button class="app-button app-button--ghost" type="button" @click="refreshManually">
-          Atualizar agora
+          <v-icon icon="mdi-refresh" size="18" /> Atualizar
         </button>
         <button class="app-button app-button--outline" type="button" @click="goBackToProject">
-          Voltar ao projeto
+          <v-icon icon="mdi-arrow-left" size="18" /> Detalhes
         </button>
       </div>
     </section>
@@ -35,14 +35,17 @@
     />
 
     <v-card v-else class="surface-card" rounded="xl">
-      <v-card-text>Carregando status do projeto...</v-card-text>
+      <v-card-text class="processing-loading">
+        <v-progress-circular indeterminate color="primary" />
+        <span>Buscando o progresso mais recente...</span>
+      </v-card-text>
     </v-card>
 
     <v-card v-if="statusPayload?.status === 'failed'" class="surface-card mt-4" rounded="xl">
       <v-card-text class="d-flex flex-column ga-3">
-        <h3 class="section-title">Processamento interrompido</h3>
+        <h3 class="section-title">A geração foi interrompida</h3>
         <p class="section-copy">
-          O projeto voltou para a tela de detalhes para permitir retry ou reenvio do audio.
+          Abra os detalhes para revisar as configurações e tentar novamente.
         </p>
         <div class="app-button-row">
           <button class="app-button" type="button" @click="goBackToProject">Abrir detalhes</button>
@@ -164,3 +167,14 @@ export default class ProcessingPage extends Vue {
   }
 }
 </script>
+
+<style scoped>
+.processing-loading {
+  display: flex;
+  min-height: 180px;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  color: #65676b;
+}
+</style>

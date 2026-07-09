@@ -2,16 +2,16 @@
   <AppLayout>
     <section class="hero-banner">
       <div>
-        <p class="page-eyebrow">Resultado</p>
+        <p class="page-eyebrow">Videoclipe concluído</p>
         <h2 class="page-title">{{ projectTitle }}</h2>
-        <p class="page-subtitle">Player do MP4 final e lista das cenas geradas pelo pipeline.</p>
+        <p class="page-subtitle">Seu vídeo está pronto para assistir, baixar e compartilhar.</p>
       </div>
       <div class="app-button-row">
         <button class="app-button app-button--ghost" type="button" @click="reloadPage">
-          Atualizar
+          <v-icon icon="mdi-refresh" size="18" /> Atualizar
         </button>
         <button class="app-button app-button--outline" type="button" @click="goToProject">
-          Voltar ao projeto
+          <v-icon icon="mdi-arrow-left" size="18" /> Detalhes
         </button>
       </div>
     </section>

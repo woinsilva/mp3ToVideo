@@ -1,14 +1,22 @@
 <template>
   <v-card class="surface-card" rounded="xl">
     <v-card-text class="d-flex flex-column ga-4">
-      <div class="d-flex justify-space-between align-center flex-wrap ga-3">
-        <div>
-          <h3 class="section-title">Processamento</h3>
+      <div class="status-heading">
+        <div class="status-heading__main">
+          <span class="status-symbol">
+            <v-progress-circular v-if="isActive" indeterminate :color="tone" size="28" width="3" />
+            <v-icon v-else :icon="statusIcon" size="25" />
+          </span>
+          <div>
+          <h3 class="section-title">{{ friendlyHeading }}</h3>
           <p class="section-copy">{{ currentStep }}</p>
           <p v-if="detailMessage" class="section-copy detail-copy">{{ detailMessage }}</p>
-          <p class="section-copy status-meta">{{ lastUpdateLabel }}</p>
+          </div>
         </div>
-        <v-chip :color="tone" variant="tonal">{{ statusLabel }}</v-chip>
+        <div class="status-heading__meta">
+          <strong>{{ progress }}%</strong>
+          <span>{{ lastUpdateLabel }}</span>
+        </div>
       </div>
 
       <v-progress-linear :model-value="progress" :color="tone" height="12" rounded />
@@ -25,7 +33,7 @@
       </div>
 
       <v-alert v-if="isPossiblyStalled" type="warning" variant="tonal">
-        O processamento pode estar travado ou demorando mais do que o esperado. A geracao continua no backend.
+        Esta etapa está demorando mais que o normal, mas a geração continua no servidor.
       </v-alert>
 
       <v-alert v-if="errorMessage" type="error" variant="tonal">
@@ -47,13 +55,16 @@
 
         <div v-if="lyrics" class="lyrics-panel">
           <div class="lyrics-panel__block">
-            <h5 class="lyrics-panel__title">Letra bruta</h5>
+            <h5 class="lyrics-panel__title">Letra utilizada para criar as cenas</h5>
             <pre class="lyrics-panel__text">{{ lyrics.rawText }}</pre>
           </div>
-          <div class="lyrics-panel__block">
+          <details class="lyrics-normalized">
+            <summary>Ver texto normalizado</summary>
+            <div class="lyrics-panel__block">
             <h5 class="lyrics-panel__title">Letra normalizada</h5>
             <pre class="lyrics-panel__text">{{ lyrics.normalizedText }}</pre>
-          </div>
+            </div>
+          </details>
         </div>
 
         <div v-if="musicSections.length" class="sections-list">
@@ -63,7 +74,7 @@
             class="section-entry"
           >
             <div class="activity-entry__topline">
-              <span>{{ section.title }} • {{ formatSeconds(section.startSeconds) }} - {{ formatSeconds(section.endSeconds) }}</span>
+              <span>{{ section.title }} · {{ formatSeconds(section.startSeconds) }} – {{ formatSeconds(section.endSeconds) }}</span>
               <div class="activity-entry__chips">
                 <v-chip size="x-small" variant="outlined">{{ section.type }}</v-chip>
               </div>
@@ -183,6 +194,23 @@ export default class ProjectStatusTimeline extends Vue {
     return formatProjectStatusLabel(this.status);
   }
 
+  get isActive(): boolean {
+    return !['completed', 'failed', 'draft'].includes(this.status);
+  }
+
+  get friendlyHeading(): string {
+    if (this.status === 'completed') return 'Videoclipe concluído';
+    if (this.status === 'failed') return 'A geração encontrou um problema';
+    if (this.status === 'draft') return 'Pronto para começar';
+    return 'Criando seu videoclipe';
+  }
+
+  get statusIcon(): string {
+    if (this.status === 'completed') return 'mdi-check';
+    if (this.status === 'failed') return 'mdi-alert-outline';
+    return 'mdi-music-note';
+  }
+
   get lastUpdateLabel() {
     return formatRelativeStatusUpdate(this.lastUpdatedAt);
   }
@@ -248,7 +276,48 @@ export default class ProjectStatusTimeline extends Vue {
 
 <style scoped>
 .detail-copy {
-  color: rgba(var(--v-theme-on-surface), 0.82);
+  color: #4b4f56;
+}
+
+.status-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.status-heading__main {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+}
+
+.status-symbol {
+  display: inline-flex;
+  width: 48px;
+  height: 48px;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  color: #0866ff;
+  background: #e7f3ff;
+}
+
+.status-heading__meta {
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+}
+
+.status-heading__meta strong {
+  color: #0866ff;
+  font-size: 1.25rem;
+}
+
+.status-heading__meta span {
+  color: #65676b;
+  font-size: 0.74rem;
 }
 
 .activity-title {
@@ -271,6 +340,14 @@ export default class ProjectStatusTimeline extends Vue {
   border-radius: 16px;
   padding: 0.85rem 1rem;
   background: rgba(var(--v-theme-on-surface), 0.02);
+}
+
+.lyrics-normalized summary {
+  margin: 0 0 8px;
+  color: #0866ff;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 700;
 }
 
 .lyrics-panel__title {
@@ -352,5 +429,25 @@ export default class ProjectStatusTimeline extends Vue {
 .activity-list::-webkit-scrollbar-track {
   background: rgba(var(--v-theme-on-surface), 0.04);
   border-radius: 999px;
+}
+
+@media (max-width: 600px) {
+  .status-heading {
+    flex-direction: column;
+  }
+
+  .status-heading__meta {
+    align-items: center;
+    flex-direction: row;
+    gap: 8px;
+  }
+
+  .activity-entry__topline {
+    flex-direction: column;
+  }
+
+  .activity-entry__chips {
+    justify-content: flex-start;
+  }
 }
 </style>
