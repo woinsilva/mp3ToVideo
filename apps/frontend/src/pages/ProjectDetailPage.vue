@@ -113,6 +113,25 @@
                 </select>
               </label>
 
+              <div class="reference-info-card">
+                <div class="reference-info-card__icon">
+                  <v-icon icon="mdi-image-plus-outline" size="24" />
+                </div>
+                <div>
+                  <h3>Imagens de referência por cena</h3>
+                  <p>
+                    As imagens são enviadas depois que o sistema criar a lista de cenas.
+                    Este projeto deve gerar aproximadamente
+                    <strong>{{ estimatedSceneCount }}</strong>
+                    {{ estimatedSceneCount === 1 ? 'cena' : 'cenas' }} com os tempos atuais.
+                  </p>
+                  <p>
+                    Fluxo: envie a música, aguarde as cenas aparecerem, adicione uma imagem em cada
+                    cena desejada e clique em reprocessar com referências.
+                  </p>
+                </div>
+              </div>
+
               <v-alert
                 v-if="clipDurationSecondsRawValue && normalizedClipDurationSeconds === null"
                 type="warning"
@@ -164,6 +183,10 @@
     </v-row>
 
     <section v-if="scenes.length" class="mt-6">
+      <v-alert type="info" variant="tonal" class="mb-4">
+        Adicione imagens de referência nas cenas abaixo e depois use
+        <strong>Reprocessar com referências</strong> para gerar um novo vídeo baseado nelas.
+      </v-alert>
       <SceneList :scenes="scenes" @reference-upload="uploadSceneReferenceImage" />
     </section>
   </AppLayout>
@@ -291,6 +314,19 @@ export default class ProjectDetailPage extends Vue {
     }
 
     return Math.floor(parsedValue);
+  }
+
+  get estimatedSceneCount(): number {
+    const clipDuration =
+      this.normalizedClipDurationSeconds ??
+      this.projectsStore.currentProject?.clipDurationSeconds ??
+      30;
+    const sceneDuration =
+      this.normalizedSceneDurationSeconds ??
+      this.projectsStore.currentProject?.sceneDurationSeconds ??
+      5;
+
+    return Math.max(1, Math.ceil(clipDuration / sceneDuration));
   }
 
   get nextStepDescription(): string {
@@ -454,3 +490,43 @@ export default class ProjectDetailPage extends Vue {
   }
 }
 </script>
+
+<style scoped>
+.reference-info-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #cfe1ff;
+  border-radius: 14px;
+  background: #f4f8ff;
+}
+
+.reference-info-card__icon {
+  display: inline-flex;
+  width: 42px;
+  height: 42px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  color: #0866ff;
+  background: #e7f0ff;
+}
+
+.reference-info-card h3 {
+  margin: 0 0 6px;
+  color: #1c1e21;
+  font-size: 0.9rem;
+}
+
+.reference-info-card p {
+  margin: 0 0 6px;
+  color: #65676b;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.reference-info-card p:last-child {
+  margin-bottom: 0;
+}
+</style>
