@@ -1,67 +1,70 @@
 <template>
   <AppLayout>
-    <section class="hero-banner">
+    <section class="hero-banner create-hero">
       <div>
-        <p class="page-eyebrow">Novo projeto</p>
-        <h2 class="page-title">Criar videoclipe</h2>
-        <p class="page-subtitle">Defina o titulo do projeto e, se quiser, limite o clipe aos primeiros segundos da musica.</p>
+        <p class="page-eyebrow">Novo videoclipe</p>
+        <h2 class="page-title">Vamos começar</h2>
+        <p class="page-subtitle">Dê um nome ao projeto. Na próxima etapa você enviará a música.</p>
       </div>
+      <span class="step-indicator"><strong>1</strong> de 2 · Configuração</span>
     </section>
 
-    <v-card class="surface-card form-card" rounded="xl">
+    <v-card class="surface-card form-card create-form" rounded="xl">
       <v-card-text>
         <form class="app-native-form" @submit.prevent="submit">
+          <div class="form-section-heading">
+            <span>1</span>
+            <div>
+              <h3>Informações básicas</h3>
+              <p>Você poderá alterar as opções antes de iniciar a geração.</p>
+            </div>
+          </div>
           <label class="auth-input-group">
-            <span class="auth-input-label">Titulo do projeto</span>
+            <span class="auth-input-label">Nome do videoclipe</span>
             <input
               v-model="title"
               class="auth-input"
               type="text"
-              placeholder="Ex.: Clip da musica X"
+              placeholder="Ex.: Caiu o salário"
+              autofocus
             />
           </label>
+
           <label class="auth-input-group">
-            <span class="auth-input-label">Gerar apenas os primeiros segundos</span>
-            <input
-              v-model="clipDurationSecondsInput"
-              class="auth-input"
-              type="number"
-              min="1"
-              max="600"
-              step="1"
-              placeholder="Opcional. Ex.: 20"
-            />
-          </label>
-          <label class="auth-input-group">
-            <span class="auth-input-label">Duracao alvo por cena</span>
-            <input
-              v-model="sceneDurationSecondsInput"
-              class="auth-input"
-              type="number"
-              min="3"
-              max="30"
-              step="1"
-              placeholder="Opcional. Ex.: 5"
-            />
-          </label>
-          <label class="auth-input-group">
-            <span class="auth-input-label">Checkpoint visual</span>
-            <input
-              v-model="visualCheckpointName"
-              class="auth-input"
-              type="text"
-              placeholder="Opcional. Ex.: sd_xl_turbo_1.0.safetensors"
-            />
-          </label>
-          <label class="auth-input-group">
-            <span class="auth-input-label">Letra manual da musica</span>
+            <span class="auth-input-label">Letra da música <small>Opcional, mas recomendado</small></span>
             <textarea
               v-model="manualLyricsText"
               class="auth-input auth-input--textarea"
-              rows="10"
-              placeholder="Opcional. Cole aqui a letra real para priorizar essa versao em vez da transcricao automatica."
+              rows="8"
+              placeholder="Cole a letra completa, incluindo marcações como [Verse], [Chorus] e [Bridge]."
             />
+            <span class="field-help">Com a letra original, as cenas ficam mais fiéis à história da música.</span>
           </label>
+
+          <details class="advanced-settings">
+            <summary>
+              <span><v-icon icon="mdi-tune-variant" size="20" /> Configurações avançadas</span>
+              <v-icon icon="mdi-chevron-down" size="20" />
+            </summary>
+            <div class="advanced-settings__body">
+              <label class="auth-input-group">
+                <span class="auth-input-label">Duração total do teste</span>
+                <input v-model="clipDurationSecondsInput" class="auth-input" type="number" min="1" max="600" step="1" placeholder="Vídeo completo" />
+                <span class="field-help">Deixe vazio para usar a música inteira.</span>
+              </label>
+              <label class="auth-input-group">
+                <span class="auth-input-label">Duração aproximada de cada cena</span>
+                <input v-model="sceneDurationSecondsInput" class="auth-input" type="number" min="3" max="30" step="1" placeholder="5 segundos" />
+              </label>
+              <label class="auth-input-group">
+                <span class="auth-input-label">Modelo visual</span>
+                <select v-model="visualCheckpointName" class="auth-input">
+                  <option value="">Automático (recomendado)</option>
+                  <option value="sd_xl_turbo_1.0.safetensors">SDXL Turbo</option>
+                </select>
+              </label>
+            </div>
+          </details>
           <v-alert v-if="errorMessage" type="error" variant="tonal">{{ errorMessage }}</v-alert>
 
           <v-alert v-if="submitted && !normalizedTitle" type="warning" variant="tonal">
@@ -83,8 +86,9 @@
           </v-alert>
 
           <div class="app-button-row">
-            <button class="app-button" type="submit" :disabled="loading">
-              {{ loading ? 'Criando projeto...' : 'Criar projeto' }}
+            <button class="app-button app-button--large" type="submit" :disabled="loading">
+              {{ loading ? 'Preparando...' : 'Continuar para o upload' }}
+              <v-icon v-if="!loading" icon="mdi-arrow-right" size="19" />
             </button>
             <button class="app-button app-button--outline" type="button" @click="cancel">
               Cancelar
@@ -220,3 +224,106 @@ export default class CreateProjectPage extends Vue {
   }
 }
 </script>
+
+<style scoped>
+.create-hero,
+.create-form {
+  max-width: 860px;
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.step-indicator {
+  color: #65676b;
+  font-size: 0.84rem;
+  white-space: nowrap;
+}
+
+.step-indicator strong {
+  color: #0866ff;
+}
+
+.create-form {
+  padding: 16px;
+}
+
+.form-section-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid #e4e6eb;
+}
+
+.form-section-heading > span {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  color: #fff;
+  background: #0866ff;
+  font-weight: 800;
+}
+
+.form-section-heading h3,
+.form-section-heading p {
+  margin: 0;
+}
+
+.form-section-heading p,
+.field-help {
+  color: #65676b;
+  font-size: 0.8rem;
+}
+
+.auth-input-label small {
+  color: #65676b;
+  font-weight: 500;
+}
+
+.advanced-settings {
+  border: 1px solid #dfe3e8;
+  border-radius: 12px;
+  background: #f7f8fa;
+}
+
+.advanced-settings summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 15px 16px;
+  cursor: pointer;
+  font-weight: 700;
+  list-style: none;
+}
+
+.advanced-settings summary span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.advanced-settings__body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding: 4px 16px 18px;
+}
+
+.advanced-settings__body label:last-child {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 640px) {
+  .advanced-settings__body {
+    grid-template-columns: 1fr;
+  }
+
+  .advanced-settings__body label:last-child {
+    grid-column: auto;
+  }
+}
+</style>

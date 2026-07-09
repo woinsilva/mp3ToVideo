@@ -2,9 +2,9 @@
   <AppLayout>
     <section class="hero-banner">
       <div>
-        <p class="page-eyebrow">Projeto</p>
+        <p class="page-eyebrow">Etapa 2 de 2 · Envio</p>
         <h2 class="page-title">{{ projectTitle }}</h2>
-        <p class="page-subtitle">Envie o MP3 e siga para o acompanhamento do processamento.</p>
+        <p class="page-subtitle">Revise as opções, escolha a música e inicie a geração.</p>
       </div>
       <v-chip :color="statusTone" variant="tonal">{{ statusLabel }}</v-chip>
     </section>
@@ -18,8 +18,8 @@
         <FileUploadCard
           v-if="projectStatus === 'draft' || projectStatus === 'failed'"
           :loading="loading"
-          :submit-label="projectStatus === 'failed' ? 'Reenviar audio' : 'Enviar MP3'"
-          :loading-label="projectStatus === 'failed' ? 'Reenviando audio...' : 'Enviando MP3...'"
+          :submit-label="projectStatus === 'failed' ? 'Reenviar música' : 'Enviar música e começar'"
+          :loading-label="projectStatus === 'failed' ? 'Reenviando música...' : 'Enviando música...'"
           @upload="uploadTrack"
         />
         <v-card
@@ -67,13 +67,13 @@
         <v-card class="surface-card" rounded="xl">
           <v-card-text class="d-flex flex-column ga-4">
             <div>
-              <h3 class="section-title">Proximos passos</h3>
+              <h3 class="section-title">Configuração da geração</h3>
               <p class="section-copy">{{ nextStepDescription }}</p>
             </div>
 
             <div v-if="projectStatus === 'draft' || projectStatus === 'failed'" class="d-flex flex-column ga-3">
               <label class="auth-input-group">
-                <span class="auth-input-label">Gerar apenas os primeiros segundos</span>
+                <span class="auth-input-label">Duração total do teste</span>
                 <input
                   v-model="clipDurationSecondsInput"
                   class="auth-input"
@@ -85,7 +85,7 @@
                 />
               </label>
               <label class="auth-input-group">
-                <span class="auth-input-label">Duracao alvo por cena</span>
+                <span class="auth-input-label">Duração por cena</span>
                 <input
                   v-model="sceneDurationSecondsInput"
                   class="auth-input"
@@ -97,13 +97,20 @@
                 />
               </label>
               <label class="auth-input-group">
-                <span class="auth-input-label">Checkpoint visual</span>
-                <input
+                <span class="auth-input-label">Modelo visual</span>
+                <select
                   v-model="visualCheckpointName"
                   class="auth-input"
-                  type="text"
-                  placeholder="Opcional. Ex.: sd_xl_turbo_1.0.safetensors"
-                />
+                >
+                  <option value="">Automático (recomendado)</option>
+                  <option value="sd_xl_turbo_1.0.safetensors">SDXL Turbo</option>
+                  <option
+                    v-if="visualCheckpointName && visualCheckpointName !== 'sd_xl_turbo_1.0.safetensors'"
+                    :value="visualCheckpointName"
+                  >
+                    Modelo atual: {{ visualCheckpointName }}
+                  </option>
+                </select>
               </label>
 
               <v-alert
