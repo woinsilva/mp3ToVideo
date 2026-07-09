@@ -34,6 +34,11 @@ export class ScenePromptGenerationService {
         role: 'system',
         content: [
           'You generate concise cinematic prompts for short AI video clips.',
+          'CRITICAL REQUIREMENTS FOR REALISM:',
+          '- Describe a single, simple action per scene.',
+          '- Avoid crowds, avoid prominent hands, avoid complex dances, and avoid rapid body movements.',
+          '- Focus on realistic human anatomy and physically plausible motion.',
+          '- Ensure stable identity and natural facial expressions.',
           'Return only valid JSON.',
           'Use these exact keys: positivePrompt, negativePrompt, style, camera.'
         ].join(' ')
@@ -53,10 +58,17 @@ export class ScenePromptGenerationService {
       generated.style &&
       generated.camera
     ) {
+      const baseNegative =
+        'deformed anatomy, extra limbs, fused fingers, malformed hands, distorted face, morphing body, duplicate person, unstable identity, flicker, jitter, psychedelic artifacts, surreal deformation, unnatural movement, frame inconsistency, blurry';
+      const combinedNegative =
+        generated.negativePrompt.trim().length > 0
+          ? `${generated.negativePrompt.trim()}, ${baseNegative}`
+          : baseNegative;
+
       return {
         provider: this.ollamaClientService.isEnabled() ? 'ollama' : fallback.provider,
         positivePrompt: generated.positivePrompt.trim(),
-        negativePrompt: generated.negativePrompt.trim(),
+        negativePrompt: combinedNegative,
         style: generated.style.trim(),
         camera: generated.camera.trim()
       };

@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -44,6 +44,7 @@ export interface GenerateVideoInput {
   height: number;
   durationSeconds: number;
   sceneId: string;
+  referenceImagePath?: string | null;
 }
 
 export interface ComfyUiGenerationResult {
@@ -204,6 +205,9 @@ export class ComfyUiClientService {
     );
 
     try {
+      const referenceImageFilename = input.referenceImagePath
+        ? await this.uploadInputImage(input.referenceImagePath, input.sceneId)
+        : null;
       const workflow = await this.workflowLoaderService.buildVideoWorkflow({
         positivePrompt: input.positivePrompt,
         negativePrompt: input.negativePrompt,
@@ -211,7 +215,8 @@ export class ComfyUiClientService {
         height: input.height,
         length,
         seed: this.randomSeed(),
-        filenamePrefix: `video/scene-${input.sceneId}`
+        filenamePrefix: `video/scene-${input.sceneId}`,
+        referenceImageFilename
       });
 
       const promptId = await this.submitWorkflow(workflow);
@@ -305,6 +310,40 @@ export class ComfyUiClientService {
     }
 
     return promptId;
+  }
+
+  private async uploadInputImage(referenceImagePath: string, sceneId: string): Promise<string> {
+    const baseUrl = this.configService.get<string>('visual.comfyuiBaseUrl', 'http://localhost:8188');
+    const fileBuffer = await readFile(referenceImagePath);
+    const originalName = basename(referenceImagePath);
+    const filename = `scene-${sceneId}-${Date.now()}-${originalName}`;
+    const formData = new FormData();
+
+    formData.append('image', new Blob([new Uint8Array(fileBuffer)]), filename);
+    formData.append('type', 'input');
+    formData.append('overwrite', 'true');
+
+    this.logger.log(`[ComfyUI] Uploading reference image for scene=${sceneId}: ${filename}`);
+
+    const response = await fetch(`${baseUrl}/upload/image`, {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `ComfyUI reference image upload failed with status ${response.status}: ${await response.text()}`
+      );
+    }
+
+    const payload = (await response.json()) as { name?: string; subfolder?: string };
+    const uploadedName = payload.subfolder ? `${payload.subfolder}/${payload.name}` : payload.name;
+
+    if (!uploadedName) {
+      throw new Error('ComfyUI reference image upload did not return an input filename');
+    }
+
+    return uploadedName;
   }
 
   private async waitForHistory(promptId: string): Promise<ComfyUiHistoryEntry> {

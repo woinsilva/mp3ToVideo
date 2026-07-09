@@ -140,13 +140,13 @@
             </button>
 
             <button
-              v-if="projectStatus === 'failed'"
+              v-if="projectStatus === 'failed' || projectStatus === 'completed'"
               class="app-button"
               :disabled="loading"
               type="button"
               @click="retryProject"
             >
-              Tentar novamente
+              {{ projectStatus === 'completed' ? 'Reprocessar com referências' : 'Tentar novamente' }}
             </button>
 
             <button
@@ -162,6 +162,10 @@
         </v-card>
       </v-col>
     </v-row>
+
+    <section v-if="scenes.length" class="mt-6">
+      <SceneList :scenes="scenes" @reference-upload="uploadSceneReferenceImage" />
+    </section>
   </AppLayout>
 </template>
 
@@ -170,6 +174,7 @@ import { Component, Vue } from 'vue-facing-decorator';
 
 import FileUploadCard from '@/components/FileUploadCard.vue';
 import ProjectStatusTimeline from '@/components/ProjectStatusTimeline.vue';
+import SceneList from '@/components/SceneList.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { useAuthStore } from '@/stores/auth.store';
 import { useProjectsStore } from '@/stores/projects.store';
@@ -184,7 +189,8 @@ import type { ProjectStatus } from '@/types/project.types';
   components: {
     AppLayout,
     FileUploadCard,
-    ProjectStatusTimeline
+    ProjectStatusTimeline,
+    SceneList
   }
 })
 export default class ProjectDetailPage extends Vue {
@@ -227,6 +233,10 @@ export default class ProjectDetailPage extends Vue {
     return this.projectsStore.currentStatus?.projectId === this.projectId
       ? this.projectsStore.currentStatus
       : null;
+  }
+
+  get scenes() {
+    return this.projectsStore.currentScenes;
   }
 
   get isProcessing(): boolean {
@@ -328,6 +338,7 @@ export default class ProjectDetailPage extends Vue {
 
       if (this.projectsStore.currentProject?.status !== 'draft') {
         await this.projectsStore.fetchStatus(this.projectId, this.authStore.token);
+        await this.projectsStore.fetchScenes(this.projectId, this.authStore.token);
       }
     } catch (error) {
       this.errorMessage = error instanceof Error ? error.message : 'Falha ao carregar projeto';
@@ -414,6 +425,29 @@ export default class ProjectDetailPage extends Vue {
     } catch (error) {
       this.errorMessage =
         error instanceof Error ? error.message : 'Falha ao reenfileirar projeto';
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  async uploadSceneReferenceImage(payload: { sceneId: string; file: File }) {
+    if (!this.authStore.token) {
+      return;
+    }
+
+    this.loading = true;
+    this.errorMessage = null;
+
+    try {
+      await this.projectsStore.uploadSceneReferenceImage(
+        this.projectId,
+        payload.sceneId,
+        payload.file,
+        this.authStore.token
+      );
+    } catch (error) {
+      this.errorMessage =
+        error instanceof Error ? error.message : 'Falha ao enviar imagem de referencia';
     } finally {
       this.loading = false;
     }

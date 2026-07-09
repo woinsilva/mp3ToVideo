@@ -84,6 +84,8 @@ export interface ProjectScene {
   status: string;
   visualProvider: string | null;
   videoAssetId: string | null;
+  referenceImageAssetId: string | null;
+  hasReferenceImage: boolean;
   prompt: ScenePromptView | null;
 }
 

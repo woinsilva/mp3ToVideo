@@ -42,7 +42,7 @@
     </v-row>
 
     <section class="mt-6">
-      <SceneList :scenes="scenes" />
+      <SceneList :scenes="scenes" @reference-upload="uploadSceneReferenceImage" />
     </section>
 
     <v-card
@@ -224,6 +224,29 @@ export default class VideoResultPage extends Vue {
     anchor.download = `${this.projectId}.mp4`;
     anchor.click();
     URL.revokeObjectURL(url);
+  }
+
+  async uploadSceneReferenceImage(payload: { sceneId: string; file: File }) {
+    if (!this.authStore.token) {
+      return;
+    }
+
+    this.loading = true;
+    this.errorMessage = null;
+
+    try {
+      await this.projectsStore.uploadSceneReferenceImage(
+        this.projectId,
+        payload.sceneId,
+        payload.file,
+        this.authStore.token
+      );
+    } catch (error) {
+      this.errorMessage =
+        error instanceof Error ? error.message : 'Falha ao enviar imagem de referencia';
+    } finally {
+      this.loading = false;
+    }
   }
 
   reloadPage() {

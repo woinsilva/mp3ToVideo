@@ -12,6 +12,7 @@ export interface VideoWorkflowParams {
   length: number;
   seed: number;
   filenamePrefix: string;
+  referenceImageFilename?: string | null;
 }
 
 @Injectable()
@@ -75,12 +76,25 @@ export class ComfyUiWorkflowLoaderService {
       resolved = resolved.split(placeholder).join(replacement);
     }
 
+    const workflow = JSON.parse(resolved) as Record<string, { class_type: string; inputs: Record<string, unknown> }>;
+
+    if (params.referenceImageFilename) {
+      workflow['56'] = {
+        class_type: 'LoadImage',
+        inputs: {
+          image: params.referenceImageFilename
+        }
+      };
+      workflow['55'].inputs.start_image = ['56', 0];
+    }
+
     this.logger.debug(
       `Built video workflow with params: width=${params.width}, height=${params.height}, ` +
-        `length=${params.length}, seed=${params.seed}, unet=${unetName}`
+        `length=${params.length}, seed=${params.seed}, unet=${unetName}, ` +
+        `referenceImage=${params.referenceImageFilename ? 'yes' : 'no'}`
     );
 
-    return JSON.parse(resolved) as Record<string, unknown>;
+    return workflow as Record<string, unknown>;
   }
 
   private async loadTemplate(): Promise<string> {

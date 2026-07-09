@@ -10,6 +10,7 @@ interface SceneVideoInput {
   width: number;
   height: number;
   durationSeconds: number;
+  referenceImagePath?: string | null;
 }
 
 export interface SceneVideoResult {
@@ -32,7 +33,8 @@ export class SceneVideoGenerationService {
         negativePrompt: input.negativePrompt,
         width: input.width,
         height: input.height,
-        durationSeconds: input.durationSeconds
+        durationSeconds: input.durationSeconds,
+        referenceImagePath: input.referenceImagePath
       });
 
     if (!result) {

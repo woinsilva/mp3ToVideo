@@ -491,8 +491,8 @@ export class ProjectsService {
       throw new BadRequestException('Project does not have an uploaded track');
     }
 
-    if (project.status !== ProjectStatus.failed) {
-      throw new BadRequestException('Only failed projects can be retried');
+    if (project.status !== ProjectStatus.failed && project.status !== ProjectStatus.completed) {
+      throw new BadRequestException('Only failed or completed projects can be retried');
     }
 
     const providedManualLyrics = this.normalizeManualLyricsText(input.manualLyricsText);

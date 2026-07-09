@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ComfyUiWorkflowLoaderService } from '../../../apps/worker/src/services/comfyui-workflow-loader.service';
 
 describe('ComfyUiWorkflowLoaderService', () => {
-  it('loads and parameterizes the workflow JSON', async () => {
+  function createService() {
     const configService = {
       get: vi.fn().mockImplementation((key: string, defaultValue?: unknown) => {
         if (key === 'visual.comfyuiVideoUnetName') return 'wan-unet.safetensors';
@@ -21,7 +21,11 @@ describe('ComfyUiWorkflowLoaderService', () => {
       })
     } as never;
 
-    const service = new ComfyUiWorkflowLoaderService(configService);
+    return new ComfyUiWorkflowLoaderService(configService);
+  }
+
+  it('loads and parameterizes the workflow JSON', async () => {
+    const service = createService();
 
     const workflow = await service.buildVideoWorkflow({
       positivePrompt: 'A beautiful sunset',
@@ -41,5 +45,28 @@ describe('ComfyUiWorkflowLoaderService', () => {
     expect(workflow['55'].inputs.length).toBe(121);
     expect(workflow['3'].inputs.seed).toBe(123456789);
     expect(workflow['58'].inputs.filename_prefix).toBe('test-video');
+  });
+
+  it('connects a reference image to the Wan start_image input', async () => {
+    const service = createService();
+
+    const workflow = await service.buildVideoWorkflow({
+      positivePrompt: 'A realistic singer at a bar',
+      negativePrompt: 'deformed anatomy',
+      width: 1280,
+      height: 704,
+      length: 121,
+      seed: 987654321,
+      filenamePrefix: 'test-video',
+      referenceImageFilename: 'scene-reference.png'
+    });
+
+    expect(workflow['56']).toEqual({
+      class_type: 'LoadImage',
+      inputs: {
+        image: 'scene-reference.png'
+      }
+    });
+    expect(workflow['55'].inputs.start_image).toEqual(['56', 0]);
   });
 });

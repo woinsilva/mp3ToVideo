@@ -206,6 +206,36 @@ export const useProjectsStore = defineStore('projects', {
       this.currentScenes = await projectsService.scenes(projectId, token);
       return this.currentScenes;
     },
+    async uploadSceneReferenceImage(
+      projectId: string,
+      sceneId: string,
+      file: File,
+      token: string
+    ) {
+      this.isLoading = true;
+      this.errorMessage = null;
+
+      try {
+        const updatedScene = await projectsService.uploadSceneReferenceImage(
+          projectId,
+          sceneId,
+          file,
+          token
+        );
+
+        this.currentScenes = this.currentScenes.map((scene) =>
+          scene.id === sceneId ? updatedScene : scene
+        );
+
+        return updatedScene;
+      } catch (error) {
+        this.errorMessage =
+          error instanceof Error ? error.message : 'Falha ao enviar imagem de referencia';
+        throw error;
+      } finally {
+        this.isLoading = false;
+      }
+    },
     async fetchRender(projectId: string, token: string) {
       this.currentRender = await projectsService.render(projectId, token);
       return this.currentRender;

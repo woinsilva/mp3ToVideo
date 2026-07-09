@@ -32,6 +32,23 @@
               </v-chip>
             </div>
             <p>{{ scene.description }}</p>
+            <div class="scene-reference">
+              <v-chip
+                :color="scene.hasReferenceImage ? 'success' : 'default'"
+                size="x-small"
+                variant="tonal"
+              >
+                {{ scene.hasReferenceImage ? 'Referência adicionada' : 'Sem referência' }}
+              </v-chip>
+              <label class="scene-reference__button">
+                <input
+                  accept="image/jpeg,image/png,image/webp"
+                  type="file"
+                  @change="onReferenceImageSelected(scene.id, $event)"
+                />
+                {{ scene.hasReferenceImage ? 'Trocar imagem' : 'Adicionar imagem' }}
+              </label>
+            </div>
           </div>
         </article>
       </div>
@@ -48,6 +65,18 @@ import type { ProjectScene } from '@/types/project.types';
 export default class SceneList extends Vue {
   @Prop({ required: true })
   readonly scenes!: ProjectScene[];
+
+  onReferenceImageSelected(sceneId: string, event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    input.value = '';
+
+    if (!file) {
+      return;
+    }
+
+    this.$emit('reference-upload', { sceneId, file });
+  }
 
   get totalDuration(): number {
     return this.scenes.length ? Math.max(...this.scenes.map((scene) => scene.endSeconds)) : 0;
@@ -162,6 +191,38 @@ export default class SceneList extends Vue {
   line-height: 1.5;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
+}
+
+.scene-reference {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.scene-reference__button {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  color: #0866ff;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 800;
+  transition: background 0.16s ease, border-color 0.16s ease;
+}
+
+.scene-reference__button:hover {
+  border-color: #0866ff;
+  background: #eef4ff;
+}
+
+.scene-reference__button input {
+  display: none;
 }
 
 .scene-empty {

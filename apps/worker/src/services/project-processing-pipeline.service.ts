@@ -61,7 +61,8 @@ export class ProjectProcessingPipelineService {
         scenes: {
           include: {
             prompt: true,
-            videoAsset: true
+            videoAsset: true,
+            referenceImageAsset: true
           },
           orderBy: {
             index: 'asc'
@@ -132,7 +133,8 @@ export class ProjectProcessingPipelineService {
             project.musicSections.find((section) => section.id === scene.musicSectionId)?.type ?? 'verse',
           status: scene.status,
           visualProvider: scene.visualProvider,
-          videoAssetStoragePath: scene.videoAsset?.storagePath ?? null
+          videoAssetStoragePath: scene.videoAsset?.storagePath ?? null,
+          referenceImageStoragePath: scene.referenceImageAsset?.storagePath ?? null
         }))
       });
 
@@ -444,6 +446,9 @@ export class ProjectProcessingPipelineService {
       where: {
         projectId: project.id
       },
+      include: {
+        referenceImageAsset: true
+      },
       orderBy: {
         index: 'asc'
       }
@@ -474,7 +479,8 @@ export class ProjectProcessingPipelineService {
           createdSections.find((section) => section.id === scene.musicSectionId)?.type ?? 'verse',
         status: scene.status,
         visualProvider: scene.visualProvider,
-        videoAssetStoragePath: null
+        videoAssetStoragePath: null,
+        referenceImageStoragePath: scene.referenceImageAsset?.storagePath ?? null
       }))
     });
   }

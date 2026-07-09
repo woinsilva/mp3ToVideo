@@ -840,7 +840,50 @@ describe('Projects integration', () => {
     expect(preservedSection?.id).toBe(section.id);
   });
 
-  it('rejects retry for projects that are not failed', async () => {
+  it('requeues a completed project so scene reference images can be used in a new render', async () => {
+    const owner = await prisma.user.findUniqueOrThrow({
+      where: {
+        email: 'owner@example.com'
+      }
+    });
+
+    const project = await prisma.project.create({
+      data: {
+        organizationId,
+        createdByUserId: owner.id,
+        title: 'Completed Retry Project',
+        clipDurationSeconds: 20,
+        sceneDurationSeconds: 5,
+        status: 'completed',
+        lyrics: {
+          create: {
+            source: 'manual',
+            rawText: 'Letra fixa',
+            normalizedText: 'letra fixa'
+          }
+        },
+        track: {
+          create: {
+            originalFileName: 'song.mp3',
+            mimeType: 'audio/mpeg',
+            sizeBytes: 1234,
+            storagePath: 'storage/uploads/demo/completed/original.mp3'
+          }
+        }
+      }
+    });
+
+    const retryResponse = await request(app.getHttpServer())
+      .post(`/projects/${project.id}/retry`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({})
+      .expect(201);
+
+    expect(retryResponse.body.id).toBe(project.id);
+    expect(retryResponse.body.status).toBe('queued');
+  });
+
+  it('rejects retry for projects that are neither failed nor completed', async () => {
     const createResponse = await request(app.getHttpServer())
       .post('/projects')
       .set('Authorization', `Bearer ${authToken}`)

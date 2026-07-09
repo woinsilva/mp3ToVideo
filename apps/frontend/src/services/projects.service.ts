@@ -105,6 +105,20 @@ class ProjectsService {
     return apiService.request<ProjectScene[]>(`/projects/${projectId}/scenes`, {}, token);
   }
 
+  uploadSceneReferenceImage(projectId: string, sceneId: string, file: File, token: string) {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    return apiService.request<ProjectScene>(
+      `/projects/${projectId}/scenes/${sceneId}/reference-image`,
+      {
+        method: 'POST',
+        body: formData
+      },
+      token
+    );
+  }
+
   render(projectId: string, token: string) {
     return apiService.request<ProjectRender>(`/projects/${projectId}/render`, {}, token);
   }

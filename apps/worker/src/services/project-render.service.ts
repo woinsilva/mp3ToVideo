@@ -19,6 +19,7 @@ interface RenderSceneInput {
   status: SceneStatus;
   visualProvider: string | null;
   videoAssetStoragePath: string | null;
+  referenceImageStoragePath: string | null;
 }
 
 interface RenderProjectInput {
@@ -147,9 +148,12 @@ export class ProjectRenderService {
               sceneId: scene.id,
               positivePrompt: scenePrompt.positivePrompt,
               negativePrompt: scenePrompt.negativePrompt,
-              width: 1280,
-              height: 704,
-              durationSeconds: scene.durationSeconds
+              width: this.configService.get<number>('visual.comfyuiWidth', 640),
+              height: this.configService.get<number>('visual.comfyuiHeight', 360),
+              durationSeconds: scene.durationSeconds,
+              referenceImagePath: scene.referenceImageStoragePath
+                ? this.renderStorageService.getAbsolutePath(scene.referenceImageStoragePath)
+                : null
             });
           } catch (error) {
             videoGenerationError = this.toErrorMessage(error);
