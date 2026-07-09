@@ -1,17 +1,37 @@
 <template>
   <v-main class="auth-shell">
-    <v-container class="fill-height auth-container">
-      <v-row align="center" justify="center">
-        <v-col cols="12" sm="10" md="7" lg="4">
-          <div class="auth-panel auth-panel--simple">
-            <p class="page-eyebrow">Video SaaS MVP</p>
+    <section class="auth-visual">
+      <div class="brand">
+        <span class="brand-mark"><v-icon icon="mdi-movie-open-play" size="24" /></span>
+        <span class="brand-copy">
+          <span class="brand-name">ClipForge</span>
+          <span class="brand-tagline">Música em movimento</span>
+        </span>
+      </div>
+
+      <div class="auth-visual-copy">
+        <h1>Transforme sua música em um videoclipe.</h1>
+        <p>
+          Envie o áudio, acompanhe a criação das cenas e receba um vídeo pronto para
+          compartilhar.
+        </p>
+      </div>
+
+      <small class="auth-visual-footer">Geração local com privacidade e controle.</small>
+    </section>
+
+    <section class="auth-main">
+      <div class="auth-container">
+        <div class="auth-panel auth-panel--simple">
+          <div>
+            <p class="page-eyebrow">Bem-vindo</p>
             <h1 class="auth-simple-title">{{ title }}</h1>
             <p class="auth-simple-subtitle">{{ subtitle }}</p>
-            <slot />
           </div>
-        </v-col>
-      </v-row>
-    </v-container>
+          <slot />
+        </div>
+      </div>
+    </section>
   </v-main>
 </template>
 

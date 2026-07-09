@@ -1,25 +1,86 @@
 <template>
   <v-main class="app-shell">
-    <v-container class="py-6">
-      <header class="topbar">
-        <div>
-          <p class="page-eyebrow">Video SaaS MVP</p>
-          <h1 class="topbar-title">MP3 para videoclipe</h1>
+    <div class="app-frame">
+      <aside class="app-sidebar">
+        <div class="brand">
+          <span class="brand-mark"><v-icon icon="mdi-movie-open-play" size="24" /></span>
+          <span class="brand-copy">
+            <span class="brand-name">ClipForge</span>
+            <span class="brand-tagline">Música em movimento</span>
+          </span>
         </div>
-        <div class="topbar-actions">
-          <div class="workspace-meta" v-if="organizationName">
-            <strong>{{ organizationName }}</strong>
-            <span>{{ userName }}</span>
-          </div>
-          <button class="app-button app-button--ghost" type="button" @click="goToDashboard">
-            Dashboard
+
+        <nav class="sidebar-nav" aria-label="Navegação principal">
+          <button
+            class="nav-button"
+            :class="{ active: isDashboardRoute }"
+            type="button"
+            @click="goToDashboard"
+          >
+            <v-icon icon="mdi-view-dashboard-outline" size="22" />
+            <span>Meus videoclipes</span>
           </button>
-          <button class="app-button" type="button" @click="goToCreateProject">Novo projeto</button>
-          <button class="app-button app-button--outline" type="button" @click="logout">Sair</button>
+          <button
+            class="nav-button"
+            :class="{ active: isCreateRoute }"
+            type="button"
+            @click="goToCreateProject"
+          >
+            <v-icon icon="mdi-plus-box-outline" size="22" />
+            <span>Criar videoclipe</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <div class="user-card">
+            <span class="user-avatar">{{ userInitial }}</span>
+            <span class="user-meta">
+              <strong>{{ userName || 'Usuário' }}</strong>
+              <span>{{ organizationName || 'Workspace' }}</span>
+            </span>
+            <v-btn
+              aria-label="Sair"
+              icon="mdi-logout"
+              size="small"
+              variant="text"
+              @click="logout"
+            />
+          </div>
         </div>
-      </header>
-      <slot />
-    </v-container>
+      </aside>
+
+      <div class="app-content">
+        <header class="app-topbar">
+          <div class="brand mobile-brand">
+            <span class="brand-mark"><v-icon icon="mdi-movie-open-play" size="22" /></span>
+            <span class="brand-copy">
+              <span class="brand-name">ClipForge</span>
+            </span>
+          </div>
+          <div class="topbar-context">
+            <strong>{{ organizationName || 'Sua workspace' }}</strong>
+            <span>Crie, acompanhe e exporte seus videoclipes</span>
+          </div>
+          <div class="topbar-actions">
+            <button class="app-button" type="button" @click="goToCreateProject">
+              <v-icon icon="mdi-plus" size="20" />
+              <span>Novo videoclipe</span>
+            </button>
+            <v-btn
+              class="d-lg-none"
+              aria-label="Sair"
+              icon="mdi-logout"
+              variant="text"
+              @click="logout"
+            />
+          </div>
+        </header>
+
+        <main class="page-container">
+          <slot />
+        </main>
+      </div>
+    </div>
   </v-main>
 </template>
 
@@ -40,6 +101,18 @@ export default class AppLayout extends Vue {
 
   get userName(): string {
     return this.authStore.user?.name ?? '';
+  }
+
+  get userInitial(): string {
+    return (this.userName || 'U').trim().charAt(0).toUpperCase();
+  }
+
+  get isDashboardRoute(): boolean {
+    return this.$route.name === 'dashboard';
+  }
+
+  get isCreateRoute(): boolean {
+    return this.$route.name === 'create-project';
   }
 
   goToDashboard() {

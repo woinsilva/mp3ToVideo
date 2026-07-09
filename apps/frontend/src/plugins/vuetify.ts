@@ -2,15 +2,19 @@ import { createVuetify } from 'vuetify';
 
 export const vuetify = createVuetify({
   theme: {
-    defaultTheme: 'dark',
+    defaultTheme: 'light',
     themes: {
-      dark: {
-        dark: true,
+      light: {
+        dark: false,
         colors: {
-          background: '#0f172a',
-          surface: '#111827',
-          primary: '#f97316',
-          secondary: '#22c55e'
+          background: '#f0f2f5',
+          surface: '#ffffff',
+          primary: '#0866ff',
+          secondary: '#31a24c',
+          success: '#31a24c',
+          warning: '#f7b928',
+          error: '#e41e3f',
+          info: '#0866ff'
         }
       }
     }
