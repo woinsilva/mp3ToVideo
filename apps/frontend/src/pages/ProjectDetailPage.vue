@@ -22,6 +22,23 @@
           :loading-label="projectStatus === 'failed' ? 'Reenviando audio...' : 'Enviando MP3...'"
           @upload="uploadTrack"
         />
+        <v-card
+          v-if="projectStatus === 'draft' || projectStatus === 'failed'"
+          class="surface-card mt-4"
+          rounded="xl"
+        >
+          <v-card-text>
+            <label class="auth-input-group">
+              <span class="auth-input-label">Letra manual da musica</span>
+              <textarea
+                v-model="manualLyricsText"
+                class="auth-input auth-input--textarea"
+                rows="12"
+                placeholder="Cole a letra real aqui para o storyboard e as cenas seguirem esse texto, sem depender da transcricao automatica."
+              />
+            </label>
+          </v-card-text>
+        </v-card>
         <ProjectStatusTimeline
           v-else-if="statusPayload"
           :status="statusPayload.status"
@@ -29,6 +46,8 @@
           :current-step="statusPayload.currentStep"
           :detail-message="statusPayload.detailMessage"
           :activity-log="statusPayload.activityLog"
+          :lyrics="statusPayload.lyrics"
+          :music-sections="statusPayload.musicSections"
           :error-message="statusPayload.errorMessage"
           :last-updated-at="statusPayload.lastUpdatedAt"
           :is-possibly-stalled="statusPayload.isPossiblyStalled"
@@ -52,7 +71,7 @@
               <p class="section-copy">{{ nextStepDescription }}</p>
             </div>
 
-            <div v-if="projectStatus === 'failed'" class="d-flex flex-column ga-3">
+            <div v-if="projectStatus === 'draft' || projectStatus === 'failed'" class="d-flex flex-column ga-3">
               <label class="auth-input-group">
                 <span class="auth-input-label">Gerar apenas os primeiros segundos</span>
                 <input
@@ -65,6 +84,27 @@
                   placeholder="Opcional. Ex.: 20"
                 />
               </label>
+              <label class="auth-input-group">
+                <span class="auth-input-label">Duracao alvo por cena</span>
+                <input
+                  v-model="sceneDurationSecondsInput"
+                  class="auth-input"
+                  type="number"
+                  min="3"
+                  max="30"
+                  step="1"
+                  placeholder="Opcional. Ex.: 5"
+                />
+              </label>
+              <label class="auth-input-group">
+                <span class="auth-input-label">Checkpoint visual</span>
+                <input
+                  v-model="visualCheckpointName"
+                  class="auth-input"
+                  type="text"
+                  placeholder="Opcional. Ex.: sd_xl_turbo_1.0.safetensors"
+                />
+              </label>
 
               <v-alert
                 v-if="clipDurationSecondsRawValue && normalizedClipDurationSeconds === null"
@@ -72,6 +112,13 @@
                 variant="tonal"
               >
                 Informe uma duracao entre 1 e 600 segundos antes de reenfileirar.
+              </v-alert>
+              <v-alert
+                v-if="sceneDurationSecondsRawValue && normalizedSceneDurationSeconds === null"
+                type="warning"
+                variant="tonal"
+              >
+                Informe uma duracao por cena entre 3 e 30 segundos antes de reenfileirar.
               </v-alert>
             </div>
 
@@ -137,6 +184,9 @@ export default class ProjectDetailPage extends Vue {
   loading = false;
   errorMessage: string | null = null;
   clipDurationSecondsInput: string | number = '';
+  sceneDurationSecondsInput: string | number = '';
+  visualCheckpointName = '';
+  manualLyricsText = '';
 
   get projectId(): string {
     return String(this.$route.params.id);
@@ -180,6 +230,16 @@ export default class ProjectDetailPage extends Vue {
     return String(this.clipDurationSecondsInput ?? '').trim();
   }
 
+  get normalizedManualLyricsText(): string | null {
+    const rawValue = this.manualLyricsText.trim();
+    return rawValue ? rawValue : null;
+  }
+
+  get normalizedVisualCheckpointName(): string | null {
+    const rawValue = this.visualCheckpointName.trim();
+    return rawValue ? rawValue : null;
+  }
+
   get normalizedClipDurationSeconds(): number | null {
     const rawValue = this.clipDurationSecondsRawValue;
 
@@ -190,6 +250,26 @@ export default class ProjectDetailPage extends Vue {
     const parsedValue = Number(rawValue);
 
     if (!Number.isFinite(parsedValue) || parsedValue < 1 || parsedValue > 600) {
+      return null;
+    }
+
+    return Math.floor(parsedValue);
+  }
+
+  get sceneDurationSecondsRawValue(): string {
+    return String(this.sceneDurationSecondsInput ?? '').trim();
+  }
+
+  get normalizedSceneDurationSeconds(): number | null {
+    const rawValue = this.sceneDurationSecondsRawValue;
+
+    if (!rawValue) {
+      return null;
+    }
+
+    const parsedValue = Number(rawValue);
+
+    if (!Number.isFinite(parsedValue) || parsedValue < 3 || parsedValue > 30) {
       return null;
     }
 
@@ -233,6 +313,11 @@ export default class ProjectDetailPage extends Vue {
       await this.projectsStore.fetchProject(this.projectId, this.authStore.token);
       this.clipDurationSecondsInput =
         this.projectsStore.currentProject?.clipDurationSeconds ?? '';
+      this.sceneDurationSecondsInput =
+        this.projectsStore.currentProject?.sceneDurationSeconds ?? '';
+      this.visualCheckpointName =
+        this.projectsStore.currentProject?.visualCheckpointName ?? '';
+      this.manualLyricsText = this.projectsStore.currentProject?.lyrics?.rawText ?? '';
 
       if (this.projectsStore.currentProject?.status !== 'draft') {
         await this.projectsStore.fetchStatus(this.projectId, this.authStore.token);
@@ -249,6 +334,17 @@ export default class ProjectDetailPage extends Vue {
       return;
     }
 
+    if (this.clipDurationSecondsRawValue && this.normalizedClipDurationSeconds === null) {
+      this.errorMessage = 'Informe uma duracao entre 1 e 600 segundos antes de enviar o audio';
+      return;
+    }
+
+    if (this.sceneDurationSecondsRawValue && this.normalizedSceneDurationSeconds === null) {
+      this.errorMessage =
+        'Informe uma duracao por cena entre 3 e 30 segundos antes de enviar o audio';
+      return;
+    }
+
     this.loading = true;
     this.errorMessage = null;
 
@@ -257,6 +353,9 @@ export default class ProjectDetailPage extends Vue {
         this.projectId,
         file,
         this.normalizedClipDurationSeconds,
+        this.normalizedSceneDurationSeconds,
+        this.normalizedVisualCheckpointName,
+        this.normalizedManualLyricsText,
         this.authStore.token
       );
       await this.projectsStore.fetchStatus(this.projectId, this.authStore.token);
@@ -286,6 +385,12 @@ export default class ProjectDetailPage extends Vue {
       return;
     }
 
+    if (this.sceneDurationSecondsRawValue && this.normalizedSceneDurationSeconds === null) {
+      this.errorMessage =
+        'Informe uma duracao por cena entre 3 e 30 segundos antes de reenfileirar';
+      return;
+    }
+
     this.loading = true;
     this.errorMessage = null;
 
@@ -293,6 +398,9 @@ export default class ProjectDetailPage extends Vue {
       await this.projectsStore.retryProject(
         this.projectId,
         this.normalizedClipDurationSeconds,
+        this.normalizedSceneDurationSeconds,
+        this.normalizedVisualCheckpointName,
+        this.normalizedManualLyricsText,
         this.authStore.token
       );
       void this.$router.push({ name: 'processing', params: { id: this.projectId } });

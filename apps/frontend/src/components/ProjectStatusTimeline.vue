@@ -32,6 +32,49 @@
         {{ errorMessage }}
       </v-alert>
 
+      <div v-if="lyrics || musicSections.length" class="d-flex flex-column ga-3">
+        <div class="activity-header">
+          <h4 class="section-title activity-title">Base textual do pipeline</h4>
+          <v-chip
+            v-if="lyrics"
+            :color="lyricsSourceColor"
+            size="small"
+            variant="tonal"
+          >
+            Letra: {{ lyricsSourceLabel }}
+          </v-chip>
+        </div>
+
+        <div v-if="lyrics" class="lyrics-panel">
+          <div class="lyrics-panel__block">
+            <h5 class="lyrics-panel__title">Letra bruta</h5>
+            <pre class="lyrics-panel__text">{{ lyrics.rawText }}</pre>
+          </div>
+          <div class="lyrics-panel__block">
+            <h5 class="lyrics-panel__title">Letra normalizada</h5>
+            <pre class="lyrics-panel__text">{{ lyrics.normalizedText }}</pre>
+          </div>
+        </div>
+
+        <div v-if="musicSections.length" class="sections-list">
+          <div
+            v-for="section in musicSections"
+            :key="section.title + section.startSeconds"
+            class="section-entry"
+          >
+            <div class="activity-entry__topline">
+              <span>{{ section.title }} • {{ formatSeconds(section.startSeconds) }} - {{ formatSeconds(section.endSeconds) }}</span>
+              <div class="activity-entry__chips">
+                <v-chip size="x-small" variant="outlined">{{ section.type }}</v-chip>
+              </div>
+            </div>
+            <p class="activity-entry__message">
+              {{ section.lyricsExcerpt || 'Nenhum trecho de letra associado.' }}
+            </p>
+          </div>
+        </div>
+      </div>
+
       <div v-if="allActivity.length" class="d-flex flex-column ga-2">
         <div class="activity-header">
           <h4 class="section-title activity-title">Historico completo do pipeline</h4>
@@ -89,7 +132,12 @@ import {
   formatRelativeStatusUpdate,
   projectStatusTone
 } from '@/utils/project-status';
-import type { ProjectStatus, ProjectStatusActivityEntry } from '@/types/project.types';
+import type {
+  ProjectLyricsStatus,
+  ProjectMusicSectionStatus,
+  ProjectStatus,
+  ProjectStatusActivityEntry
+} from '@/types/project.types';
 
 @Component
 export default class ProjectStatusTimeline extends Vue {
@@ -107,6 +155,12 @@ export default class ProjectStatusTimeline extends Vue {
 
   @Prop({ default: () => [] })
   readonly activityLog!: ProjectStatusActivityEntry[];
+
+  @Prop({ default: null })
+  readonly lyrics!: ProjectLyricsStatus | null;
+
+  @Prop({ default: () => [] })
+  readonly musicSections!: ProjectMusicSectionStatus[];
 
   @Prop({ default: null })
   readonly errorMessage!: string | null;
@@ -135,6 +189,22 @@ export default class ProjectStatusTimeline extends Vue {
 
   get allActivity(): ProjectStatusActivityEntry[] {
     return [...this.activityLog].reverse();
+  }
+
+  get lyricsSourceLabel(): string {
+    if (!this.lyrics) return '';
+    if (this.lyrics.source === 'whisper') return 'Whisper';
+    if (this.lyrics.source === 'manual') return 'Manual';
+    if (this.lyrics.source === 'mock') return 'Mock';
+    return this.lyrics.source;
+  }
+
+  get lyricsSourceColor(): string {
+    if (!this.lyrics) return 'grey';
+    if (this.lyrics.source === 'whisper') return 'green';
+    if (this.lyrics.source === 'manual') return 'blue';
+    if (this.lyrics.source === 'mock') return 'deep-orange';
+    return 'grey';
   }
 
   formatActivityTimestamp(value: string): string {
@@ -169,6 +239,10 @@ export default class ProjectStatusTimeline extends Vue {
     if (stage === 'failed') return 'Falhou';
     return stage;
   }
+
+  formatSeconds(value: number): string {
+    return `${value.toFixed(1)}s`;
+  }
 }
 </script>
 
@@ -179,6 +253,41 @@ export default class ProjectStatusTimeline extends Vue {
 
 .activity-title {
   font-size: 0.95rem;
+}
+
+.lyrics-panel,
+.sections-list {
+  max-height: 20rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-right: 0.35rem;
+}
+
+.lyrics-panel__block,
+.section-entry {
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  border-radius: 16px;
+  padding: 0.85rem 1rem;
+  background: rgba(var(--v-theme-on-surface), 0.02);
+}
+
+.lyrics-panel__title {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  color: rgba(var(--v-theme-on-surface), 0.7);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.lyrics-panel__text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  color: rgba(var(--v-theme-on-surface), 0.9);
+  line-height: 1.5;
 }
 
 .activity-header {

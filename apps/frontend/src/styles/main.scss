@@ -259,6 +259,13 @@ body {
   box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.14);
 }
 
+.auth-input--textarea {
+  min-height: 220px;
+  resize: vertical;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
 .auth-input-error {
   margin: -0.2rem 0 0;
   font-size: 0.85rem;

@@ -12,14 +12,24 @@ class ProjectsService {
     return apiService.request<ProjectSummary[]>('/projects', {}, token);
   }
 
-  create(title: string, clipDurationSeconds: number | null, token: string) {
+  create(
+    title: string,
+    clipDurationSeconds: number | null,
+    sceneDurationSeconds: number | null,
+    visualCheckpointName: string | null,
+    manualLyricsText: string | null,
+    token: string
+  ) {
     return apiService.request<ProjectSummary>(
       '/projects',
       {
         method: 'POST',
         body: JSON.stringify({
           title,
-          clipDurationSeconds
+          clipDurationSeconds,
+          sceneDurationSeconds,
+          visualCheckpointName,
+          manualLyricsText
         })
       },
       token
@@ -30,11 +40,28 @@ class ProjectsService {
     return apiService.request<ProjectSummary>(`/projects/${projectId}`, {}, token);
   }
 
-  upload(projectId: string, file: File, clipDurationSeconds: number | null, token: string) {
+  upload(
+    projectId: string,
+    file: File,
+    clipDurationSeconds: number | null,
+    sceneDurationSeconds: number | null,
+    visualCheckpointName: string | null,
+    manualLyricsText: string | null,
+    token: string
+  ) {
     const formData = new FormData();
     formData.append('file', file);
     if (clipDurationSeconds !== null) {
       formData.append('clipDurationSeconds', String(clipDurationSeconds));
+    }
+    if (sceneDurationSeconds !== null) {
+      formData.append('sceneDurationSeconds', String(sceneDurationSeconds));
+    }
+    if (visualCheckpointName && visualCheckpointName.trim()) {
+      formData.append('visualCheckpointName', visualCheckpointName.trim());
+    }
+    if (manualLyricsText && manualLyricsText.trim()) {
+      formData.append('manualLyricsText', manualLyricsText.trim());
     }
 
     return apiService.request<TrackUploadResult>(
@@ -47,13 +74,23 @@ class ProjectsService {
     );
   }
 
-  retry(projectId: string, clipDurationSeconds: number | null, token: string) {
+  retry(
+    projectId: string,
+    clipDurationSeconds: number | null,
+    sceneDurationSeconds: number | null,
+    visualCheckpointName: string | null,
+    manualLyricsText: string | null,
+    token: string
+  ) {
     return apiService.request<ProjectSummary>(
       `/projects/${projectId}/retry`,
       {
         method: 'POST',
         body: JSON.stringify({
-          clipDurationSeconds
+          clipDurationSeconds,
+          sceneDurationSeconds,
+          visualCheckpointName,
+          manualLyricsText
         })
       },
       token

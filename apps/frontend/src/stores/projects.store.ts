@@ -51,12 +51,26 @@ export const useProjectsStore = defineStore('projects', {
         this.isLoading = false;
       }
     },
-    async createProject(title: string, clipDurationSeconds: number | null, token: string) {
+    async createProject(
+      title: string,
+      clipDurationSeconds: number | null,
+      sceneDurationSeconds: number | null,
+      visualCheckpointName: string | null,
+      manualLyricsText: string | null,
+      token: string
+    ) {
       this.isLoading = true;
       this.errorMessage = null;
 
       try {
-        const project = await projectsService.create(title, clipDurationSeconds, token);
+        const project = await projectsService.create(
+          title,
+          clipDurationSeconds,
+          sceneDurationSeconds,
+          visualCheckpointName,
+          manualLyricsText,
+          token
+        );
         this.projects = [project, ...this.projects];
         this.currentProject = project;
 
@@ -91,18 +105,39 @@ export const useProjectsStore = defineStore('projects', {
       projectId: string,
       file: File,
       clipDurationSeconds: number | null,
+      sceneDurationSeconds: number | null,
+      visualCheckpointName: string | null,
+      manualLyricsText: string | null,
       token: string
     ) {
       this.isLoading = true;
       this.errorMessage = null;
 
       try {
-        const result = await projectsService.upload(projectId, file, clipDurationSeconds, token);
+        const result = await projectsService.upload(
+          projectId,
+          file,
+          clipDurationSeconds,
+          sceneDurationSeconds,
+          visualCheckpointName,
+          manualLyricsText,
+          token
+        );
 
         if (this.currentProject && this.currentProject.id === projectId) {
           this.currentProject = {
             ...this.currentProject,
             status: result.status,
+            clipDurationSeconds,
+            sceneDurationSeconds,
+            visualCheckpointName,
+            lyrics: manualLyricsText?.trim()
+              ? {
+                  source: 'manual',
+                  rawText: manualLyricsText.trim(),
+                  normalizedText: manualLyricsText.replace(/\s+/g, ' ').trim().toLowerCase()
+                }
+              : this.currentProject.lyrics,
             updatedAt: new Date().toISOString()
           };
         }
@@ -112,6 +147,9 @@ export const useProjectsStore = defineStore('projects', {
             ? {
                 ...project,
                 status: result.status,
+                clipDurationSeconds,
+                sceneDurationSeconds,
+                visualCheckpointName,
                 updatedAt: new Date().toISOString()
               }
             : project
@@ -125,13 +163,30 @@ export const useProjectsStore = defineStore('projects', {
         this.isLoading = false;
       }
     },
-    async retryProject(projectId: string, clipDurationSeconds: number | null, token: string) {
+    async retryProject(
+      projectId: string,
+      clipDurationSeconds: number | null,
+      sceneDurationSeconds: number | null,
+      visualCheckpointName: string | null,
+      manualLyricsText: string | null,
+      token: string
+    ) {
       this.isLoading = true;
       this.errorMessage = null;
 
       try {
-        const project = await projectsService.retry(projectId, clipDurationSeconds, token);
+        const project = await projectsService.retry(
+          projectId,
+          clipDurationSeconds,
+          sceneDurationSeconds,
+          visualCheckpointName,
+          manualLyricsText,
+          token
+        );
         this.currentProject = project;
+        this.projects = this.projects.map((currentProject) =>
+          currentProject.id === projectId ? project : currentProject
+        );
         this.syncProjectStatus(projectId, project.status);
         this.currentStatus = null;
         return project;

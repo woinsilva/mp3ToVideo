@@ -30,6 +30,12 @@
                 <p v-if="project.clipDurationSeconds" class="section-copy mb-0">
                   Recorte configurado: {{ project.clipDurationSeconds }}s
                 </p>
+                <p v-if="project.sceneDurationSeconds" class="section-copy mb-0">
+                  Cena alvo: {{ project.sceneDurationSeconds }}s
+                </p>
+                <p v-if="project.visualCheckpointName" class="section-copy mb-0">
+                  Checkpoint: {{ project.visualCheckpointName }}
+                </p>
               </div>
               <v-chip :color="statusTone(project.status)" variant="tonal">
                 {{ statusLabel(project.status) }}

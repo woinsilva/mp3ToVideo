@@ -32,6 +32,36 @@
               placeholder="Opcional. Ex.: 20"
             />
           </label>
+          <label class="auth-input-group">
+            <span class="auth-input-label">Duracao alvo por cena</span>
+            <input
+              v-model="sceneDurationSecondsInput"
+              class="auth-input"
+              type="number"
+              min="3"
+              max="30"
+              step="1"
+              placeholder="Opcional. Ex.: 5"
+            />
+          </label>
+          <label class="auth-input-group">
+            <span class="auth-input-label">Checkpoint visual</span>
+            <input
+              v-model="visualCheckpointName"
+              class="auth-input"
+              type="text"
+              placeholder="Opcional. Ex.: sd_xl_turbo_1.0.safetensors"
+            />
+          </label>
+          <label class="auth-input-group">
+            <span class="auth-input-label">Letra manual da musica</span>
+            <textarea
+              v-model="manualLyricsText"
+              class="auth-input auth-input--textarea"
+              rows="10"
+              placeholder="Opcional. Cole aqui a letra real para priorizar essa versao em vez da transcricao automatica."
+            />
+          </label>
           <v-alert v-if="errorMessage" type="error" variant="tonal">{{ errorMessage }}</v-alert>
 
           <v-alert v-if="submitted && !normalizedTitle" type="warning" variant="tonal">
@@ -43,6 +73,13 @@
             variant="tonal"
           >
             Informe uma duracao entre 1 e 600 segundos.
+          </v-alert>
+          <v-alert
+            v-if="submitted && sceneDurationSecondsRawValue && normalizedSceneDurationSeconds === null"
+            type="warning"
+            variant="tonal"
+          >
+            Informe uma duracao por cena entre 3 e 30 segundos.
           </v-alert>
 
           <div class="app-button-row">
@@ -74,6 +111,9 @@ import { useProjectsStore } from '@/stores/projects.store';
 export default class CreateProjectPage extends Vue {
   title = '';
   clipDurationSecondsInput: string | number = '';
+  sceneDurationSecondsInput: string | number = '';
+  visualCheckpointName = '';
+  manualLyricsText = '';
   loading = false;
   errorMessage: string | null = null;
   submitted = false;
@@ -88,6 +128,16 @@ export default class CreateProjectPage extends Vue {
 
   get normalizedTitle(): string {
     return this.title.trim();
+  }
+
+  get normalizedManualLyricsText(): string | null {
+    const rawValue = this.manualLyricsText.trim();
+    return rawValue ? rawValue : null;
+  }
+
+  get normalizedVisualCheckpointName(): string | null {
+    const rawValue = this.visualCheckpointName.trim();
+    return rawValue ? rawValue : null;
   }
 
   get clipDurationSecondsRawValue(): string {
@@ -110,6 +160,26 @@ export default class CreateProjectPage extends Vue {
     return Math.floor(parsedValue);
   }
 
+  get sceneDurationSecondsRawValue(): string {
+    return String(this.sceneDurationSecondsInput ?? '').trim();
+  }
+
+  get normalizedSceneDurationSeconds(): number | null {
+    const rawValue = this.sceneDurationSecondsRawValue;
+
+    if (!rawValue) {
+      return null;
+    }
+
+    const parsedValue = Number(rawValue);
+
+    if (!Number.isFinite(parsedValue) || parsedValue < 3 || parsedValue > 30) {
+      return null;
+    }
+
+    return Math.floor(parsedValue);
+  }
+
   async submit() {
     if (!this.authStore.token) {
       return;
@@ -119,7 +189,8 @@ export default class CreateProjectPage extends Vue {
 
     if (
       !this.normalizedTitle ||
-      (this.clipDurationSecondsRawValue && this.normalizedClipDurationSeconds === null)
+      (this.clipDurationSecondsRawValue && this.normalizedClipDurationSeconds === null) ||
+      (this.sceneDurationSecondsRawValue && this.normalizedSceneDurationSeconds === null)
     ) {
       return;
     }
@@ -131,6 +202,9 @@ export default class CreateProjectPage extends Vue {
       const project = await this.projectsStore.createProject(
         this.normalizedTitle,
         this.normalizedClipDurationSeconds,
+        this.normalizedSceneDurationSeconds,
+        this.normalizedVisualCheckpointName,
+        this.normalizedManualLyricsText,
         this.authStore.token
       );
       void this.$router.push({ name: 'project-detail', params: { id: project.id } });

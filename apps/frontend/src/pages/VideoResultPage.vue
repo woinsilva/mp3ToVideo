@@ -32,6 +32,8 @@
           :current-step="statusPayload.currentStep"
           :detail-message="statusPayload.detailMessage"
           :activity-log="statusPayload.activityLog"
+          :lyrics="statusPayload.lyrics"
+          :music-sections="statusPayload.musicSections"
           :error-message="statusPayload.errorMessage"
           :last-updated-at="statusPayload.lastUpdatedAt"
           :is-possibly-stalled="statusPayload.isPossiblyStalled"

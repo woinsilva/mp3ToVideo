@@ -14,7 +14,10 @@ export interface ProjectSummary {
   id: string;
   title: string;
   clipDurationSeconds: number | null;
+  sceneDurationSeconds: number | null;
+  visualCheckpointName: string | null;
   status: ProjectStatus;
+  lyrics: ProjectLyricsStatus | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -32,6 +35,8 @@ export interface ProjectStatusResponse {
   currentStep: string;
   detailMessage: string | null;
   activityLog: ProjectStatusActivityEntry[];
+  lyrics: ProjectLyricsStatus | null;
+  musicSections: ProjectMusicSectionStatus[];
   errorMessage: string | null;
   lastUpdatedAt: string;
   isPossiblyStalled: boolean;
@@ -43,6 +48,21 @@ export interface ProjectStatusActivityEntry {
   provider: string | null;
   progress: number | null;
   timestamp: string;
+}
+
+export interface ProjectLyricsStatus {
+  source: string;
+  rawText: string;
+  normalizedText: string;
+}
+
+export interface ProjectMusicSectionStatus {
+  type: string;
+  title: string;
+  startSeconds: number;
+  endSeconds: number;
+  lyricsExcerpt: string | null;
+  energy: number | null;
 }
 
 export interface ScenePromptView {
