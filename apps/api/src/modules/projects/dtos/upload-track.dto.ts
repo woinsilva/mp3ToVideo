@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsNumber, IsOptional, Max, Min } from 'class-validator';
+import { IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class UploadTrackDto {
   @IsOptional()
@@ -8,4 +8,19 @@ export class UploadTrackDto {
   @Min(1)
   @Max(600)
   clipDurationSeconds?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(3)
+  @Max(30)
+  sceneDurationSeconds?: number;
+
+  @IsOptional()
+  @IsString()
+  visualCheckpointName?: string;
+
+  @IsOptional()
+  @IsString()
+  manualLyricsText?: string;
 }

@@ -14,6 +14,8 @@ describe('ProjectPresenter', () => {
         createdByUserId: 'user-1',
         title: 'Clip',
         clipDurationSeconds: 20,
+        sceneDurationSeconds: 5,
+        visualCheckpointName: 'sd_xl_turbo_1.0.safetensors',
         status: 'draft',
         errorMessage: null,
         createdAt: now,
@@ -24,7 +26,10 @@ describe('ProjectPresenter', () => {
       id: 'project-1',
       title: 'Clip',
       clipDurationSeconds: 20,
+      sceneDurationSeconds: 5,
+      visualCheckpointName: 'sd_xl_turbo_1.0.safetensors',
       status: 'draft',
+      lyrics: null,
       createdAt: now,
       updatedAt: now
     });
@@ -42,11 +47,36 @@ describe('ProjectPresenter', () => {
           createdByUserId: 'user-1',
           title: 'Clip',
           clipDurationSeconds: null,
+          sceneDurationSeconds: null,
+          visualCheckpointName: null,
           status: 'rendering',
           errorMessage: null,
           createdAt: now,
           updatedAt: now,
-          deletedAt: null
+          deletedAt: null,
+          lyrics: {
+            id: 'lyrics-1',
+            projectId: 'project-1',
+            source: 'whisper',
+            rawText: 'Hello world',
+            normalizedText: 'hello world',
+            createdAt: now,
+            updatedAt: now
+          },
+          musicSections: [
+            {
+              id: 'section-1',
+              projectId: 'project-1',
+              type: 'verse',
+              title: 'Verse 1',
+              startSeconds: 0,
+              endSeconds: 8,
+              lyricsExcerpt: 'Hello world',
+              energy: 0.55,
+              createdAt: now,
+              updatedAt: now
+            }
+          ]
         },
         {
           id: 'job-1',
@@ -84,6 +114,21 @@ describe('ProjectPresenter', () => {
           provider: null,
           progress: 96,
           timestamp: now.toISOString()
+        }
+      ],
+      lyrics: {
+        source: 'whisper',
+        rawText: 'Hello world',
+        normalizedText: 'hello world'
+      },
+      musicSections: [
+        {
+          type: 'verse',
+          title: 'Verse 1',
+          startSeconds: 0,
+          endSeconds: 8,
+          lyricsExcerpt: 'Hello world',
+          energy: 0.55
         }
       ],
       errorMessage: null,

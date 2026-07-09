@@ -42,6 +42,30 @@ export class LocalStorageService {
     return relativePath.replace(/\\/g, '/');
   }
 
+  async saveSceneReferenceImage(
+    organizationId: string,
+    projectId: string,
+    sceneIndex: number,
+    originalFileName: string,
+    buffer: Buffer
+  ): Promise<string> {
+    const root = this.configService.get<string>('storage.root', './storage');
+    const extension = extname(originalFileName).toLowerCase() || '.png';
+    const relativePath = join(
+      root,
+      'scene-reference-images',
+      organizationId,
+      projectId,
+      `scene-${String(sceneIndex + 1).padStart(3, '0')}${extension}`
+    );
+    const absolutePath = this.getAbsolutePath(relativePath);
+
+    await mkdir(dirname(absolutePath), { recursive: true });
+    await writeFile(absolutePath, buffer);
+
+    return relativePath.replace(/\\/g, '/');
+  }
+
   buildProjectUploadDirectory(organizationId: string, projectId: string): string {
     const root = this.configService.get<string>('storage.root', './storage');
     return join(root, 'uploads', organizationId, projectId).replace(/\\/g, '/');
@@ -55,6 +79,11 @@ export class LocalStorageService {
   buildProjectGeneratedImagesDirectory(organizationId: string, projectId: string): string {
     const root = this.configService.get<string>('storage.root', './storage');
     return join(root, 'generated-images', organizationId, projectId).replace(/\\/g, '/');
+  }
+
+  buildProjectSceneReferenceImagesDirectory(organizationId: string, projectId: string): string {
+    const root = this.configService.get<string>('storage.root', './storage');
+    return join(root, 'scene-reference-images', organizationId, projectId).replace(/\\/g, '/');
   }
 
   buildProjectRendersDirectory(organizationId: string, projectId: string): string {

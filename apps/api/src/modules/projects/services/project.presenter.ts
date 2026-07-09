@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import type {
+  Lyrics,
+  MusicSection,
   ProcessingJob,
   Project,
   ProjectStatus,
@@ -17,6 +19,21 @@ export interface ProcessingActivityEntry {
   timestamp: string;
 }
 
+export interface ProjectLyricsStatusView {
+  source: string;
+  rawText: string;
+  normalizedText: string;
+}
+
+export interface ProjectMusicSectionStatusView {
+  type: string;
+  title: string;
+  startSeconds: number;
+  endSeconds: number;
+  lyricsExcerpt: string | null;
+  energy: number | null;
+}
+
 @Injectable()
 export class ProjectPresenter {
   private static readonly stallThresholdMs = 45_000;
@@ -26,7 +43,34 @@ export class ProjectPresenter {
       id: project.id,
       title: project.title,
       clipDurationSeconds: project.clipDurationSeconds,
+      sceneDurationSeconds: project.sceneDurationSeconds,
+      visualCheckpointName: project.visualCheckpointName,
       status: project.status,
+      lyrics: null,
+      createdAt: project.createdAt,
+      updatedAt: project.updatedAt
+    };
+  }
+
+  summaryWithLyrics(
+    project: Project & {
+      lyrics?: Lyrics | null;
+    }
+  ) {
+    return {
+      id: project.id,
+      title: project.title,
+      clipDurationSeconds: project.clipDurationSeconds,
+      sceneDurationSeconds: project.sceneDurationSeconds,
+      visualCheckpointName: project.visualCheckpointName,
+      status: project.status,
+      lyrics: project.lyrics
+        ? {
+            source: project.lyrics.source,
+            rawText: project.lyrics.rawText,
+            normalizedText: project.lyrics.normalizedText
+          }
+        : null,
       createdAt: project.createdAt,
       updatedAt: project.updatedAt
     };
@@ -40,7 +84,13 @@ export class ProjectPresenter {
     };
   }
 
-  status(project: Project, processingJob?: ProcessingJob | null) {
+  status(
+    project: Project & {
+      lyrics?: Lyrics | null;
+      musicSections?: MusicSection[];
+    },
+    processingJob?: ProcessingJob | null
+  ) {
     const lastUpdatedAt = processingJob?.updatedAt ?? project.updatedAt;
 
     return {
@@ -50,6 +100,21 @@ export class ProjectPresenter {
       currentStep: this.currentStep(project.status),
       detailMessage: processingJob?.detailMessage ?? null,
       activityLog: this.activityLog(processingJob?.activityLog),
+      lyrics: project.lyrics
+        ? {
+            source: project.lyrics.source,
+            rawText: project.lyrics.rawText,
+            normalizedText: project.lyrics.normalizedText
+          }
+        : null,
+      musicSections: (project.musicSections ?? []).map((section) => ({
+        type: section.type,
+        title: section.title,
+        startSeconds: section.startSeconds,
+        endSeconds: section.endSeconds,
+        lyricsExcerpt: section.lyricsExcerpt,
+        energy: section.energy
+      })),
       errorMessage: project.errorMessage ?? processingJob?.errorMessage ?? null,
       lastUpdatedAt,
       isPossiblyStalled:
@@ -58,7 +123,12 @@ export class ProjectPresenter {
     };
   }
 
-  scene(scene: Scene & { prompt: ScenePrompt | null }) {
+  scene(
+    scene: Scene & {
+      prompt: ScenePrompt | null;
+      referenceImageAsset?: { id: string } | null;
+    }
+  ) {
     return {
       id: scene.id,
       index: scene.index,
@@ -70,6 +140,8 @@ export class ProjectPresenter {
       status: scene.status,
       visualProvider: scene.visualProvider,
       videoAssetId: scene.videoAssetId,
+      referenceImageAssetId: scene.referenceImageAssetId,
+      hasReferenceImage: Boolean(scene.referenceImageAsset),
       prompt: scene.prompt
         ? {
             provider: scene.prompt.provider,

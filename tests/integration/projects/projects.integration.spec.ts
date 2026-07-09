@@ -146,13 +146,23 @@ describe('Projects integration', () => {
       .set('Authorization', `Bearer ${authToken}`)
       .send({
         title: 'My First Clip',
-        clipDurationSeconds: 20
+        clipDurationSeconds: 20,
+        sceneDurationSeconds: 5,
+        visualCheckpointName: 'sd_xl_turbo_1.0.safetensors',
+        manualLyricsText: 'Linha um\nLinha dois'
       })
       .expect(201);
 
     expect(createResponse.body.title).toBe('My First Clip');
     expect(createResponse.body.clipDurationSeconds).toBe(20);
+    expect(createResponse.body.sceneDurationSeconds).toBe(5);
+    expect(createResponse.body.visualCheckpointName).toBe('sd_xl_turbo_1.0.safetensors');
     expect(createResponse.body.status).toBe('draft');
+    expect(createResponse.body.lyrics).toEqual({
+      source: 'manual',
+      rawText: 'Linha um\nLinha dois',
+      normalizedText: 'linha um linha dois'
+    });
 
     const listResponse = await request(app.getHttpServer())
       .get('/projects')
@@ -162,6 +172,8 @@ describe('Projects integration', () => {
     expect(listResponse.body).toHaveLength(1);
     expect(listResponse.body[0].title).toBe('My First Clip');
     expect(listResponse.body[0].clipDurationSeconds).toBe(20);
+    expect(listResponse.body[0].sceneDurationSeconds).toBe(5);
+    expect(listResponse.body[0].visualCheckpointName).toBe('sd_xl_turbo_1.0.safetensors');
 
     const detailResponse = await request(app.getHttpServer())
       .get(`/projects/${createResponse.body.id}`)
@@ -170,21 +182,30 @@ describe('Projects integration', () => {
 
     expect(detailResponse.body.id).toBe(createResponse.body.id);
     expect(detailResponse.body.clipDurationSeconds).toBe(20);
+    expect(detailResponse.body.sceneDurationSeconds).toBe(5);
+    expect(detailResponse.body.visualCheckpointName).toBe('sd_xl_turbo_1.0.safetensors');
     expect(detailResponse.body.status).toBe('draft');
+    expect(detailResponse.body.lyrics).toEqual({
+      source: 'manual',
+      rawText: 'Linha um\nLinha dois',
+      normalizedText: 'linha um linha dois'
+    });
   });
 
-  it('uploads an MP3 track, stores it on disk and updates project state', async () => {
+  it('uploads an MP3 track, stores it on disk and preserves manual lyrics when provided', async () => {
     const createResponse = await request(app.getHttpServer())
       .post('/projects')
       .set('Authorization', `Bearer ${authToken}`)
       .send({
-        title: 'Upload Flow'
+        title: 'Upload Flow',
+        manualLyricsText: 'Hoje o celular vibrou diferente'
       })
       .expect(201);
 
     const uploadResponse = await request(app.getHttpServer())
       .post(`/projects/${createResponse.body.id}/upload-track`)
       .set('Authorization', `Bearer ${authToken}`)
+      .field('manualLyricsText', 'Hoje o celular vibrou diferente')
       .attach('file', sampleMp3Path, {
         filename: 'track.mp3',
         contentType: 'audio/mpeg'
@@ -232,6 +253,15 @@ describe('Projects integration', () => {
     );
     expect(Array.isArray(processingJob?.activityLog)).toBe(true);
 
+    const lyrics = await prisma.lyrics.findUnique({
+      where: {
+        projectId: createResponse.body.id
+      }
+    });
+
+    expect(lyrics?.source).toBe('manual');
+    expect(lyrics?.rawText).toBe('Hoje o celular vibrou diferente');
+
     uploadedFilePath = resolve(track?.storagePath ?? '');
     expect(existsSync(uploadedFilePath)).toBe(true);
     expect(readFileSync(uploadedFilePath).length).toBeGreaterThan(0);
@@ -250,8 +280,17 @@ describe('Projects integration', () => {
         createdByUserId: owner.id,
         title: 'Failed Upload Recovery',
         clipDurationSeconds: 45,
+        sceneDurationSeconds: 6,
+        visualCheckpointName: 'old-model.safetensors',
         status: 'failed',
         errorMessage: 'missing source file',
+        lyrics: {
+          create: {
+            source: 'manual',
+            rawText: 'Letra antiga',
+            normalizedText: 'letra antiga'
+          }
+        },
         track: {
           create: {
             originalFileName: 'old.wav',
@@ -278,6 +317,9 @@ describe('Projects integration', () => {
       .post(`/projects/${project.id}/upload-track`)
       .set('Authorization', `Bearer ${authToken}`)
       .field('clipDurationSeconds', '20')
+      .field('sceneDurationSeconds', '5')
+      .field('visualCheckpointName', 'new-model.safetensors')
+      .field('manualLyricsText', 'Letra atualizada')
       .attach('file', sampleMp3Path, {
         filename: 'replacement.mp3',
         contentType: 'audio/mpeg'
@@ -303,13 +345,22 @@ describe('Projects integration', () => {
         type: 'audio'
       }
     });
+    const lyrics = await prisma.lyrics.findUniqueOrThrow({
+      where: {
+        projectId: project.id
+      }
+    });
 
     expect(refreshedProject.status).toBe('queued');
     expect(refreshedProject.errorMessage).toBeNull();
     expect(refreshedProject.clipDurationSeconds).toBe(20);
+    expect(refreshedProject.sceneDurationSeconds).toBe(5);
+    expect(refreshedProject.visualCheckpointName).toBe('new-model.safetensors');
     expect(refreshedTrack.originalFileName).toBe('replacement.mp3');
     expect(refreshedTrack.mimeType).toBe('audio/mpeg');
     expect(audioAssets).toHaveLength(1);
+    expect(lyrics.source).toBe('manual');
+    expect(lyrics.rawText).toBe('Letra atualizada');
   });
 
   it('uploads a WAV track, stores it with the original extension and updates project state', async () => {
@@ -413,6 +464,15 @@ describe('Projects integration', () => {
       }
     });
 
+    await prisma.lyrics.create({
+      data: {
+        projectId: project.id,
+        source: 'whisper',
+        rawText: 'Hello world\nWe keep moving',
+        normalizedText: 'hello world we keep moving'
+      }
+    });
+
     await prisma.storyboard.create({
       data: {
         projectId: project.id,
@@ -469,7 +529,7 @@ describe('Projects integration', () => {
     await prisma.scenePrompt.create({
       data: {
         sceneId: scene.id,
-        provider: 'mock',
+        provider: 'template',
         positivePrompt: 'positive prompt',
         negativePrompt: 'negative prompt',
         style: 'cinematic music video',
@@ -517,6 +577,21 @@ describe('Projects integration', () => {
           timestamp: expect.any(String)
         }
       ],
+      lyrics: {
+        source: 'whisper',
+        rawText: 'Hello world\nWe keep moving',
+        normalizedText: 'hello world we keep moving'
+      },
+      musicSections: [
+        {
+          type: 'verse',
+          title: 'Verse 1',
+          startSeconds: 0,
+          endSeconds: 8,
+          lyricsExcerpt: 'sample line',
+          energy: 0.55
+        }
+      ],
       errorMessage: null,
       lastUpdatedAt: expect.any(String),
       isPossiblyStalled: false
@@ -528,7 +603,7 @@ describe('Projects integration', () => {
       .expect(200);
 
     expect(scenesResponse.body).toHaveLength(1);
-    expect(scenesResponse.body[0].prompt.provider).toBe('mock');
+    expect(scenesResponse.body[0].prompt.provider).toBe('template');
     expect(scenesResponse.body[0].videoAssetId).toBe(sceneAsset.id);
 
     const renderResponse = await request(app.getHttpServer())
@@ -566,8 +641,17 @@ describe('Projects integration', () => {
         createdByUserId: owner.id,
         title: 'Retry Project',
         clipDurationSeconds: 40,
+        sceneDurationSeconds: 6,
+        visualCheckpointName: 'sd_xl_turbo_1.0.safetensors',
         status: 'failed',
         errorMessage: 'render failed',
+        lyrics: {
+          create: {
+            source: 'manual',
+            rawText: 'Letra original',
+            normalizedText: 'letra original'
+          }
+        },
         track: {
           create: {
             originalFileName: 'song.mp3',
@@ -583,13 +667,18 @@ describe('Projects integration', () => {
       .post(`/projects/${project.id}/retry`)
       .set('Authorization', `Bearer ${authToken}`)
       .send({
-        clipDurationSeconds: 20
+        clipDurationSeconds: 20,
+        sceneDurationSeconds: 5,
+        visualCheckpointName: 'wan-image-fallback.safetensors',
+        manualLyricsText: 'Letra revisada'
       })
       .expect(201);
 
     expect(retryResponse.body.id).toBe(project.id);
     expect(retryResponse.body.status).toBe('queued');
     expect(retryResponse.body.clipDurationSeconds).toBe(20);
+    expect(retryResponse.body.sceneDurationSeconds).toBe(5);
+    expect(retryResponse.body.visualCheckpointName).toBe('wan-image-fallback.safetensors');
 
     const refreshedProject = await prisma.project.findUniqueOrThrow({
       where: {
@@ -604,15 +693,151 @@ describe('Projects integration', () => {
         createdAt: 'desc'
       }
     });
+    const lyrics = await prisma.lyrics.findUniqueOrThrow({
+      where: {
+        projectId: project.id
+      }
+    });
 
     expect(refreshedProject.status).toBe('queued');
     expect(refreshedProject.clipDurationSeconds).toBe(20);
+    expect(refreshedProject.sceneDurationSeconds).toBe(5);
+    expect(refreshedProject.visualCheckpointName).toBe('wan-image-fallback.safetensors');
     expect(refreshedProject.errorMessage).toBeNull();
+    expect(lyrics.source).toBe('manual');
+    expect(lyrics.rawText).toBe('Letra revisada');
     expect(processingJob?.status).toBe('queued');
     expect(processingJob?.progress).toBe(0);
     expect(processingJob?.detailMessage).toBe(
       'Projeto enfileirado. Aguardando worker iniciar o pipeline.'
     );
+  });
+
+  it('preserves generated scenes on retry when the project configuration is unchanged', async () => {
+    const owner = await prisma.user.findUniqueOrThrow({
+      where: {
+        email: 'owner@example.com'
+      }
+    });
+
+    const project = await prisma.project.create({
+      data: {
+        organizationId,
+        createdByUserId: owner.id,
+        title: 'Resume Retry Project',
+        clipDurationSeconds: 20,
+        sceneDurationSeconds: 5,
+        status: 'failed',
+        errorMessage: 'scene 3 failed',
+        lyrics: {
+          create: {
+            source: 'manual',
+            rawText: 'Letra fixa',
+            normalizedText: 'letra fixa'
+          }
+        },
+        track: {
+          create: {
+            originalFileName: 'song.mp3',
+            mimeType: 'audio/mpeg',
+            sizeBytes: 1234,
+            storagePath: 'storage/uploads/demo/retry/original.mp3'
+          }
+        }
+      }
+    });
+
+    const section = await prisma.musicSection.create({
+      data: {
+        projectId: project.id,
+        type: 'verse',
+        title: 'Verse 1',
+        startSeconds: 0,
+        endSeconds: 5
+      }
+    });
+
+    const sceneAsset = await prisma.asset.create({
+      data: {
+        organizationId,
+        projectId: project.id,
+        type: 'video_scene',
+        mimeType: 'video/mp4',
+        storagePath: `storage/generated-scenes/${organizationId}/${project.id}/scene-001.mp4`,
+        sizeBytes: 123
+      }
+    });
+
+    const scene = await prisma.scene.create({
+      data: {
+        projectId: project.id,
+        musicSectionId: section.id,
+        index: 0,
+        title: 'Verse 1 Scene 1',
+        description: 'Scene description',
+        startSeconds: 0,
+        endSeconds: 5,
+        durationSeconds: 5,
+        status: 'completed',
+        visualProvider: 'comfyui-video',
+        videoAssetId: sceneAsset.id
+      }
+    });
+
+    await prisma.scenePrompt.create({
+      data: {
+        sceneId: scene.id,
+        provider: 'ollama',
+        positivePrompt: 'positive prompt',
+        negativePrompt: 'negative prompt',
+        style: 'cinematic',
+        camera: 'medium shot'
+      }
+    });
+
+    await prisma.storyboard.create({
+      data: {
+        projectId: project.id,
+        concept: 'Concept',
+        visualStyle: 'cinematic',
+        mood: 'upbeat',
+        colorPalette: 'warm amber',
+        narrativeSummary: 'Narrative'
+      }
+    });
+
+    const retryResponse = await request(app.getHttpServer())
+      .post(`/projects/${project.id}/retry`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({})
+      .expect(201);
+
+    expect(retryResponse.body.id).toBe(project.id);
+    expect(retryResponse.body.status).toBe('queued');
+
+    const preservedScene = await prisma.scene.findUnique({
+      where: {
+        projectId_index: {
+          projectId: project.id,
+          index: 0
+        }
+      }
+    });
+    const preservedPrompt = await prisma.scenePrompt.findUnique({
+      where: {
+        sceneId: scene.id
+      }
+    });
+    const preservedSection = await prisma.musicSection.findFirst({
+      where: {
+        projectId: project.id
+      }
+    });
+
+    expect(preservedScene?.id).toBe(scene.id);
+    expect(preservedScene?.status).toBe('completed');
+    expect(preservedPrompt?.sceneId).toBe(scene.id);
+    expect(preservedSection?.id).toBe(section.id);
   });
 
   it('rejects retry for projects that are not failed', async () => {

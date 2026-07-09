@@ -19,17 +19,26 @@ interface CreateProjectInput {
   createdByUserId: string;
   title: string;
   clipDurationSeconds?: number;
+  sceneDurationSeconds?: number;
+  visualCheckpointName?: string;
+  manualLyricsText?: string;
 }
 
 interface UploadTrackInput {
   organizationId: string;
   projectId: string;
   clipDurationSeconds?: number;
+  sceneDurationSeconds?: number;
+  visualCheckpointName?: string;
+  manualLyricsText?: string;
   file: Express.Multer.File;
 }
 
 interface RetryProjectInput {
   clipDurationSeconds?: number;
+  sceneDurationSeconds?: number;
+  visualCheckpointName?: string;
+  manualLyricsText?: string;
 }
 
 @Injectable()
@@ -49,6 +58,9 @@ export class ProjectsService {
 
   async createProject(input: CreateProjectInput) {
     const clipDurationSeconds = this.normalizeClipDurationSeconds(input.clipDurationSeconds);
+    const sceneDurationSeconds = this.normalizeSceneDurationSeconds(input.sceneDurationSeconds);
+    const visualCheckpointName = this.normalizeVisualCheckpointName(input.visualCheckpointName);
+    const manualLyrics = this.normalizeManualLyricsText(input.manualLyricsText);
 
     const project = await this.prismaService.project.create({
       data: {
@@ -56,11 +68,26 @@ export class ProjectsService {
         createdByUserId: input.createdByUserId,
         title: input.title.trim(),
         clipDurationSeconds,
-        status: ProjectStatus.draft
+        sceneDurationSeconds,
+        visualCheckpointName,
+        status: ProjectStatus.draft,
+        ...(manualLyrics
+          ? {
+              lyrics: {
+                create: {
+                  source: 'manual',
+                  ...manualLyrics
+                }
+              }
+            }
+          : {})
+      },
+      include: {
+        lyrics: true
       }
     });
 
-    return this.projectPresenter.summary(project);
+    return this.projectPresenter.summaryWithLyrics(project);
   }
 
   async listProjects(organizationId: string) {
@@ -78,13 +105,32 @@ export class ProjectsService {
   }
 
   async getProjectById(projectId: string, organizationId: string) {
-    const project = await this.getOwnedProject(projectId, organizationId);
+    const project = await this.getOwnedProject(projectId, organizationId, true);
 
-    return this.projectPresenter.summary(project);
+    return this.projectPresenter.summaryWithLyrics(project);
   }
 
   async getProjectStatus(projectId: string, organizationId: string) {
-    const project = await this.getOwnedProject(projectId, organizationId);
+    const project = await this.prismaService.project.findFirst({
+      where: {
+        id: projectId,
+        organizationId,
+        deletedAt: null
+      },
+      include: {
+        lyrics: true,
+        musicSections: {
+          orderBy: {
+            startSeconds: 'asc'
+          }
+        }
+      }
+    });
+
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
     const processingJob = await this.prismaService.processingJob.findFirst({
       where: {
         projectId,
@@ -107,7 +153,8 @@ export class ProjectsService {
         projectId
       },
       include: {
-        prompt: true
+        prompt: true,
+        referenceImageAsset: true
       },
       orderBy: {
         index: 'asc'
@@ -115,6 +162,104 @@ export class ProjectsService {
     });
 
     return scenes.map((scene) => this.projectPresenter.scene(scene));
+  }
+
+  async uploadSceneReferenceImage(
+    projectId: string,
+    sceneId: string,
+    organizationId: string,
+    file: Express.Multer.File
+  ) {
+    const scene = await this.prismaService.scene.findFirst({
+      where: {
+        id: sceneId,
+        projectId,
+        project: {
+          organizationId,
+          deletedAt: null
+        }
+      },
+      include: {
+        referenceImageAsset: true
+      }
+    });
+
+    if (!scene) {
+      throw new NotFoundException('Scene not found');
+    }
+
+    if (scene.referenceImageAsset?.storagePath) {
+      await this.localStorageService.removePath(scene.referenceImageAsset.storagePath);
+      await this.prismaService.asset.delete({
+        where: {
+          id: scene.referenceImageAsset.id
+        }
+      });
+    }
+
+    const storagePath = await this.localStorageService.saveSceneReferenceImage(
+      organizationId,
+      projectId,
+      scene.index,
+      file.originalname,
+      file.buffer
+    );
+
+    const referenceImageAsset = await this.prismaService.asset.create({
+      data: {
+        organizationId,
+        projectId,
+        type: AssetType.image,
+        mimeType: file.mimetype,
+        storagePath,
+        sizeBytes: file.size
+      }
+    });
+
+    const updatedScene = await this.prismaService.scene.update({
+      where: {
+        id: sceneId
+      },
+      data: {
+        referenceImageAssetId: referenceImageAsset.id
+      },
+      include: {
+        prompt: true,
+        referenceImageAsset: true
+      }
+    });
+
+    return this.projectPresenter.scene(updatedScene);
+  }
+
+  async getSceneReferenceImage(
+    projectId: string,
+    sceneId: string,
+    organizationId: string
+  ) {
+    const scene = await this.prismaService.scene.findFirst({
+      where: {
+        id: sceneId,
+        projectId,
+        project: {
+          organizationId,
+          deletedAt: null
+        }
+      },
+      include: {
+        referenceImageAsset: true
+      }
+    });
+
+    if (!scene?.referenceImageAsset) {
+      throw new NotFoundException('Scene reference image not found');
+    }
+
+    return {
+      fileName: `${sceneId}-${scene.referenceImageAsset.id}`,
+      absolutePath: this.localStorageService.getAbsolutePath(scene.referenceImageAsset.storagePath),
+      mimeType: scene.referenceImageAsset.mimeType
+    };
   }
 
   async getProjectRender(projectId: string, organizationId: string) {
@@ -167,12 +312,15 @@ export class ProjectsService {
 
   async uploadTrack(input: UploadTrackInput) {
     const clipDurationSeconds = this.normalizeClipDurationSeconds(input.clipDurationSeconds);
+    const sceneDurationSeconds = this.normalizeSceneDurationSeconds(input.sceneDurationSeconds);
+    const visualCheckpointName = this.normalizeVisualCheckpointName(input.visualCheckpointName);
     const project = await this.prismaService.project.findUnique({
       where: {
         id: input.projectId
       },
       include: {
-        track: true
+        track: true,
+        lyrics: true
       }
     });
 
@@ -191,6 +339,15 @@ export class ProjectsService {
     if (project.status !== ProjectStatus.draft && project.status !== ProjectStatus.failed) {
       throw new BadRequestException('Track upload is only allowed for draft or failed projects');
     }
+
+    const manualLyrics =
+      this.normalizeManualLyricsText(input.manualLyricsText) ??
+      (project.lyrics?.source === 'manual'
+        ? {
+            rawText: project.lyrics.rawText,
+            normalizedText: project.lyrics.normalizedText
+          }
+        : null);
 
     if (project.track && project.status === ProjectStatus.failed) {
       await this.localStorageService.removePath(
@@ -252,6 +409,10 @@ export class ProjectsService {
         data: {
           clipDurationSeconds:
             clipDurationSeconds !== null ? clipDurationSeconds : project.clipDurationSeconds,
+          sceneDurationSeconds:
+            sceneDurationSeconds !== null ? sceneDurationSeconds : project.sceneDurationSeconds,
+          visualCheckpointName:
+            visualCheckpointName !== null ? visualCheckpointName : project.visualCheckpointName,
           status: ProjectStatus.uploaded
         }
       });
@@ -260,15 +421,37 @@ export class ProjectsService {
     });
 
     await this.resetDerivedProjectState(input.projectId, input.organizationId, {
-      preserveAudio: true
+      preserveAudio: true,
+      preserveManualLyrics: false
     });
+
+    if (manualLyrics) {
+      await this.prismaService.lyrics.upsert({
+        where: {
+          projectId: input.projectId
+        },
+        update: {
+          source: 'manual',
+          ...manualLyrics
+        },
+        create: {
+          projectId: input.projectId,
+          source: 'manual',
+          ...manualLyrics
+        }
+      });
+    }
 
     await this.queueProjectProcessing({
       projectId: input.projectId,
       organizationId: input.organizationId,
       requestedByUserId: project.createdByUserId,
       clipDurationSeconds:
-        clipDurationSeconds !== null ? clipDurationSeconds : project.clipDurationSeconds
+        clipDurationSeconds !== null ? clipDurationSeconds : project.clipDurationSeconds,
+      sceneDurationSeconds:
+        sceneDurationSeconds !== null ? sceneDurationSeconds : project.sceneDurationSeconds,
+      visualCheckpointName:
+        visualCheckpointName !== null ? visualCheckpointName : project.visualCheckpointName
     });
 
     return this.projectPresenter.uploadResult(
@@ -284,12 +467,15 @@ export class ProjectsService {
     input: RetryProjectInput = {}
   ) {
     const clipDurationSeconds = this.normalizeClipDurationSeconds(input.clipDurationSeconds);
+    const sceneDurationSeconds = this.normalizeSceneDurationSeconds(input.sceneDurationSeconds);
+    const visualCheckpointName = this.normalizeVisualCheckpointName(input.visualCheckpointName);
     const project = await this.prismaService.project.findUnique({
       where: {
         id: projectId
       },
       include: {
-        track: true
+        track: true,
+        lyrics: true
       }
     });
 
@@ -309,20 +495,68 @@ export class ProjectsService {
       throw new BadRequestException('Only failed projects can be retried');
     }
 
+    const providedManualLyrics = this.normalizeManualLyricsText(input.manualLyricsText);
+    const manualLyrics =
+      providedManualLyrics ??
+      (project.lyrics?.source === 'manual'
+        ? {
+            rawText: project.lyrics.rawText,
+            normalizedText: project.lyrics.normalizedText
+          }
+        : null);
+    const currentManualLyrics =
+      project.lyrics?.source === 'manual'
+        ? {
+            rawText: project.lyrics.rawText,
+            normalizedText: project.lyrics.normalizedText
+          }
+        : null;
+    const nextClipDurationSeconds =
+      clipDurationSeconds !== null ? clipDurationSeconds : project.clipDurationSeconds;
+    const nextSceneDurationSeconds =
+      sceneDurationSeconds !== null ? sceneDurationSeconds : project.sceneDurationSeconds;
+    const nextVisualCheckpointName =
+      visualCheckpointName !== null ? visualCheckpointName : project.visualCheckpointName;
+    const shouldPreserveGeneratedState =
+      nextClipDurationSeconds === project.clipDurationSeconds &&
+      nextSceneDurationSeconds === project.sceneDurationSeconds &&
+      nextVisualCheckpointName === project.visualCheckpointName &&
+      JSON.stringify(manualLyrics) === JSON.stringify(currentManualLyrics);
+
     await this.resetDerivedProjectState(projectId, organizationId, {
-      preserveAudio: true
+      preserveAudio: true,
+      preserveManualLyrics: false,
+      preserveGeneratedState: shouldPreserveGeneratedState
     });
+
+    if (manualLyrics) {
+      await this.prismaService.lyrics.upsert({
+        where: {
+          projectId
+        },
+        update: {
+          source: 'manual',
+          ...manualLyrics
+        },
+        create: {
+          projectId,
+          source: 'manual',
+          ...manualLyrics
+        }
+      });
+    }
 
     await this.queueProjectProcessing({
       projectId,
       organizationId,
       requestedByUserId: project.createdByUserId,
-      clipDurationSeconds:
-        clipDurationSeconds !== null ? clipDurationSeconds : project.clipDurationSeconds
+      clipDurationSeconds: nextClipDurationSeconds,
+      sceneDurationSeconds: nextSceneDurationSeconds,
+      visualCheckpointName: nextVisualCheckpointName
     });
 
-    return this.projectPresenter.summary(
-      await this.getOwnedProject(projectId, organizationId)
+    return this.projectPresenter.summaryWithLyrics(
+      await this.getOwnedProject(projectId, organizationId, true)
     );
   }
 
@@ -331,6 +565,8 @@ export class ProjectsService {
     organizationId: string;
     requestedByUserId: string;
     clipDurationSeconds?: number | null;
+    sceneDurationSeconds?: number | null;
+    visualCheckpointName?: string | null;
   }) {
     const payload = this.projectProcessingPayloadFactory.build({
       projectId: input.projectId,
@@ -369,6 +605,8 @@ export class ProjectsService {
           },
           data: {
             clipDurationSeconds: input.clipDurationSeconds ?? null,
+            sceneDurationSeconds: input.sceneDurationSeconds ?? null,
+            visualCheckpointName: input.visualCheckpointName ?? null,
             status: ProjectStatus.queued,
             errorMessage: null
           }
@@ -383,6 +621,8 @@ export class ProjectsService {
         },
         data: {
           clipDurationSeconds: input.clipDurationSeconds ?? null,
+          sceneDurationSeconds: input.sceneDurationSeconds ?? null,
+          visualCheckpointName: input.visualCheckpointName ?? null,
           status: ProjectStatus.failed,
           errorMessage: `Failed to enqueue project processing: ${message}`
         }
@@ -395,8 +635,41 @@ export class ProjectsService {
   private async resetDerivedProjectState(
     projectId: string,
     organizationId: string,
-    options: { preserveAudio: boolean }
+    options: {
+      preserveAudio: boolean;
+      preserveManualLyrics: boolean;
+      preserveGeneratedState?: boolean;
+    }
   ) {
+    if (options.preserveGeneratedState) {
+      await this.prismaService.$transaction(async (tx) => {
+        await tx.render.deleteMany({
+          where: {
+            projectId
+          }
+        });
+
+        await tx.asset.deleteMany({
+          where: {
+            projectId,
+            organizationId,
+            type: AssetType.render
+          }
+        });
+      });
+
+      await Promise.all([
+        this.localStorageService.removePath(
+          this.localStorageService.buildProjectRendersDirectory(organizationId, projectId)
+        ),
+        this.localStorageService.removePath(
+          this.localStorageService.buildProjectTempDirectory(projectId)
+        )
+      ]);
+
+      return;
+    }
+
     const removableAssetTypes = [
       AssetType.image,
       AssetType.video_scene,
@@ -430,11 +703,22 @@ export class ProjectsService {
         }
       });
 
-      await tx.lyrics.deleteMany({
-        where: {
-          projectId
-        }
-      });
+      if (options.preserveManualLyrics) {
+        await tx.lyrics.deleteMany({
+          where: {
+            projectId,
+            source: {
+              not: 'manual'
+            }
+          }
+        });
+      } else {
+        await tx.lyrics.deleteMany({
+          where: {
+            projectId
+          }
+        });
+      }
 
       await tx.asset.deleteMany({
         where: {
@@ -456,6 +740,9 @@ export class ProjectsService {
         this.localStorageService.buildProjectGeneratedScenesDirectory(organizationId, projectId)
       ),
       this.localStorageService.removePath(
+        this.localStorageService.buildProjectSceneReferenceImagesDirectory(organizationId, projectId)
+      ),
+      this.localStorageService.removePath(
         this.localStorageService.buildProjectGeneratedImagesDirectory(organizationId, projectId)
       ),
       this.localStorageService.removePath(
@@ -467,13 +754,20 @@ export class ProjectsService {
     ]);
   }
 
-  private async getOwnedProject(projectId: string, organizationId: string) {
+  private async getOwnedProject(projectId: string, organizationId: string, includeLyrics = false) {
     const project = await this.prismaService.project.findFirst({
       where: {
         id: projectId,
         organizationId,
         deletedAt: null
-      }
+      },
+      ...(includeLyrics
+        ? {
+            include: {
+              lyrics: true
+            }
+          }
+        : {})
     });
 
     if (!project) {
@@ -481,6 +775,22 @@ export class ProjectsService {
     }
 
     return project;
+  }
+
+  private normalizeManualLyricsText(value: string | null | undefined): {
+    rawText: string;
+    normalizedText: string;
+  } | null {
+    const rawText = value?.trim();
+
+    if (!rawText) {
+      return null;
+    }
+
+    return {
+      rawText,
+      normalizedText: rawText.replace(/\s+/g, ' ').trim().toLowerCase()
+    };
   }
 
   private normalizeClipDurationSeconds(value: number | string | null | undefined): number | null {
@@ -499,5 +809,32 @@ export class ProjectsService {
     }
 
     return normalizedValue;
+  }
+
+  private normalizeSceneDurationSeconds(value: number | string | null | undefined): number | null {
+    if (value === undefined || value === null || value === '') {
+      return null;
+    }
+
+    const normalizedValue = typeof value === 'number' ? value : Number(value);
+
+    if (!Number.isFinite(normalizedValue)) {
+      throw new BadRequestException('Scene duration must be a valid number');
+    }
+
+    if (normalizedValue < 3 || normalizedValue > 30) {
+      throw new BadRequestException('Scene duration must be between 3 and 30 seconds');
+    }
+
+    return normalizedValue;
+  }
+
+  private normalizeVisualCheckpointName(value: string | null | undefined): string | null {
+    if (value === undefined || value === null) {
+      return null;
+    }
+
+    const normalizedValue = value.trim();
+    return normalizedValue ? normalizedValue : null;
   }
 }

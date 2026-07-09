@@ -42,7 +42,10 @@ export class ProjectsController {
       organizationId: user.organizationId,
       createdByUserId: user.userId,
       title: input.title,
-      clipDurationSeconds: input.clipDurationSeconds
+      clipDurationSeconds: input.clipDurationSeconds,
+      sceneDurationSeconds: input.sceneDurationSeconds,
+      visualCheckpointName: input.visualCheckpointName,
+      manualLyricsText: input.manualLyricsText
     });
   }
 
@@ -64,6 +67,52 @@ export class ProjectsController {
   @Get(':id/scenes')
   getProjectScenes(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.projectsService.listProjectScenes(id, user.organizationId);
+  }
+
+  @Post(':id/scenes/:sceneId/reference-image')
+  @UseInterceptors(FileInterceptor('file'))
+  uploadSceneReferenceImage(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') projectId: string,
+    @Param('sceneId') sceneId: string,
+    @UploadedFile() file: Express.Multer.File | undefined
+  ) {
+    if (!file) {
+      throw new BadRequestException('Reference image file is required');
+    }
+
+    const allowedMimeTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+    const allowedExtension = /\.(jpe?g|png|webp)$/i.test(file.originalname);
+
+    if (!allowedMimeTypes.has(file.mimetype) || !allowedExtension) {
+      throw new BadRequestException('Only JPEG, PNG and WebP reference images are supported');
+    }
+
+    return this.projectsService.uploadSceneReferenceImage(
+      projectId,
+      sceneId,
+      user.organizationId,
+      file
+    );
+  }
+
+  @Get(':id/scenes/:sceneId/reference-image')
+  async getSceneReferenceImage(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') projectId: string,
+    @Param('sceneId') sceneId: string,
+    @Res() response: Response
+  ) {
+    const image = await this.projectsService.getSceneReferenceImage(
+      projectId,
+      sceneId,
+      user.organizationId
+    );
+
+    response.setHeader('Content-Type', image.mimeType);
+    response.setHeader('Content-Disposition', `inline; filename="${image.fileName}"`);
+
+    return response.sendFile(image.absolutePath);
   }
 
   @Get(':id/render')
@@ -116,6 +165,9 @@ export class ProjectsController {
       organizationId: user.organizationId,
       projectId,
       clipDurationSeconds: input.clipDurationSeconds,
+      sceneDurationSeconds: input.sceneDurationSeconds,
+      visualCheckpointName: input.visualCheckpointName,
+      manualLyricsText: input.manualLyricsText,
       file
     });
   }

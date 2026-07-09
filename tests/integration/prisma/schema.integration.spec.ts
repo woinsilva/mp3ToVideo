@@ -115,6 +115,8 @@ describe('Prisma schema integration', () => {
         createdByUserId: user.id,
         title: 'Integration Project',
         clipDurationSeconds: 20,
+        sceneDurationSeconds: 5,
+        visualCheckpointName: 'sd_xl_turbo_1.0.safetensors',
         status: ProjectStatus.uploaded,
         track: {
           create: {
@@ -163,7 +165,7 @@ describe('Prisma schema integration', () => {
               status: 'pending',
               prompt: {
                 create: {
-                  provider: 'mock',
+                  provider: 'template',
                   positivePrompt: 'city lights, cinematic',
                   negativePrompt: 'blurry',
                   style: 'cinematic music video',
@@ -227,10 +229,12 @@ describe('Prisma schema integration', () => {
 
     expect(hydratedProject?.track?.originalFileName).toBe('song.mp3');
     expect(hydratedProject?.clipDurationSeconds).toBe(20);
+    expect(hydratedProject?.sceneDurationSeconds).toBe(5);
+    expect(hydratedProject?.visualCheckpointName).toBe('sd_xl_turbo_1.0.safetensors');
     expect(hydratedProject?.lyrics?.source).toBe('manual');
     expect(hydratedProject?.musicSections).toHaveLength(1);
     expect(hydratedProject?.storyboard?.concept).toBe('Night drive');
-    expect(hydratedProject?.scenes[0]?.prompt?.provider).toBe('mock');
+    expect(hydratedProject?.scenes[0]?.prompt?.provider).toBe('template');
     expect(hydratedProject?.renders).toHaveLength(1);
     expect(hydratedProject?.processingJobs).toHaveLength(1);
     expect(hydratedProject?.assets).toHaveLength(1);

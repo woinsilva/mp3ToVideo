@@ -117,6 +117,8 @@ model Project {
   createdByUserId String
   title           String
   clipDurationSeconds Float?
+  sceneDurationSeconds Float?
+  visualCheckpointName String?
   status          ProjectStatus   @default(draft)
   errorMessage    String?
   createdAt       DateTime        @default(now())
@@ -201,11 +203,13 @@ model Scene {
   status          SceneStatus   @default(pending)
   visualProvider  String?
   videoAssetId    String?
+  referenceImageAssetId String?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   project         Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
   musicSection    MusicSection? @relation(fields: [musicSectionId], references: [id], onDelete: SetNull)
   videoAsset      Asset?        @relation("SceneVideoAsset", fields: [videoAssetId], references: [id], onDelete: SetNull)
+  referenceImageAsset Asset?    @relation("SceneReferenceImageAsset", fields: [referenceImageAssetId], references: [id], onDelete: SetNull)
   prompt          ScenePrompt?
 
   @@unique([projectId, index])
@@ -239,6 +243,7 @@ model Asset {
   project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
   render         Render?
   sceneVideoFor  Scene[]      @relation("SceneVideoAsset")
+  sceneReferenceImageFor Scene[] @relation("SceneReferenceImageAsset")
 
   @@index([organizationId, projectId, type])
 }
