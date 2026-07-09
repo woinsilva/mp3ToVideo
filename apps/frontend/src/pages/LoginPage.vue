@@ -1,5 +1,5 @@
 <template>
-  <AuthLayout title="Entrar" subtitle="Acesse sua conta para continuar o projeto.">
+  <AuthLayout title="Entre na sua conta" subtitle="Continue de onde parou e acompanhe seus videoclipes.">
     <div class="auth-form-shell">
       <form class="auth-native-form" @submit.prevent="submit">
         <label class="auth-input-group">
@@ -16,13 +16,23 @@
 
         <label class="auth-input-group">
           <span class="auth-input-label">Senha</span>
-          <input
-            v-model="password"
-            class="auth-input"
-            type="password"
-            autocomplete="current-password"
-            placeholder="Sua senha"
-          />
+          <span class="password-field">
+            <input
+              v-model="password"
+              class="auth-input"
+              :type="showPassword ? 'text' : 'password'"
+              autocomplete="current-password"
+              placeholder="Sua senha"
+            />
+            <button
+              class="password-toggle"
+              type="button"
+              :aria-label="showPassword ? 'Ocultar senha' : 'Mostrar senha'"
+              @click="showPassword = !showPassword"
+            >
+              <v-icon :icon="showPassword ? 'mdi-eye-off-outline' : 'mdi-eye-outline'" size="20" />
+            </button>
+          </span>
         </label>
         <p v-if="passwordErrors.length" class="auth-input-error">{{ passwordErrors[0] }}</p>
 
@@ -36,14 +46,20 @@
         </button>
       </form>
 
-      <div class="auth-links">
-        <span>Nao tem uma conta?</span>
-        <button class="auth-link-button" type="button" @click="goToRegister">Criar conta</button>
+      <div class="demo-access">
+        <div>
+          <strong>Quer conhecer primeiro?</strong>
+          <span>Use a conta de demonstração com um clique.</span>
+        </div>
+        <button class="app-button app-button--ghost" type="button" @click="fillDemoAccount">
+          Usar conta demo
+        </button>
       </div>
 
-      <v-alert type="info" variant="tonal">
-        Conta demo: demo@example.com / 12345678
-      </v-alert>
+      <div class="auth-links">
+        <span>Ainda não tem uma conta?</span>
+        <button class="auth-link-button" type="button" @click="goToRegister">Criar conta grátis</button>
+      </div>
     </div>
   </AuthLayout>
 </template>
@@ -66,6 +82,7 @@ export default class LoginPage extends Vue {
   loading = false;
   errorMessage: string | null = null;
   submitted = false;
+  showPassword = false;
 
   get authStore(): any {
     return useAuthStore();
@@ -106,5 +123,77 @@ export default class LoginPage extends Vue {
   goToRegister() {
     void this.$router.push({ name: 'register' });
   }
+
+  fillDemoAccount() {
+    this.email = 'demo@example.com';
+    this.password = '12345678';
+    this.submitted = false;
+    this.errorMessage = null;
+  }
 }
 </script>
+
+<style scoped>
+.password-field {
+  position: relative;
+  display: block;
+}
+
+.password-field .auth-input {
+  padding-right: 48px;
+}
+
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 50%;
+  color: #65676b;
+  background: transparent;
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.password-toggle:hover {
+  background: #f0f2f5;
+}
+
+.demo-access {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #dfe3e8;
+  border-radius: 12px;
+  background: #f7f8fa;
+}
+
+.demo-access div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.demo-access strong {
+  font-size: 0.86rem;
+}
+
+.demo-access span {
+  color: #65676b;
+  font-size: 0.76rem;
+}
+
+@media (max-width: 480px) {
+  .demo-access {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+</style>

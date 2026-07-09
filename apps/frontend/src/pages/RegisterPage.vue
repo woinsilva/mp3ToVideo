@@ -1,5 +1,5 @@
 <template>
-  <AuthLayout title="Criar conta" subtitle="Crie sua conta para iniciar um projeto.">
+  <AuthLayout title="Crie sua conta" subtitle="Comece seu primeiro videoclipe em poucos minutos.">
     <div class="auth-form-shell">
       <form class="auth-native-form" @submit.prevent="submit">
         <label class="auth-input-group">
@@ -28,13 +28,23 @@
 
         <label class="auth-input-group">
           <span class="auth-input-label">Senha</span>
-          <input
-            v-model="password"
-            class="auth-input"
-            type="password"
-            autocomplete="new-password"
-            placeholder="Minimo de 8 caracteres"
-          />
+          <span class="password-field">
+            <input
+              v-model="password"
+              class="auth-input"
+              :type="showPassword ? 'text' : 'password'"
+              autocomplete="new-password"
+              placeholder="Mínimo de 8 caracteres"
+            />
+            <button
+              class="password-toggle"
+              type="button"
+              :aria-label="showPassword ? 'Ocultar senha' : 'Mostrar senha'"
+              @click="showPassword = !showPassword"
+            >
+              <v-icon :icon="showPassword ? 'mdi-eye-off-outline' : 'mdi-eye-outline'" size="20" />
+            </button>
+          </span>
         </label>
         <p v-if="passwordErrors.length" class="auth-input-error">{{ passwordErrors[0] }}</p>
 
@@ -49,7 +59,7 @@
       </form>
 
       <div class="auth-links">
-        <span>Ja tem uma conta?</span>
+        <span>Já tem uma conta?</span>
         <button class="auth-link-button" type="button" @click="goToLogin">Entrar</button>
       </div>
     </div>
@@ -80,6 +90,7 @@ export default class RegisterPage extends Vue {
   loading = false;
   errorMessage: string | null = null;
   submitted = false;
+  showPassword = false;
 
   get authStore(): any {
     return useAuthStore();
@@ -132,3 +143,35 @@ export default class RegisterPage extends Vue {
   }
 }
 </script>
+
+<style scoped>
+.password-field {
+  position: relative;
+  display: block;
+}
+
+.password-field .auth-input {
+  padding-right: 48px;
+}
+
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 50%;
+  color: #65676b;
+  background: transparent;
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.password-toggle:hover {
+  background: #f0f2f5;
+}
+</style>
