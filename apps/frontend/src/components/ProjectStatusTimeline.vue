@@ -42,7 +42,7 @@
 
       <div v-if="lyrics || musicSections.length" class="d-flex flex-column ga-3">
         <div class="activity-header">
-          <h4 class="section-title activity-title">Base textual do pipeline</h4>
+          <h4 class="section-title activity-title">Letra e estrutura da música</h4>
           <v-chip
             v-if="lyrics"
             :color="lyricsSourceColor"
@@ -88,7 +88,7 @@
 
       <div v-if="allActivity.length" class="d-flex flex-column ga-2">
         <div class="activity-header">
-          <h4 class="section-title activity-title">Historico completo do pipeline</h4>
+          <h4 class="section-title activity-title">Histórico da geração</h4>
           <v-chip size="small" variant="tonal">{{ allActivity.length }} eventos</v-chip>
         </div>
         <div class="activity-list">
@@ -259,11 +259,11 @@ export default class ProjectStatusTimeline extends Vue {
 
   formatStage(stage: string): string {
     if (stage === 'processing') return 'Preparacao';
-    if (stage === 'analyzing') return 'Analise';
+    if (stage === 'analyzing') return 'Análise';
     if (stage === 'storyboarding') return 'Storyboard';
     if (stage === 'generating_scenes') return 'Cenas';
     if (stage === 'rendering') return 'Render';
-    if (stage === 'completed') return 'Concluido';
+    if (stage === 'completed') return 'Concluído';
     if (stage === 'failed') return 'Falhou';
     return stage;
   }

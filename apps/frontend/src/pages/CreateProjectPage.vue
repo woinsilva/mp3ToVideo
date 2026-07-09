@@ -68,21 +68,21 @@
           <v-alert v-if="errorMessage" type="error" variant="tonal">{{ errorMessage }}</v-alert>
 
           <v-alert v-if="submitted && !normalizedTitle" type="warning" variant="tonal">
-            Informe um titulo para criar o projeto.
+            Informe um título para criar o projeto.
           </v-alert>
           <v-alert
             v-if="submitted && clipDurationSecondsRawValue && normalizedClipDurationSeconds === null"
             type="warning"
             variant="tonal"
           >
-            Informe uma duracao entre 1 e 600 segundos.
+            Informe uma duração entre 1 e 600 segundos.
           </v-alert>
           <v-alert
             v-if="submitted && sceneDurationSecondsRawValue && normalizedSceneDurationSeconds === null"
             type="warning"
             variant="tonal"
           >
-            Informe uma duracao por cena entre 3 e 30 segundos.
+            Informe uma duração por cena entre 3 e 30 segundos.
           </v-alert>
 
           <div class="app-button-row">

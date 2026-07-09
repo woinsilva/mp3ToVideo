@@ -29,7 +29,7 @@
         >
           <v-card-text>
             <label class="auth-input-group">
-              <span class="auth-input-label">Letra manual da musica</span>
+              <span class="auth-input-label">Letra da música</span>
               <textarea
                 v-model="manualLyricsText"
                 class="auth-input auth-input--textarea"
@@ -55,7 +55,7 @@
         <v-card v-else class="surface-card" rounded="xl">
           <v-card-text>
             <h3 class="section-title">Projeto criado</h3>
-            <p class="section-copy">O proximo passo e enviar o arquivo MP3 original.</p>
+            <p class="section-copy">O próximo passo é enviar o arquivo MP3 ou WAV original.</p>
             <p class="section-copy">
               Depois do upload, voce sera levado automaticamente para a tela de processamento.
             </p>
@@ -118,14 +118,14 @@
                 type="warning"
                 variant="tonal"
               >
-                Informe uma duracao entre 1 e 600 segundos antes de reenfileirar.
+                Informe uma duração entre 1 e 600 segundos antes de tentar novamente.
               </v-alert>
               <v-alert
                 v-if="sceneDurationSecondsRawValue && normalizedSceneDurationSeconds === null"
                 type="warning"
                 variant="tonal"
               >
-                Informe uma duracao por cena entre 3 e 30 segundos antes de reenfileirar.
+                Informe uma duração por cena entre 3 e 30 segundos antes de tentar novamente.
               </v-alert>
             </div>
 
@@ -286,7 +286,7 @@ export default class ProjectDetailPage extends Vue {
   get nextStepDescription(): string {
     switch (this.projectStatus) {
       case 'draft':
-        return 'Envie o audio para iniciar o pipeline de geracao do videoclipe.';
+        return 'Envie o áudio para iniciar a criação do videoclipe.';
       case 'uploaded':
       case 'queued':
       case 'processing':
@@ -294,13 +294,13 @@ export default class ProjectDetailPage extends Vue {
       case 'storyboarding':
       case 'generating_scenes':
       case 'rendering':
-        return 'O processamento esta em andamento. Voce pode acompanhar o progresso em tempo real.';
+        return 'A geração está em andamento. Você pode acompanhar o progresso em tempo real.';
       case 'failed':
-        return 'A geracao falhou. Ajuste o recorte se necessario, reenvie o audio ou tente novamente.';
+        return 'A geração falhou. Revise as opções, reenvie o áudio ou tente novamente.';
       case 'completed':
-        return 'O videoclipe foi concluido. Abra o resultado para visualizar o MP4 e as cenas.';
+        return 'O videoclipe foi concluído. Abra o resultado para assistir e baixar o MP4.';
       default:
-        return 'Siga o proximo passo recomendado pelo status atual do projeto.';
+        return 'Siga o próximo passo recomendado para este projeto.';
     }
   }
 
@@ -342,13 +342,13 @@ export default class ProjectDetailPage extends Vue {
     }
 
     if (this.clipDurationSecondsRawValue && this.normalizedClipDurationSeconds === null) {
-      this.errorMessage = 'Informe uma duracao entre 1 e 600 segundos antes de enviar o audio';
+      this.errorMessage = 'Informe uma duração entre 1 e 600 segundos antes de enviar o áudio';
       return;
     }
 
     if (this.sceneDurationSecondsRawValue && this.normalizedSceneDurationSeconds === null) {
       this.errorMessage =
-        'Informe uma duracao por cena entre 3 e 30 segundos antes de enviar o audio';
+        'Informe uma duração por cena entre 3 e 30 segundos antes de enviar o áudio';
       return;
     }
 
@@ -368,7 +368,7 @@ export default class ProjectDetailPage extends Vue {
       await this.projectsStore.fetchStatus(this.projectId, this.authStore.token);
       void this.$router.push({ name: 'processing', params: { id: this.projectId } });
     } catch (error) {
-      this.errorMessage = error instanceof Error ? error.message : 'Falha ao enviar MP3';
+      this.errorMessage = error instanceof Error ? error.message : 'Falha ao enviar a música';
     } finally {
       this.loading = false;
     }
@@ -388,13 +388,13 @@ export default class ProjectDetailPage extends Vue {
     }
 
     if (this.clipDurationSecondsRawValue && this.normalizedClipDurationSeconds === null) {
-      this.errorMessage = 'Informe uma duracao entre 1 e 600 segundos antes de reenfileirar';
+      this.errorMessage = 'Informe uma duração entre 1 e 600 segundos antes de tentar novamente';
       return;
     }
 
     if (this.sceneDurationSecondsRawValue && this.normalizedSceneDurationSeconds === null) {
       this.errorMessage =
-        'Informe uma duracao por cena entre 3 e 30 segundos antes de reenfileirar';
+        'Informe uma duração por cena entre 3 e 30 segundos antes de tentar novamente';
       return;
     }
 

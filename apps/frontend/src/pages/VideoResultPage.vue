@@ -127,14 +127,14 @@ export default class VideoResultPage extends Vue {
     }
 
     if (this.statusPayload.status === 'failed') {
-      return 'A ultima tentativa falhou. Volte aos detalhes para reenviar o audio ou tentar novamente.';
+      return 'A última tentativa falhou. Volte aos detalhes para revisar as opções ou tentar novamente.';
     }
 
     if (this.statusPayload.status === 'draft') {
-      return 'Envie o audio primeiro para iniciar a geracao do videoclipe.';
+      return 'Envie o áudio primeiro para iniciar a criação do videoclipe.';
     }
 
-    return 'O video final ainda nao terminou de processar. Acompanhe a renderizacao em tempo real.';
+    return 'O vídeo final ainda está sendo processado. Acompanhe a renderização em tempo real.';
   }
 
   async mounted() {
