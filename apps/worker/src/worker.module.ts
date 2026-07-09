@@ -12,7 +12,6 @@ import { ComfyUiWorkflowLoaderService } from './services/comfyui-workflow-loader
 import { FfmpegCommandBuilderService } from './services/ffmpeg-command-builder.service';
 import { FfmpegRenderingService } from './services/ffmpeg-rendering.service';
 import { LyricsGenerationService } from './services/lyrics-generation.service';
-import { LyricsFallbackService } from './services/lyrics-fallback.service';
 import { MusicStructureService } from './services/music-structure.service';
 import { OllamaClientService } from './services/ollama-client.service';
 import { ProcessingProgressService } from './services/processing-progress.service';
@@ -52,7 +51,6 @@ import { RedisConnectionService } from './workers/redis-connection.service';
     FfmpegCommandBuilderService,
     FfmpegRenderingService,
     LyricsGenerationService,
-    LyricsFallbackService,
     MusicStructureService,
     OllamaClientService,
     ProcessingProgressService,

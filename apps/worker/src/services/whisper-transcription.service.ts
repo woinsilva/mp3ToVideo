@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { delimiter } from 'node:path';
 import { promisify } from 'node:util';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
@@ -11,6 +12,8 @@ const execFileAsync = promisify(execFile);
 interface WhisperTranscriptPayload {
   text: string;
   language?: string | null;
+  device?: string | null;
+  computeType?: string | null;
 }
 
 export interface WhisperTranscriptResult {
@@ -43,8 +46,14 @@ export class WhisperTranscriptionService {
     const model = this.configService.get<string>('audio.whisperModel', 'distil-large-v3');
     const device = this.configService.get<string>('audio.whisperDevice', 'cuda');
     const computeType = this.configService.get<string>('audio.whisperComputeType', 'float16');
+    const fallbackDevice = this.configService.get<string>('audio.whisperFallbackDevice', 'cpu');
+    const fallbackComputeType = this.configService.get<string>(
+      'audio.whisperFallbackComputeType',
+      'int8'
+    );
     const timeoutMs = this.configService.get<number>('audio.whisperTimeoutMs', 600000);
     const language = this.configService.get<string>('audio.whisperLanguage', '');
+    const extraPaths = this.configService.get<string>('audio.whisperExtraPaths', '');
     const allowFallbacks = this.configService.get<boolean>('ai.enableFallbacks', true);
     const helperPath = resolveFromWorkspaceRoot(
       'apps/worker/scripts/transcribe_with_faster_whisper.py'
@@ -60,7 +69,11 @@ export class WhisperTranscriptionService {
         '--device',
         device,
         '--compute-type',
-        computeType
+        computeType,
+        '--fallback-device',
+        fallbackDevice,
+        '--fallback-compute-type',
+        fallbackComputeType
       ];
 
       if (language.trim()) {
@@ -70,7 +83,12 @@ export class WhisperTranscriptionService {
       const { stdout } = await execFileAsync(pythonPath, args, {
         timeout: timeoutMs,
         windowsHide: true,
-        maxBuffer: 10 * 1024 * 1024
+        maxBuffer: 10 * 1024 * 1024,
+        env: {
+          ...process.env,
+          PATH: this.buildProcessPath(extraPaths),
+          HF_HUB_DISABLE_SYMLINKS_WARNING: '1'
+        }
       });
 
       const payload = JSON.parse(stdout.trim()) as WhisperTranscriptPayload;
@@ -78,6 +96,16 @@ export class WhisperTranscriptionService {
 
       if (!rawText) {
         throw new Error('Whisper returned an empty transcript');
+      }
+
+      if (
+        payload.device?.trim() &&
+        payload.computeType?.trim() &&
+        (payload.device.trim() !== device || payload.computeType.trim() !== computeType)
+      ) {
+        this.logger.warn(
+          `Whisper retried with device=${payload.device.trim()} computeType=${payload.computeType.trim()} after primary device=${device} computeType=${computeType} was unavailable`
+        );
       }
 
       return {
@@ -99,5 +127,18 @@ export class WhisperTranscriptionService {
 
   normalize(text: string): string {
     return text.replace(/\s+/g, ' ').trim().toLowerCase();
+  }
+
+  private buildProcessPath(extraPaths: string): string {
+    const segments = extraPaths
+      .split(';')
+      .map((segment) => segment.trim())
+      .filter(Boolean);
+
+    if (segments.length === 0) {
+      return process.env.PATH ?? '';
+    }
+
+    return [...segments, process.env.PATH ?? ''].filter(Boolean).join(delimiter);
   }
 }

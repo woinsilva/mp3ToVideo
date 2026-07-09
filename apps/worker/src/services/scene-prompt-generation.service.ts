@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 import { OllamaClientService } from './ollama-client.service';
 import type { PlannedScene } from './scene-planning.service';
@@ -18,6 +19,8 @@ interface ScenePromptOllamaResponse {
 @Injectable()
 export class ScenePromptGenerationService {
   constructor(
+    @Inject(ConfigService)
+    private readonly configService: ConfigService,
     @Inject(OllamaClientService)
     private readonly ollamaClientService: OllamaClientService,
     @Inject(ScenePromptService)
@@ -57,6 +60,14 @@ export class ScenePromptGenerationService {
         style: generated.style.trim(),
         camera: generated.camera.trim()
       };
+    }
+
+    const allowFallbacks = this.configService.get<boolean>('ai.enableFallbacks', true);
+
+    if (!allowFallbacks) {
+      throw new Error(
+        `Scene prompt generation failed for "${scene.title}": Ollama did not return positivePrompt, negativePrompt, style and camera.`
+      );
     }
 
     return fallback;

@@ -11,8 +11,11 @@ export const envValidationSchema = Joi.object({
   WHISPER_MODEL: Joi.string().default('distil-large-v3'),
   WHISPER_DEVICE: Joi.string().valid('cpu', 'cuda').default('cuda'),
   WHISPER_COMPUTE_TYPE: Joi.string().default('float16'),
+  WHISPER_FALLBACK_DEVICE: Joi.string().valid('cpu', 'cuda').default('cpu'),
+  WHISPER_FALLBACK_COMPUTE_TYPE: Joi.string().default('int8'),
   WHISPER_TIMEOUT_MS: Joi.number().integer().positive().default(600000),
   WHISPER_LANGUAGE: Joi.string().allow('').default(''),
+  WHISPER_EXTRA_PATHS: Joi.string().allow('').default(''),
   RENDER_WIDTH: Joi.number().integer().positive().default(1280),
   RENDER_HEIGHT: Joi.number().integer().positive().default(720),
   RENDER_FRAME_RATE: Joi.number().integer().positive().default(24),
@@ -44,5 +47,7 @@ export const envValidationSchema = Joi.object({
   ENABLE_AI_FALLBACKS: Joi.boolean().truthy('true').falsy('false').default(true),
   REDIS_HOST: Joi.string().default('localhost'),
   REDIS_PORT: Joi.number().default(6379),
+  WORKER_LOCK_DURATION_MS: Joi.number().integer().positive().default(1800000),
+  WORKER_STALLED_INTERVAL_MS: Joi.number().integer().positive().default(30000),
   DATABASE_URL: Joi.string().default('postgresql://postgres:postgres@localhost:5432/video_saas')
 });

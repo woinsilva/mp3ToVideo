@@ -40,4 +40,47 @@ describe('MusicStructureService', () => {
     ]);
     expect(sections.at(-1)?.endSeconds).toBe(96);
   });
+
+  it('respects explicit lyric block headers for manual lyrics timing', () => {
+    const service = new MusicStructureService();
+
+    const sections = service.build(
+      120,
+      [
+        '[Verse 1]',
+        'Hoje o celular vibrou diferente',
+        'Mensagem do banco dizendo caiu',
+        '[Pre-Chorus]',
+        'Bota o som no carro',
+        '[Chorus]',
+        'Caiu o salario, hoje eu vou gastar',
+        'Cerveja gelada ate o sol raiar',
+        '[Bridge]',
+        'Segunda a gente volta pra luta',
+        '[Final Chorus]',
+        'Que a festa acabou de comecar'
+      ].join('\n')
+    );
+
+    expect(sections.map((section) => section.title)).toEqual([
+      'Verse 1',
+      'Pre-chorus',
+      'Chorus',
+      'Bridge',
+      'Final Chorus'
+    ]);
+    expect(sections.map((section) => section.type)).toEqual([
+      'verse',
+      'verse',
+      'chorus',
+      'bridge',
+      'chorus'
+    ]);
+    expect(sections[0]?.lyricsExcerpt).toContain('Hoje o celular vibrou diferente');
+    expect(sections[2]?.lyricsExcerpt).toContain('Caiu o salario, hoje eu vou gastar');
+    expect(sections.at(-1)?.endSeconds).toBe(120);
+    expect(sections[2]!.endSeconds - sections[2]!.startSeconds).toBeGreaterThan(
+      sections[1]!.endSeconds - sections[1]!.startSeconds
+    );
+  });
 });

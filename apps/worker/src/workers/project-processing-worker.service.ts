@@ -29,7 +29,9 @@ export class ProjectProcessingWorkerService implements OnModuleInit, OnModuleDes
       PROJECT_QUEUE_NAME,
       async (job) => this.projectProcessor.process(job),
       {
-        connection: this.connection
+        connection: this.connection,
+        lockDuration: this.configService.get<number>('worker.lockDurationMs', 1800000),
+        stalledInterval: this.configService.get<number>('worker.stalledIntervalMs', 30000)
       }
     );
   }

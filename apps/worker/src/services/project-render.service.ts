@@ -16,6 +16,9 @@ interface RenderSceneInput {
   title: string;
   durationSeconds: number;
   sectionType: string;
+  status: SceneStatus;
+  visualProvider: string | null;
+  videoAssetStoragePath: string | null;
 }
 
 interface RenderProjectInput {
@@ -23,6 +26,7 @@ interface RenderProjectInput {
   projectId: string;
   audioPath: string;
   durationSeconds: number;
+  visualCheckpointName: string | null;
   scenes: RenderSceneInput[];
 }
 
@@ -79,6 +83,31 @@ export class ProjectRenderService {
       const sceneClipPaths: string[] = [];
 
       for (const [index, scene] of input.scenes.entries()) {
+        const reusableSceneClipPath =
+          scene.status === SceneStatus.completed && scene.videoAssetStoragePath
+            ? scene.videoAssetStoragePath
+            : null;
+
+        if (
+          reusableSceneClipPath &&
+          (await this.pathExists(this.renderStorageService.getAbsolutePath(reusableSceneClipPath)))
+        ) {
+          sceneClipPaths.push(reusableSceneClipPath);
+          await this.processingProgressService.heartbeat(
+            input.projectId,
+            this.sceneRenderProgress(index + 1, input.scenes.length),
+            `Cena ${index + 1} reaproveitada do processamento anterior.`,
+            {
+              stage: 'rendering',
+              message:
+                `Cena ${index + 1} reaproveitada do processamento anterior ` +
+                `(provider: ${scene.visualProvider ?? 'desconhecido'}).`,
+              provider: scene.visualProvider ?? 'reused'
+            }
+          );
+          continue;
+        }
+
         await this.processingProgressService.heartbeat(
           input.projectId,
           this.sceneRenderProgress(index, input.scenes.length),
@@ -163,13 +192,14 @@ export class ProjectRenderService {
               generatedSceneImage = await this.sceneImageGenerationService.generate({
                 organizationId: input.organizationId,
                 projectId: input.projectId,
-                sceneIndex: index,
-                sceneTitle: scene.title,
-                positivePrompt: scenePrompt.positivePrompt,
-                negativePrompt: scenePrompt.negativePrompt,
-                style: scenePrompt.style,
-                camera: scenePrompt.camera
-              });
+              sceneIndex: index,
+              sceneTitle: scene.title,
+              positivePrompt: scenePrompt.positivePrompt,
+              negativePrompt: scenePrompt.negativePrompt,
+              style: scenePrompt.style,
+              camera: scenePrompt.camera,
+              checkpointName: input.visualCheckpointName
+            });
             } catch (error) {
               imageGenerationError = this.toErrorMessage(error);
               await this.processingProgressService.heartbeat(
@@ -462,5 +492,14 @@ export class ProjectRenderService {
 
   private toErrorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
+  }
+
+  private async pathExists(absolutePath: string): Promise<boolean> {
+    try {
+      await stat(absolutePath);
+      return true;
+    } catch {
+      return false;
+    }
   }
 }

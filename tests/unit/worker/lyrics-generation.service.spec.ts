@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { LyricsGenerationService } from '../../../apps/worker/src/services/lyrics-generation.service';
-import { LyricsFallbackService } from '../../../apps/worker/src/services/lyrics-fallback.service';
 
 describe('LyricsGenerationService', () => {
   it('uses whisper output when available', async () => {
@@ -12,8 +11,7 @@ describe('LyricsGenerationService', () => {
           normalizedText: 'hello world',
           language: 'en'
         })
-      } as never,
-      new LyricsFallbackService()
+      } as never
     );
 
     await expect(service.build('Clip', 'track.mp3')).resolves.toEqual({
@@ -23,18 +21,15 @@ describe('LyricsGenerationService', () => {
     });
   });
 
-  it('falls back to mock lyrics when whisper is unavailable', async () => {
+  it('fails explicitly when whisper is unavailable', async () => {
     const service = new LyricsGenerationService(
       {
         transcribe: vi.fn().mockResolvedValue(null)
-      } as never,
-      new LyricsFallbackService()
+      } as never
     );
 
-    const result = await service.build('My Clip', 'track.mp3');
-
-    expect(result.source).toBe('mock');
-    expect(result.rawText).toContain('My Clip');
-    expect(result.normalizedText).toContain('my clip');
+    await expect(service.build('My Clip', 'track.mp3')).rejects.toThrow(
+      'Lyrics could not be generated for "My Clip". Configure Whisper correctly or provide manual lyrics.'
+    );
   });
 });

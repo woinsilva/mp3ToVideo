@@ -51,12 +51,92 @@ export class ProjectProcessingPipelineService {
       },
       include: {
         track: true,
-        lyrics: true
+        lyrics: true,
+        storyboard: true,
+        musicSections: {
+          orderBy: {
+            startSeconds: 'asc'
+          }
+        },
+        scenes: {
+          include: {
+            prompt: true,
+            videoAsset: true
+          },
+          orderBy: {
+            index: 'asc'
+          }
+        }
       }
     });
 
     if (!project || !project.track) {
       throw new NotFoundException('Project track not found for processing');
+    }
+
+    const sourceDurationSeconds = await this.audioMetadataService.resolveDurationSeconds(
+      project.track.storagePath
+    );
+    const requestedClipDurationSeconds = project.clipDurationSeconds
+      ? Math.min(project.clipDurationSeconds, sourceDurationSeconds)
+      : null;
+    const effectiveDurationSeconds = requestedClipDurationSeconds ?? sourceDurationSeconds;
+
+    const canResumeFromExistingScenes =
+      project.scenes.length > 0 &&
+      project.scenes.every((scene) => scene.prompt) &&
+      project.storyboard !== null &&
+      project.musicSections.length > 0;
+
+    if (canResumeFromExistingScenes) {
+      await this.projectPipelineStateService.update(
+        project.id,
+        ProjectStatus.rendering,
+        95,
+        'Retomando pipeline a partir das cenas e prompts ja persistidos.',
+        {
+          stage: 'rendering',
+          message: 'Retomando pipeline a partir das cenas ja planejadas.'
+        }
+      );
+
+      await this.processingProgressService.heartbeat(
+        project.id,
+        95,
+        `Retomando render com ${project.scenes.length} cenas existentes. Cenas concluidas com arquivo valido serao reaproveitadas.`,
+        {
+          stage: 'rendering',
+          message:
+            `Retomando render com ${project.scenes.length} cenas existentes. ` +
+            'Cenas concluidas serao reaproveitadas quando o arquivo ainda existir.'
+        }
+      );
+
+      await this.projectRenderService.render({
+        organizationId: payload.organizationId,
+        projectId: project.id,
+        audioPath: project.clipDurationSeconds
+          ? await this.audioExcerptService.buildInitialExcerpt(
+              project.id,
+              project.track.storagePath,
+              effectiveDurationSeconds
+            )
+          : project.track.storagePath,
+        durationSeconds: effectiveDurationSeconds,
+        visualCheckpointName: project.visualCheckpointName,
+        scenes: project.scenes.map((scene) => ({
+          id: scene.id,
+          title: scene.title,
+          durationSeconds: scene.durationSeconds,
+          sectionType:
+            project.musicSections.find((section) => section.id === scene.musicSectionId)?.type ?? 'verse',
+          status: scene.status,
+          visualProvider: scene.visualProvider,
+          videoAssetStoragePath: scene.videoAsset?.storagePath ?? null
+        }))
+      });
+
+      return;
     }
 
     await this.projectPipelineStateService.update(
@@ -70,9 +150,6 @@ export class ProjectProcessingPipelineService {
       }
     );
 
-    const sourceDurationSeconds = await this.audioMetadataService.resolveDurationSeconds(
-      project.track.storagePath
-    );
     await this.processingProgressService.heartbeat(
       project.id,
       28,
@@ -91,10 +168,6 @@ export class ProjectProcessingPipelineService {
       }
     });
 
-    const requestedClipDurationSeconds = project.clipDurationSeconds
-      ? Math.min(project.clipDurationSeconds, sourceDurationSeconds)
-      : null;
-    const effectiveDurationSeconds = requestedClipDurationSeconds ?? sourceDurationSeconds;
     const effectiveAudioPath = requestedClipDurationSeconds
       ? await this.audioExcerptService.buildInitialExcerpt(
           project.id,
@@ -149,6 +222,15 @@ export class ProjectProcessingPipelineService {
           });
     await this.processingProgressService.heartbeat(
       project.id,
+      40,
+      `Letra pronta via ${lyrics.source}.`,
+      {
+        stage: 'analyzing',
+        message: `Letra consolidada via ${lyrics.source}. Trecho inicial: ${this.truncateForActivity(lyrics.rawText, 260)}`
+      }
+    );
+    await this.processingProgressService.heartbeat(
+      project.id,
       44,
       'Letra pronta. Identificando secoes como intro, versos, refroes e finalizacao.',
       {
@@ -159,6 +241,7 @@ export class ProjectProcessingPipelineService {
 
     const sections = this.musicStructureService.build(
       effectiveDurationSeconds,
+      lyrics.rawText,
       lyrics.normalizedText
     );
 
@@ -252,17 +335,32 @@ export class ProjectProcessingPipelineService {
     const scenes = this.scenePlanningService.build(
       effectiveDurationSeconds,
       sections,
-      storyboard.narrativeSummary
+      storyboard.narrativeSummary,
+      project.sceneDurationSeconds
     );
     await this.processingProgressService.heartbeat(
       project.id,
       86,
       `${scenes.length} cenas planejadas. Gerando prompts visuais para cada uma delas.`,
-      {
-        stage: 'generating_scenes',
-        message: `${scenes.length} cenas planejadas para o clipe.`
-      }
-    );
+        {
+          stage: 'generating_scenes',
+          message: `${scenes.length} cenas planejadas para o clipe.`
+        }
+      );
+
+    for (const [index, section] of sections.entries()) {
+      await this.processingProgressService.heartbeat(
+        project.id,
+        84,
+        `Secao ${index + 1} mapeada: ${section.title}.`,
+        {
+          stage: 'storyboarding',
+          message:
+            `Secao ${index + 1}/${sections.length}: ${section.title} (${section.startSeconds}s - ${section.endSeconds}s). ` +
+            `Trecho da letra: ${this.truncateForActivity(section.lyricsExcerpt ?? 'sem trecho', 220)}`
+        }
+      );
+    }
 
     for (const [index, scene] of scenes.entries()) {
       const planningProgress = Math.min(89, 86 + Math.round(((index + 1) / scenes.length) * 3));
@@ -274,7 +372,8 @@ export class ProjectProcessingPipelineService {
           stage: 'generating_scenes',
           message:
             `Cena ${index + 1}/${scenes.length} planejada: ${scene.title}. ` +
-            `Descricao: ${scene.description}`
+            `Base da letra: ${this.truncateForActivity(scene.lyricsExcerpt ?? 'sem trecho', 180)}. ` +
+            `Descricao: ${this.truncateForActivity(scene.description, 260)}`
         }
       );
     }
@@ -366,13 +465,27 @@ export class ProjectProcessingPipelineService {
       projectId: project.id,
       audioPath: effectiveAudioPath,
       durationSeconds: effectiveDurationSeconds,
+      visualCheckpointName: project.visualCheckpointName,
       scenes: persistedScenes.map((scene) => ({
         id: scene.id,
         title: scene.title,
         durationSeconds: scene.durationSeconds,
         sectionType:
-          createdSections.find((section) => section.id === scene.musicSectionId)?.type ?? 'verse'
+          createdSections.find((section) => section.id === scene.musicSectionId)?.type ?? 'verse',
+        status: scene.status,
+        visualProvider: scene.visualProvider,
+        videoAssetStoragePath: null
       }))
     });
+  }
+
+  private truncateForActivity(value: string, maxLength: number): string {
+    const normalized = value.replace(/\s+/g, ' ').trim();
+
+    if (normalized.length <= maxLength) {
+      return normalized;
+    }
+
+    return `${normalized.slice(0, maxLength - 3)}...`;
   }
 }

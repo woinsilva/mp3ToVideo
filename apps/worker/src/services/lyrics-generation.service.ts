@@ -1,7 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { LyricsSource } from '@prisma/client';
 
-import { LyricsFallbackService } from './lyrics-fallback.service';
 import { WhisperTranscriptionService } from './whisper-transcription.service';
 
 export interface LyricsGenerationResult {
@@ -14,9 +13,7 @@ export interface LyricsGenerationResult {
 export class LyricsGenerationService {
   constructor(
     @Inject(WhisperTranscriptionService)
-    private readonly whisperTranscriptionService: WhisperTranscriptionService,
-    @Inject(LyricsFallbackService)
-    private readonly lyricsFallbackService: LyricsFallbackService
+    private readonly whisperTranscriptionService: WhisperTranscriptionService
   ) {}
 
   async build(projectTitle: string, audioPath: string): Promise<LyricsGenerationResult> {
@@ -30,9 +27,8 @@ export class LyricsGenerationService {
       };
     }
 
-    return {
-      source: LyricsSource.mock,
-      ...this.lyricsFallbackService.build(projectTitle)
-    };
+    throw new Error(
+      `Lyrics could not be generated for "${projectTitle}". Configure Whisper correctly or provide manual lyrics.`
+    );
   }
 }

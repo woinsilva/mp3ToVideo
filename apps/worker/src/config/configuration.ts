@@ -12,8 +12,11 @@ export const configuration = () => ({
     whisperModel: process.env.WHISPER_MODEL ?? 'distil-large-v3',
     whisperDevice: process.env.WHISPER_DEVICE ?? 'cuda',
     whisperComputeType: process.env.WHISPER_COMPUTE_TYPE ?? 'float16',
+    whisperFallbackDevice: process.env.WHISPER_FALLBACK_DEVICE ?? 'cpu',
+    whisperFallbackComputeType: process.env.WHISPER_FALLBACK_COMPUTE_TYPE ?? 'int8',
     whisperTimeoutMs: Number(process.env.WHISPER_TIMEOUT_MS ?? 600000),
-    whisperLanguage: process.env.WHISPER_LANGUAGE ?? ''
+    whisperLanguage: process.env.WHISPER_LANGUAGE ?? '',
+    whisperExtraPaths: process.env.WHISPER_EXTRA_PATHS ?? ''
   },
   rendering: {
     ffmpegPath: process.env.FFMPEG_PATH ?? 'ffmpeg',
@@ -57,6 +60,10 @@ export const configuration = () => ({
   redis: {
     host: process.env.REDIS_HOST ?? 'localhost',
     port: Number(process.env.REDIS_PORT ?? 6379)
+  },
+  worker: {
+    lockDurationMs: Number(process.env.WORKER_LOCK_DURATION_MS ?? 1800000),
+    stalledIntervalMs: Number(process.env.WORKER_STALLED_INTERVAL_MS ?? 30000)
   },
   database: {
     url: process.env.DATABASE_URL ?? 'postgresql://postgres:postgres@localhost:5432/video_saas'

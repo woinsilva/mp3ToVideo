@@ -15,8 +15,9 @@ export interface ScenePromptDraft {
 export class ScenePromptService {
   build(scene: PlannedScene, storyboard: StoryboardDraft): ScenePromptDraft {
     return {
-      provider: 'mock',
+      provider: 'template',
       positivePrompt: [
+        scene.lyricsExcerpt ?? '',
         storyboard.visualStyle,
         storyboard.mood,
         storyboard.colorPalette,

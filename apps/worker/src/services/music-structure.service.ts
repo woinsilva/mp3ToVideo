@@ -7,6 +7,14 @@ interface StructureTemplateItem {
   weight: number;
 }
 
+interface ParsedLyricsBlock {
+  type: MusicSectionType;
+  title: string;
+  lines: string[];
+  excerpt: string | null;
+  weight: number;
+}
+
 export interface PlannedMusicSection {
   type: MusicSectionType;
   title: string;
@@ -18,10 +26,20 @@ export interface PlannedMusicSection {
 
 @Injectable()
 export class MusicStructureService {
-  build(durationSeconds: number, normalizedLyrics: string): PlannedMusicSection[] {
+  build(
+    durationSeconds: number,
+    rawLyrics: string,
+    normalizedLyrics = ''
+  ): PlannedMusicSection[] {
+    const parsedBlocks = this.parseStructuredLyrics(rawLyrics);
+
+    if (parsedBlocks.length > 0) {
+      return this.buildFromParsedBlocks(durationSeconds, parsedBlocks);
+    }
+
     const templates = this.selectTemplate(durationSeconds);
     const durations = this.allocateDurations(durationSeconds, templates.map((item) => item.weight));
-    const lyricChunks = this.splitLyrics(normalizedLyrics, templates.length);
+    const lyricChunks = this.splitLyrics(rawLyrics, normalizedLyrics, templates.length);
 
     let cursor = 0;
 
@@ -39,6 +57,34 @@ export class MusicStructureService {
         endSeconds: index === templates.length - 1 ? Number(durationSeconds.toFixed(3)) : endSeconds,
         lyricsExcerpt: lyricChunks[index] ?? null,
         energy: this.resolveEnergy(item.type)
+      };
+    });
+  }
+
+  private buildFromParsedBlocks(
+    durationSeconds: number,
+    blocks: ParsedLyricsBlock[]
+  ): PlannedMusicSection[] {
+    const durations = this.allocateDurations(
+      durationSeconds,
+      blocks.map((block) => block.weight)
+    );
+    let cursor = 0;
+
+    return blocks.map((block, index) => {
+      const startSeconds = Number(cursor.toFixed(3));
+      const sectionDuration = durations[index];
+      const endSeconds = Number((cursor + sectionDuration).toFixed(3));
+
+      cursor += sectionDuration;
+
+      return {
+        type: block.type,
+        title: block.title,
+        startSeconds,
+        endSeconds: index === blocks.length - 1 ? Number(durationSeconds.toFixed(3)) : endSeconds,
+        lyricsExcerpt: block.excerpt,
+        energy: this.resolveEnergy(block.type)
       };
     });
   }
@@ -83,7 +129,13 @@ export class MusicStructureService {
     return durations;
   }
 
-  private splitLyrics(normalizedLyrics: string, chunkCount: number): string[] {
+  private splitLyrics(rawLyrics: string, normalizedLyrics: string, chunkCount: number): string[] {
+    const lineBasedChunks = this.splitRawLyricsByLines(rawLyrics, chunkCount);
+
+    if (lineBasedChunks.length > 0) {
+      return lineBasedChunks;
+    }
+
     if (!normalizedLyrics) {
       return [];
     }
@@ -106,6 +158,145 @@ export class MusicStructureService {
     }
 
     return chunks.slice(0, chunkCount);
+  }
+
+  private splitRawLyricsByLines(rawLyrics: string, chunkCount: number): string[] {
+    if (!rawLyrics.trim()) {
+      return [];
+    }
+
+    const lines = rawLyrics
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0 && !/^\[[^\]]+\]$/.test(line));
+
+    if (lines.length === 0) {
+      return [];
+    }
+
+    const chunkSize = Math.max(1, Math.ceil(lines.length / chunkCount));
+    const chunks: string[] = [];
+
+    for (let index = 0; index < lines.length; index += chunkSize) {
+      chunks.push(lines.slice(index, index + chunkSize).join(' '));
+    }
+
+    while (chunks.length < chunkCount) {
+      chunks.push(chunks[chunks.length - 1] ?? '');
+    }
+
+    return chunks.slice(0, chunkCount);
+  }
+
+  private parseStructuredLyrics(rawLyrics: string): ParsedLyricsBlock[] {
+    if (!rawLyrics.trim()) {
+      return [];
+    }
+
+    const lines = rawLyrics
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    const blocks: ParsedLyricsBlock[] = [];
+    let currentHeader: string | null = null;
+    let currentLines: string[] = [];
+
+    const flushCurrentBlock = () => {
+      if (!currentHeader || currentLines.length === 0) {
+        currentHeader = null;
+        currentLines = [];
+        return;
+      }
+
+      const mapped = this.mapHeaderToSection(currentHeader);
+
+      blocks.push({
+        type: mapped.type,
+        title: mapped.title,
+        lines: [...currentLines],
+        excerpt: currentLines.join(' ').trim() || null,
+        weight: this.computeLyricsWeight(currentLines)
+      });
+
+      currentHeader = null;
+      currentLines = [];
+    };
+
+    for (const line of lines) {
+      const headerMatch = line.match(/^\[([^\]]+)\]$/);
+
+      if (headerMatch) {
+        flushCurrentBlock();
+        currentHeader = headerMatch[1].trim();
+        continue;
+      }
+
+      if (!currentHeader) {
+        return [];
+      }
+
+      currentLines.push(line);
+    }
+
+    flushCurrentBlock();
+
+    return blocks;
+  }
+
+  private mapHeaderToSection(header: string): { type: MusicSectionType; title: string } {
+    const normalizedHeader = header.toLowerCase();
+
+    if (normalizedHeader.includes('intro')) {
+      return { type: MusicSectionType.intro, title: 'Intro' };
+    }
+
+    if (normalizedHeader.includes('pre-chorus') || normalizedHeader.includes('pre chorus')) {
+      return { type: MusicSectionType.verse, title: this.toDisplayTitle(header) };
+    }
+
+    if (normalizedHeader.includes('chorus') || normalizedHeader.includes('refr')) {
+      return { type: MusicSectionType.chorus, title: this.toDisplayTitle(header) };
+    }
+
+    if (normalizedHeader.includes('bridge') || normalizedHeader.includes('ponte')) {
+      return { type: MusicSectionType.bridge, title: this.toDisplayTitle(header) };
+    }
+
+    if (normalizedHeader.includes('outro') || normalizedHeader.includes('final')) {
+      return { type: MusicSectionType.outro, title: this.toDisplayTitle(header) };
+    }
+
+    if (normalizedHeader.includes('instrumental')) {
+      return { type: MusicSectionType.instrumental, title: this.toDisplayTitle(header) };
+    }
+
+    if (normalizedHeader.includes('verse') || normalizedHeader.includes('verso')) {
+      return { type: MusicSectionType.verse, title: this.toDisplayTitle(header) };
+    }
+
+    return { type: MusicSectionType.verse, title: this.toDisplayTitle(header) };
+  }
+
+  private toDisplayTitle(header: string): string {
+    return header
+      .split(/\s+/)
+      .map((segment) => {
+        if (/^\d+$/.test(segment)) {
+          return segment;
+        }
+
+        return segment.charAt(0).toUpperCase() + segment.slice(1).toLowerCase();
+      })
+      .join(' ');
+  }
+
+  private computeLyricsWeight(lines: string[]): number {
+    const wordCount = lines
+      .join(' ')
+      .split(/\s+/)
+      .filter(Boolean).length;
+
+    return Math.max(lines.length, wordCount, 1);
   }
 
   private resolveEnergy(type: MusicSectionType): number {

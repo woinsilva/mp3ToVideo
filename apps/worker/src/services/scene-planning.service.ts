@@ -5,6 +5,7 @@ import type { PlannedMusicSection } from './music-structure.service';
 export interface PlannedScene {
   sectionTitle: string;
   sectionType: string;
+  lyricsExcerpt: string | null;
   title: string;
   description: string;
   startSeconds: number;
@@ -18,9 +19,13 @@ export class ScenePlanningService {
   build(
     totalDurationSeconds: number,
     sections: PlannedMusicSection[],
-    narrativeSummary: string
+    narrativeSummary: string,
+    targetSceneDurationSeconds?: number | null
   ): PlannedScene[] {
-    const sceneDurations = this.buildSceneDurations(totalDurationSeconds);
+    const sceneDurations = this.buildSceneDurations(
+      totalDurationSeconds,
+      targetSceneDurationSeconds
+    );
     let cursor = 0;
 
     return sceneDurations.map((sceneDuration, index) => {
@@ -35,8 +40,13 @@ export class ScenePlanningService {
       return {
         sectionTitle: section.title,
         sectionType: section.type,
-        title: `${section.title} Scene ${index + 1}`,
-        description: `${narrativeSummary} Focus on the ${section.title.toLowerCase()} atmosphere.`,
+        lyricsExcerpt: section.lyricsExcerpt,
+        title: this.buildSceneTitle(section.title, section.lyricsExcerpt, index),
+        description: this.buildSceneDescription(
+          narrativeSummary,
+          section.title,
+          section.lyricsExcerpt
+        ),
         startSeconds,
         endSeconds: index === sceneDurations.length - 1 ? Number(totalDurationSeconds.toFixed(3)) : endSeconds,
         durationSeconds: index === sceneDurations.length - 1 ? Number((totalDurationSeconds - startSeconds).toFixed(3)) : sceneDuration,
@@ -45,24 +55,41 @@ export class ScenePlanningService {
     });
   }
 
-  private buildSceneDurations(totalDurationSeconds: number): number[] {
+  private buildSceneDurations(
+    totalDurationSeconds: number,
+    targetSceneDurationSeconds?: number | null
+  ): number[] {
     if (totalDurationSeconds <= 4) {
       return [Number(totalDurationSeconds.toFixed(3))];
     }
 
-    const minimumSceneCount = Math.ceil(totalDurationSeconds / 10);
-    const maximumSceneCount = Math.max(minimumSceneCount, Math.floor(totalDurationSeconds / 4));
-    const preferredSceneCount = Math.ceil(totalDurationSeconds / 6);
-    const sceneCount = Math.min(
-      maximumSceneCount,
-      Math.max(minimumSceneCount, preferredSceneCount)
-    );
-    const baseDuration = Number((totalDurationSeconds / sceneCount).toFixed(3));
-    const durations = Array.from({ length: sceneCount }, () => baseDuration);
-    const allocated = durations.reduce((sum, value) => sum + value, 0);
-    const adjustment = Number((totalDurationSeconds - allocated).toFixed(3));
+    const preferredDuration = targetSceneDurationSeconds && targetSceneDurationSeconds > 0
+      ? targetSceneDurationSeconds
+      : 6;
 
-    durations[durations.length - 1] = Number((durations[durations.length - 1] + adjustment).toFixed(3));
+    if (totalDurationSeconds <= preferredDuration) {
+      return [Number(totalDurationSeconds.toFixed(3))];
+    }
+
+    const durations: number[] = [];
+    let remaining = Number(totalDurationSeconds.toFixed(3));
+
+    while (remaining > preferredDuration) {
+      const nextRemaining = Number((remaining - preferredDuration).toFixed(3));
+
+      if (nextRemaining > 0 && nextRemaining < 3) {
+        durations.push(Number(remaining.toFixed(3)));
+        remaining = 0;
+        break;
+      }
+
+      durations.push(Number(preferredDuration.toFixed(3)));
+      remaining = nextRemaining;
+    }
+
+    if (remaining > 0) {
+      durations.push(Number(remaining.toFixed(3)));
+    }
 
     return durations;
   }
@@ -75,5 +102,51 @@ export class ScenePlanningService {
     );
 
     return foundIndex >= 0 ? foundIndex : sections.length - 1;
+  }
+
+  private buildSceneTitle(sectionTitle: string, lyricsExcerpt: string | null, index: number): string {
+    const lyricCue = this.extractLyricCue(lyricsExcerpt);
+
+    if (!lyricCue) {
+      return `${sectionTitle} Scene ${index + 1}`;
+    }
+
+    return `${sectionTitle}: ${lyricCue}`;
+  }
+
+  private buildSceneDescription(
+    narrativeSummary: string,
+    sectionTitle: string,
+    lyricsExcerpt: string | null
+  ): string {
+    const lyricCue = lyricsExcerpt?.trim();
+
+    if (!lyricCue) {
+      return `${narrativeSummary} Focus on the ${sectionTitle.toLowerCase()} atmosphere.`;
+    }
+
+    return [
+      `Primary visual driver: "${lyricCue}".`,
+      `Build the scene directly from the lyric imagery and emotional meaning of ${sectionTitle}.`,
+      `Narrative context: ${narrativeSummary}.`
+    ].join(' ');
+  }
+
+  private extractLyricCue(lyricsExcerpt: string | null): string | null {
+    if (!lyricsExcerpt?.trim()) {
+      return null;
+    }
+
+    const words = lyricsExcerpt
+      .replace(/[^\p{L}\p{N}\s'-]/gu, ' ')
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 6);
+
+    if (words.length === 0) {
+      return null;
+    }
+
+    return words.join(' ');
   }
 }

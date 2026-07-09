@@ -1,8 +1,17 @@
-import { describe, expect, it, vi } from 'vitest';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ProjectRenderService } from '../../../apps/worker/src/services/project-render.service';
 
 describe('ProjectRenderService', () => {
+  afterEach(() => {
+    const root = resolve('tests', 'tmp', 'project-render-service');
+
+    rmSync(root, { force: true, recursive: true });
+  });
+
   it('fails the scene explicitly when ComfyUI generation fails and should not fall back to a procedural clip', async () => {
     const prismaService = {
       render: {
@@ -71,12 +80,16 @@ describe('ProjectRenderService', () => {
         projectId: 'project-1',
         audioPath: 'storage/uploads/org-1/project-1/original.mp3',
         durationSeconds: 8,
+        visualCheckpointName: null,
         scenes: [
           {
             id: 'scene-1',
             title: 'Intro Scene',
             durationSeconds: 8,
-            sectionType: 'intro'
+            sectionType: 'intro',
+            status: 'pending',
+            visualProvider: null,
+            videoAssetStoragePath: null
           }
         ]
       })
@@ -102,5 +115,115 @@ describe('ProjectRenderService', () => {
         durationSeconds: 8
       }
     });
+  });
+
+  it('reuses a completed scene clip from disk during retry instead of regenerating it', async () => {
+    const reusedScenePath = resolve(
+      'tests',
+      'tmp',
+      'project-render-service',
+      'generated-scenes',
+      'org-1',
+      'project-1',
+      'scene-001.mp4'
+    );
+    const intermediatePath = resolve(
+      'tests',
+      'tmp',
+      'project-render-service',
+      'temp',
+      'project-1',
+      'video-track.mp4'
+    );
+    const finalPath = resolve(
+      'tests',
+      'tmp',
+      'project-render-service',
+      'renders',
+      'org-1',
+      'project-1',
+      'final.mp4'
+    );
+
+    mkdirSync(dirname(reusedScenePath), { recursive: true });
+    writeFileSync(reusedScenePath, Buffer.from('existing-scene'));
+
+    const prismaService = {
+      render: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({ id: 'render-1' }),
+        update: vi.fn().mockResolvedValue(undefined)
+      },
+      scenePrompt: {
+        findUnique: vi.fn()
+      },
+      scene: {
+        update: vi.fn().mockResolvedValue(undefined)
+      },
+      asset: {
+        create: vi.fn()
+          .mockResolvedValueOnce({ id: 'render-asset-1' })
+      }
+    } as never;
+
+    const service = new ProjectRenderService(
+      prismaService,
+      {
+        get: vi.fn().mockImplementation((_key: string, defaultValue?: unknown) => defaultValue)
+      } as never,
+      {
+        getAbsolutePath: vi.fn().mockImplementation((path: string) => path),
+        buildConcatListPath: vi.fn().mockReturnValue(resolve('tests', 'tmp', 'project-render-service', 'temp', 'project-1', 'concat-list.txt')),
+        writeConcatList: vi.fn().mockResolvedValue(resolve('tests', 'tmp', 'project-render-service', 'temp', 'project-1', 'concat-list.txt')),
+        buildIntermediateVideoPath: vi.fn().mockReturnValue(intermediatePath),
+        ensureParentDirectory: vi.fn()
+          .mockResolvedValueOnce(intermediatePath)
+          .mockResolvedValueOnce(finalPath),
+        buildFinalRenderPath: vi.fn().mockReturnValue(finalPath)
+      } as never,
+      {
+        generate: vi.fn()
+      } as never,
+      {
+        generate: vi.fn()
+      } as never,
+      {
+        createSceneClip: vi.fn(),
+        createSceneClipFromImage: vi.fn(),
+        concatSceneClips: vi.fn().mockImplementation(async (_listPath: string, outputPath: string) => {
+          mkdirSync(dirname(outputPath), { recursive: true });
+          writeFileSync(outputPath, Buffer.from('intermediate'));
+        }),
+        muxAudio: vi.fn().mockImplementation(async (_videoPath: string, _audioPath: string, outputPath: string) => {
+          mkdirSync(dirname(outputPath), { recursive: true });
+          writeFileSync(outputPath, Buffer.from('final'));
+        })
+      } as never,
+      {
+        heartbeat: vi.fn().mockResolvedValue(undefined)
+      } as never
+    );
+
+    await service.render({
+      organizationId: 'org-1',
+      projectId: 'project-1',
+      audioPath: 'storage/uploads/org-1/project-1/original.mp3',
+      durationSeconds: 8,
+      visualCheckpointName: null,
+      scenes: [
+        {
+          id: 'scene-1',
+          title: 'Intro Scene',
+          durationSeconds: 8,
+          sectionType: 'intro',
+          status: 'completed',
+          visualProvider: 'comfyui-video',
+          videoAssetStoragePath: reusedScenePath
+        }
+      ]
+    });
+
+    expect(prismaService.scenePrompt.findUnique).not.toHaveBeenCalled();
+    expect(prismaService.scene.update).not.toHaveBeenCalled();
   });
 });

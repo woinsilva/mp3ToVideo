@@ -5,6 +5,9 @@ import { StoryboardFallbackService } from '../../../apps/worker/src/services/sto
 
 describe('StoryboardGenerationService', () => {
   it('normalizes non-string fields returned by ollama', async () => {
+    const configService = {
+      get: vi.fn().mockReturnValue(true)
+    } as never;
     const ollamaClientService = {
       generateJson: vi.fn().mockResolvedValue({
         concept: ' Neon western journey ',
@@ -20,7 +23,11 @@ describe('StoryboardGenerationService', () => {
     } as never;
     const fallbackService = new StoryboardFallbackService();
 
-    const service = new StoryboardGenerationService(ollamaClientService, fallbackService);
+    const service = new StoryboardGenerationService(
+      configService,
+      ollamaClientService,
+      fallbackService
+    );
 
     await expect(service.build('Clip', 'Lyrics')).resolves.toEqual({
       concept: 'Neon western journey',
@@ -32,6 +39,9 @@ describe('StoryboardGenerationService', () => {
   });
 
   it('falls back when the ollama payload is incomplete after normalization', async () => {
+    const configService = {
+      get: vi.fn().mockReturnValue(true)
+    } as never;
     const ollamaClientService = {
       generateJson: vi.fn().mockResolvedValue({
         concept: 'Only concept',
@@ -43,7 +53,11 @@ describe('StoryboardGenerationService', () => {
     } as never;
     const fallbackService = new StoryboardFallbackService();
 
-    const service = new StoryboardGenerationService(ollamaClientService, fallbackService);
+    const service = new StoryboardGenerationService(
+      configService,
+      ollamaClientService,
+      fallbackService
+    );
     const fallback = fallbackService.build('Clip', 'Lyrics');
 
     await expect(service.build('Clip', 'Lyrics')).resolves.toEqual(fallback);

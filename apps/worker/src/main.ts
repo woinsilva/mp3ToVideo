@@ -9,6 +9,8 @@ async function bootstrap(): Promise<void> {
     bufferLogs: true
   });
 
+  const { Logger } = require('@nestjs/common');
+  app.useLogger(new Logger());
   console.log('Worker application context started');
 
   const shutdown = async (): Promise<void> => {

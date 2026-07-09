@@ -15,6 +15,7 @@ interface SceneImageInput {
   negativePrompt: string;
   style: string;
   camera: string;
+  checkpointName: string | null;
 }
 
 export interface SceneImageResult {
@@ -41,7 +42,8 @@ export class SceneImageGenerationService {
           `camera: ${input.camera}`,
           `scene title: ${input.sceneTitle}`
         ].join(', '),
-        input.negativePrompt
+        input.negativePrompt,
+        input.checkpointName
       );
 
     if (!result) {

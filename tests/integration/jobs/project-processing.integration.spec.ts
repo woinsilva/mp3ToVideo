@@ -18,7 +18,6 @@ import { PrismaService as WorkerPrismaService } from '../../../apps/worker/src/d
 import { ProjectProcessor } from '../../../apps/worker/src/processors/project.processor';
 import { AudioMetadataService } from '../../../apps/worker/src/services/audio-metadata.service';
 import { AudioExcerptService } from '../../../apps/worker/src/services/audio-excerpt.service';
-import { LyricsFallbackService } from '../../../apps/worker/src/services/lyrics-fallback.service';
 import { LyricsGenerationService } from '../../../apps/worker/src/services/lyrics-generation.service';
 import { MusicStructureService } from '../../../apps/worker/src/services/music-structure.service';
 import { OllamaClientService } from '../../../apps/worker/src/services/ollama-client.service';
@@ -229,7 +228,7 @@ describe('Project processing integration', () => {
           'storage.root': './storage',
           'audio.ffprobePath': 'ffprobe',
           'audio.mockDurationSeconds': 30,
-          'audio.enableWhisper': false,
+          'audio.enableWhisper': true,
           'audio.whisperPythonPath': 'python',
           'audio.whisperModel': 'distil-large-v3',
           'audio.whisperDevice': 'cuda',
@@ -273,17 +272,23 @@ describe('Project processing integration', () => {
     );
     const ollamaClientService = new OllamaClientService(configService);
     const storyboardGenerationService = new StoryboardGenerationService(
+      configService,
       ollamaClientService,
       new StoryboardFallbackService()
     );
     const scenePromptGenerationService = new ScenePromptGenerationService(
+      configService,
       ollamaClientService,
       new ScenePromptService()
     );
-    const lyricsGenerationService = new LyricsGenerationService(
-      new WhisperTranscriptionService(configService),
-      new LyricsFallbackService()
-    );
+    const lyricsGenerationService = {
+      build: async () => ({
+        source: 'whisper',
+        rawText: '[Intro]\nQueued Project opens with neon city lights.\n[Verse]\nThe singer walks through the empty avenue.',
+        normalizedText:
+          '[intro] queued project opens with neon city lights. [verse] the singer walks through the empty avenue.'
+      })
+    } as LyricsGenerationService;
     const renderStorageService = new RenderStorageService(configService);
     const projectRenderService = new ProjectRenderService(
       prisma as unknown as WorkerPrismaService,
@@ -410,7 +415,7 @@ describe('Project processing integration', () => {
     expect(project?.status).toBe('completed');
     expect(project?.errorMessage).toBeNull();
     expect(track?.durationSeconds).toBe(30);
-    expect(lyrics?.source).toBe('mock');
+    expect(lyrics?.source).toBe('whisper');
     expect(sections.length).toBeGreaterThan(0);
     expect(sections[0]?.startSeconds).toBe(0);
     expect(sections.at(-1)?.endSeconds).toBe(20);

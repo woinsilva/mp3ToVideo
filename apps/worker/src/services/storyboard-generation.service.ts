@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 import { OllamaClientService } from './ollama-client.service';
 import {
@@ -17,6 +18,8 @@ interface StoryboardOllamaResponse {
 @Injectable()
 export class StoryboardGenerationService {
   constructor(
+    @Inject(ConfigService)
+    private readonly configService: ConfigService,
     @Inject(OllamaClientService)
     private readonly ollamaClientService: OllamaClientService,
     @Inject(StoryboardFallbackService)
@@ -57,6 +60,14 @@ export class StoryboardGenerationService {
         colorPalette,
         narrativeSummary
       };
+    }
+
+    const allowFallbacks = this.configService.get<boolean>('ai.enableFallbacks', true);
+
+    if (!allowFallbacks) {
+      throw new Error(
+        'Storyboard generation failed: Ollama did not return all required fields (concept, visualStyle, mood, colorPalette, narrativeSummary).'
+      );
     }
 
     return this.storyboardFallbackService.build(projectTitle, normalizedLyrics);

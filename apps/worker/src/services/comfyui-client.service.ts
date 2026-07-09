@@ -23,7 +23,7 @@ interface ComfyUiHistoryNodeOutput {
   images?: ComfyUiOutputAsset[];
   videos?: ComfyUiOutputAsset[];
   gifs?: ComfyUiOutputAsset[];
-  animated?: ComfyUiOutputAsset[];
+  animated?: Array<ComfyUiOutputAsset | boolean>;
 }
 
 interface ComfyUiHistoryStatus {
@@ -66,7 +66,11 @@ export class ComfyUiClientService {
     return this.configService.get<string>('visual.provider', 'procedural') === 'comfyui';
   }
 
-  async generateImage(promptText: string, negativePrompt: string): Promise<ComfyUiGenerationResult | null> {
+  async generateImage(
+    promptText: string,
+    negativePrompt: string,
+    checkpointOverride?: string | null
+  ): Promise<ComfyUiGenerationResult | null> {
     if (!this.isEnabled()) {
       return null;
     }
@@ -81,7 +85,9 @@ export class ComfyUiClientService {
       return null;
     }
 
-    const checkpointName = this.configService.get<string>('visual.comfyuiCheckpointName', '').trim();
+    const checkpointName =
+      checkpointOverride?.trim() ||
+      this.configService.get<string>('visual.comfyuiCheckpointName', '').trim();
 
     if (!checkpointName) {
       this.logger.warn(
@@ -215,7 +221,9 @@ export class ComfyUiClientService {
       );
 
       const historyEntry = await this.waitForHistory(promptId);
-      const video = this.extractOutputAsset(historyEntry, ['videos', 'animated', 'gifs']);
+      const video = this.extractOutputAsset(historyEntry, ['videos', 'animated', 'gifs'], {
+        allowImageVideoExtensionFallback: true
+      });
 
       if (!video) {
         throw new Error('ComfyUI did not return a video output after successful execution');
@@ -371,7 +379,10 @@ export class ComfyUiClientService {
 
   private extractOutputAsset(
     entry: ComfyUiHistoryEntry,
-    preferredKinds: Array<'images' | 'videos' | 'gifs' | 'animated'>
+    preferredKinds: Array<'images' | 'videos' | 'gifs' | 'animated'>,
+    options?: {
+      allowImageVideoExtensionFallback?: boolean;
+    }
   ): ComfyUiOutputAsset | null {
     if (!entry.outputs) {
       return null;
@@ -379,13 +390,24 @@ export class ComfyUiClientService {
 
     for (const [nodeId, output] of Object.entries(entry.outputs)) {
       for (const kind of preferredKinds) {
-        const asset = output[kind]?.[0];
+        const asset = this.findOutputAsset(output[kind]);
 
         if (asset?.filename) {
           this.logger.debug(
             `[ComfyUI] Found output asset: node=${nodeId}, kind=${kind}, filename=${asset.filename}`
           );
           return asset;
+        }
+      }
+
+      if (options?.allowImageVideoExtensionFallback) {
+        const imageAsset = this.findOutputAsset(output.images);
+
+        if (imageAsset?.filename && this.isVideoFilename(imageAsset.filename)) {
+          this.logger.debug(
+            `[ComfyUI] Using image output as video asset: node=${nodeId}, filename=${imageAsset.filename}`
+          );
+          return imageAsset;
         }
       }
     }
@@ -405,6 +427,32 @@ export class ComfyUiClientService {
     );
 
     return null;
+  }
+
+  private findOutputAsset(
+    values: Array<ComfyUiOutputAsset | boolean> | undefined
+  ): ComfyUiOutputAsset | null {
+    if (!Array.isArray(values)) {
+      return null;
+    }
+
+    for (const value of values) {
+      if (
+        value &&
+        typeof value === 'object' &&
+        'filename' in value &&
+        typeof value.filename === 'string' &&
+        value.filename.trim()
+      ) {
+        return value;
+      }
+    }
+
+    return null;
+  }
+
+  private isVideoFilename(filename: string): boolean {
+    return /\.(mp4|mov|webm|avi|mkv)$/i.test(filename.trim());
   }
 
   private async downloadAsset(asset: ComfyUiOutputAsset): Promise<Buffer> {

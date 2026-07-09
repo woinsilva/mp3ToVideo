@@ -36,7 +36,8 @@ describe('SceneImageGenerationService', () => {
         positivePrompt: 'city lights at night',
         negativePrompt: 'blurry, low quality',
         style: 'cinematic',
-        camera: 'slow dolly in'
+        camera: 'slow dolly in',
+        checkpointName: null
       })
     ).resolves.toBeNull();
   });
@@ -63,7 +64,8 @@ describe('SceneImageGenerationService', () => {
       positivePrompt: 'singer on stage',
       negativePrompt: 'deformed, noisy',
       style: 'concert film',
-      camera: 'wide shot'
+      camera: 'wide shot',
+      checkpointName: 'sd_xl_turbo_1.0.safetensors'
     });
 
     expect(result).toEqual({
