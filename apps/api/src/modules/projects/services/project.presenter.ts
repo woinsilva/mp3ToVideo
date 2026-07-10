@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { SceneRenderAttemptStatus } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
 import type {
   Lyrics,
@@ -8,6 +9,7 @@ import type {
   ProjectStatus,
   Render,
   Scene,
+  SceneRenderAttempt,
   ScenePrompt
 } from '@prisma/client';
 
@@ -36,7 +38,8 @@ export interface ProjectMusicSectionStatusView {
 
 @Injectable()
 export class ProjectPresenter {
-  private static readonly stallThresholdMs = 45_000;
+  private static readonly quietThresholdMs = 7 * 60_000;
+  private static readonly longRunningThresholdMs = 10 * 60_000;
 
   summary(project: Project) {
     return {
@@ -88,10 +91,16 @@ export class ProjectPresenter {
     project: Project & {
       lyrics?: Lyrics | null;
       musicSections?: MusicSection[];
+      scenes?: Array<
+        Scene & {
+          renderAttempts?: SceneRenderAttempt[];
+        }
+      >;
     },
     processingJob?: ProcessingJob | null
   ) {
     const lastUpdatedAt = processingJob?.updatedAt ?? project.updatedAt;
+    const renderRuntime = this.renderRuntime(project, processingJob);
 
     return {
       projectId: project.id,
@@ -117,9 +126,10 @@ export class ProjectPresenter {
       })),
       errorMessage: project.errorMessage ?? processingJob?.errorMessage ?? null,
       lastUpdatedAt,
+      renderRuntime,
       isPossiblyStalled:
         !this.isTerminalStatus(project.status) &&
-        Date.now() - lastUpdatedAt.getTime() > ProjectPresenter.stallThresholdMs
+        Date.now() - lastUpdatedAt.getTime() > ProjectPresenter.quietThresholdMs
     };
   }
 
@@ -127,8 +137,11 @@ export class ProjectPresenter {
     scene: Scene & {
       prompt: ScenePrompt | null;
       referenceImageAsset?: { id: string } | null;
+      renderAttempts?: SceneRenderAttempt[];
     }
   ) {
+    const latestAttempt = this.latestAttempt(scene.renderAttempts ?? []);
+
     return {
       id: scene.id,
       index: scene.index,
@@ -142,6 +155,7 @@ export class ProjectPresenter {
       videoAssetId: scene.videoAssetId,
       referenceImageAssetId: scene.referenceImageAssetId,
       hasReferenceImage: Boolean(scene.referenceImageAsset),
+      attemptSummary: latestAttempt ? this.attemptSummary(latestAttempt) : null,
       prompt: scene.prompt
         ? {
             provider: scene.prompt.provider,
@@ -228,6 +242,114 @@ export class ProjectPresenter {
     return status === 'completed' || status === 'failed';
   }
 
+  private renderRuntime(
+    project: Project & {
+      scenes?: Array<
+        Scene & {
+          renderAttempts?: SceneRenderAttempt[];
+        }
+      >;
+    },
+    processingJob?: ProcessingJob | null
+  ) {
+    if (project.status !== 'rendering') {
+      return null;
+    }
+
+    const attempts = (project.scenes ?? []).flatMap((scene) =>
+      (scene.renderAttempts ?? []).map((attempt) => ({
+        scene,
+        attempt
+      }))
+    );
+    const active = attempts
+      .filter(({ attempt }) => this.isActiveAttemptStatus(attempt.status))
+      .sort((left, right) => right.attempt.updatedAt.getTime() - left.attempt.updatedAt.getTime())[0];
+    const totalStartedAt = processingJob?.createdAt ?? project.updatedAt;
+    const now = Date.now();
+
+    if (!active) {
+      return {
+        totalElapsedSeconds: Math.floor((now - totalStartedAt.getTime()) / 1000),
+        currentStageElapsedSeconds: Math.floor((now - lastDate(processingJob?.updatedAt, project.updatedAt).getTime()) / 1000),
+        currentSceneElapsedSeconds: null,
+        lastServerHeartbeatAt: processingJob?.updatedAt?.toISOString() ?? null,
+        lastExternalHeartbeatAt: null,
+        health: 'normal',
+        activeScene: null
+      };
+    }
+
+    const lastServerHeartbeat = active.attempt.lastHeartbeatAt ?? active.attempt.updatedAt;
+    const externalHeartbeat = active.attempt.firstExternalSeenAt ?? null;
+    const currentSceneElapsedMs = now - active.attempt.startedAt.getTime();
+    const missingServerHeartbeatMs = now - lastServerHeartbeat.getTime();
+    const health =
+      missingServerHeartbeatMs > ProjectPresenter.quietThresholdMs
+        ? 'suspected_stuck'
+        : currentSceneElapsedMs > ProjectPresenter.longRunningThresholdMs
+          ? 'long_running'
+          : 'normal';
+
+    return {
+      totalElapsedSeconds: Math.floor((now - totalStartedAt.getTime()) / 1000),
+      currentStageElapsedSeconds: Math.floor(currentSceneElapsedMs / 1000),
+      currentSceneElapsedSeconds: Math.floor(currentSceneElapsedMs / 1000),
+      lastServerHeartbeatAt: lastServerHeartbeat.toISOString(),
+      lastExternalHeartbeatAt: externalHeartbeat?.toISOString() ?? null,
+      health,
+      activeScene: {
+        sceneId: active.scene.id,
+        index: active.scene.index,
+        title: active.scene.title,
+        attemptNumber: active.attempt.attemptNumber,
+        provider: active.attempt.provider,
+        promptId: active.attempt.promptId
+      }
+    };
+  }
+
+  private latestAttempt(attempts: SceneRenderAttempt[]): SceneRenderAttempt | null {
+    return [...attempts].sort((left, right) => right.attemptNumber - left.attemptNumber)[0] ?? null;
+  }
+
+  private attemptSummary(attempt: SceneRenderAttempt) {
+    const elapsedSeconds = Math.floor(
+      ((attempt.finishedAt ?? new Date()).getTime() - attempt.startedAt.getTime()) / 1000
+    );
+
+    return {
+      activeAttemptId: this.isActiveAttemptStatus(attempt.status) ? attempt.id : null,
+      latestAttemptStatus: attempt.status,
+      attemptNumber: attempt.attemptNumber,
+      elapsedSeconds,
+      lastHeartbeatAt: attempt.lastHeartbeatAt?.toISOString() ?? null,
+      lastExternalHeartbeatAt: attempt.firstExternalSeenAt?.toISOString() ?? null,
+      canRetryAttempt: this.canRetryAttempt(attempt)
+    };
+  }
+
+  private canRetryAttempt(attempt: SceneRenderAttempt): boolean {
+    if (attempt.status === SceneRenderAttemptStatus.failed) {
+      return true;
+    }
+
+    if (!this.isActiveAttemptStatus(attempt.status)) {
+      return false;
+    }
+
+    return Date.now() - attempt.startedAt.getTime() > ProjectPresenter.longRunningThresholdMs;
+  }
+
+  private isActiveAttemptStatus(status: SceneRenderAttemptStatus): boolean {
+    return (
+      status === SceneRenderAttemptStatus.queued ||
+      status === SceneRenderAttemptStatus.submitted ||
+      status === SceneRenderAttemptStatus.waiting_external ||
+      status === SceneRenderAttemptStatus.confirmed_external_active
+    );
+  }
+
   private activityLog(activityLog: Prisma.JsonValue | null | undefined): ProcessingActivityEntry[] {
     if (!Array.isArray(activityLog)) {
       return [];
@@ -261,4 +383,8 @@ export class ProjectPresenter {
 
     return entries;
   }
+}
+
+function lastDate(...dates: Array<Date | undefined | null>): Date {
+  return dates.filter(Boolean).sort((left, right) => right!.getTime() - left!.getTime())[0]!;
 }

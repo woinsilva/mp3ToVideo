@@ -11,11 +11,13 @@ coverage/
 
 storage/uploads/
 storage/generated-scenes/
+storage/scene-reference-images/
 storage/comfyui/
 storage/renders/
 storage/temp/
 !storage/uploads/.gitkeep
 !storage/generated-scenes/.gitkeep
+!storage/scene-reference-images/.gitkeep
 !storage/renders/.gitkeep
 !storage/temp/.gitkeep
 

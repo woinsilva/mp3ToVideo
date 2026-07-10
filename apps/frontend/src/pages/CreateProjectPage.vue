@@ -9,9 +9,8 @@
       <span class="step-indicator"><strong>1</strong> de 2 · Configuração</span>
     </section>
 
-    <v-card class="surface-card form-card create-form" rounded="xl">
-      <v-card-text>
-        <form class="app-native-form" @submit.prevent="submit">
+    <section class="surface-card form-card create-form">
+      <form class="app-native-form" @submit.prevent="submit">
           <div class="form-section-heading">
             <span>1</span>
             <div>
@@ -94,9 +93,8 @@
               Cancelar
             </button>
           </div>
-        </form>
-      </v-card-text>
-    </v-card>
+      </form>
+    </section>
   </AppLayout>
 </template>
 
@@ -228,6 +226,7 @@ export default class CreateProjectPage extends Vue {
 <style scoped>
 .create-hero,
 .create-form {
+  width: min(860px, 100%);
   max-width: 860px;
   margin-right: auto;
   margin-left: auto;
@@ -244,7 +243,8 @@ export default class CreateProjectPage extends Vue {
 }
 
 .create-form {
-  padding: 16px;
+  overflow: hidden;
+  padding: 24px;
 }
 
 .form-section-heading {
@@ -318,6 +318,10 @@ export default class CreateProjectPage extends Vue {
 }
 
 @media (max-width: 640px) {
+  .create-form {
+    padding: 18px;
+  }
+
   .advanced-settings__body {
     grid-template-columns: 1fr;
   }

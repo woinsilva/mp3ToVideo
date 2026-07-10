@@ -33,6 +33,19 @@ describe('ProjectRenderService', () => {
       },
       asset: {
         create: vi.fn().mockResolvedValue(undefined)
+      },
+      sceneRenderAttempt: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({
+          id: 'attempt-1',
+          attemptNumber: 1,
+          startedAt: new Date()
+        }),
+        findUnique: vi.fn().mockResolvedValue({
+          startedAt: new Date(),
+          status: 'waiting_external'
+        }),
+        update: vi.fn().mockResolvedValue(undefined)
       }
     } as never;
 
@@ -89,7 +102,8 @@ describe('ProjectRenderService', () => {
             sectionType: 'intro',
             status: 'pending',
             visualProvider: null,
-            videoAssetStoragePath: null
+            videoAssetStoragePath: null,
+            referenceImageStoragePath: null
           }
         ]
       })
@@ -163,6 +177,12 @@ describe('ProjectRenderService', () => {
       asset: {
         create: vi.fn()
           .mockResolvedValueOnce({ id: 'render-asset-1' })
+      },
+      sceneRenderAttempt: {
+        findFirst: vi.fn(),
+        create: vi.fn(),
+        findUnique: vi.fn(),
+        update: vi.fn()
       }
     } as never;
 
@@ -218,7 +238,8 @@ describe('ProjectRenderService', () => {
           sectionType: 'intro',
           status: 'completed',
           visualProvider: 'comfyui-video',
-          videoAssetStoragePath: reusedScenePath
+          videoAssetStoragePath: reusedScenePath,
+          referenceImageStoragePath: null
         }
       ]
     });

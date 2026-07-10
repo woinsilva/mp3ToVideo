@@ -72,6 +72,17 @@ enum ProcessingJobStatus {
   retrying
 }
 
+enum SceneRenderAttemptStatus {
+  queued
+  submitted
+  waiting_external
+  confirmed_external_active
+  completed
+  failed
+  cancelled
+  abandoned
+}
+
 model User {
   id                  String               @id @default(cuid())
   email               String               @unique
@@ -132,6 +143,7 @@ model Project {
   renders         Render[]
   assets          Asset[]
   processingJobs  ProcessingJob[]
+  sceneRenderAttempts SceneRenderAttempt[]
 }
 
 model Track {
@@ -209,9 +221,54 @@ model Scene {
   videoAsset      Asset?        @relation("SceneVideoAsset", fields: [videoAssetId], references: [id], onDelete: SetNull)
   referenceImageAsset Asset?    @relation("SceneReferenceImageAsset", fields: [referenceImageAssetId], references: [id], onDelete: SetNull)
   prompt          ScenePrompt?
+  renderAttempts  SceneRenderAttempt[]
 
   @@unique([projectId, index])
   @@index([projectId, startSeconds])
+}
+
+model SceneRenderAttempt {
+  id                  String                   @id @default(cuid())
+  projectId           String
+  sceneId             String
+  attemptNumber       Int
+  provider            String
+  status              SceneRenderAttemptStatus @default(queued)
+  promptId            String?
+  sourceType          String
+  hasReferenceImage   Boolean                  @default(false)
+  width               Int?
+  height              Int?
+  fps                 Int?
+  durationSeconds     Float?
+  expectedFrameCount  Int?
+  steps               Int?
+  cfg                 Float?
+  sampler             String?
+  scheduler           String?
+  checkpointName      String?
+  unetName            String?
+  clipName            String?
+  clipType            String?
+  vaeName             String?
+  modelShift          Float?
+  startedAt           DateTime                 @default(now())
+  submittedAt         DateTime?
+  firstExternalSeenAt DateTime?
+  lastHeartbeatAt     DateTime?
+  finishedAt          DateTime?
+  durationMs          Int?
+  errorMessage        String?
+  metadata            Json?
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+  project             Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  scene               Scene                    @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+
+  @@unique([sceneId, attemptNumber])
+  @@index([projectId, status])
+  @@index([sceneId, status])
+  @@index([promptId])
 }
 
 model ScenePrompt {

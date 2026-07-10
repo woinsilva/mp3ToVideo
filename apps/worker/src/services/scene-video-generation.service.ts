@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 
-import type { ComfyUiGenerationResult } from './comfyui-client.service';
+import type { ComfyUiGenerationResult, ComfyUiHeartbeat } from './comfyui-client.service';
 import { ComfyUiClientService } from './comfyui-client.service';
 
 interface SceneVideoInput {
@@ -11,6 +11,9 @@ interface SceneVideoInput {
   height: number;
   durationSeconds: number;
   referenceImagePath?: string | null;
+  onSubmitted?: (promptId: string) => Promise<void>;
+  onHeartbeat?: (heartbeat: ComfyUiHeartbeat) => Promise<void>;
+  shouldCancel?: () => Promise<boolean>;
 }
 
 export interface SceneVideoResult {
@@ -34,7 +37,10 @@ export class SceneVideoGenerationService {
         width: input.width,
         height: input.height,
         durationSeconds: input.durationSeconds,
-        referenceImagePath: input.referenceImagePath
+        referenceImagePath: input.referenceImagePath,
+        onSubmitted: input.onSubmitted,
+        onHeartbeat: input.onHeartbeat,
+        shouldCancel: input.shouldCancel
       });
 
     if (!result) {

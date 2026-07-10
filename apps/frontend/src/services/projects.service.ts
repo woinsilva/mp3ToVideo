@@ -119,6 +119,16 @@ class ProjectsService {
     );
   }
 
+  retrySceneRender(projectId: string, sceneId: string, token: string) {
+    return apiService.request<ProjectScene>(
+      `/projects/${projectId}/scenes/${sceneId}/retry-render`,
+      {
+        method: 'POST'
+      },
+      token
+    );
+  }
+
   render(projectId: string, token: string) {
     return apiService.request<ProjectRender>(`/projects/${projectId}/render`, {}, token);
   }

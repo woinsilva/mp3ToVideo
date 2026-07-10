@@ -22,12 +22,11 @@
           :loading-label="projectStatus === 'failed' ? 'Reenviando música...' : 'Enviando música...'"
           @upload="uploadTrack"
         />
-        <v-card
+        <section
           v-if="projectStatus === 'draft' || projectStatus === 'failed'"
           class="surface-card mt-4"
-          rounded="xl"
         >
-          <v-card-text>
+          <div class="project-detail-card">
             <label class="auth-input-group">
               <span class="auth-input-label">Letra da música</span>
               <textarea
@@ -37,8 +36,8 @@
                 placeholder="Cole a letra real aqui para o storyboard e as cenas seguirem esse texto, sem depender da transcricao automatica."
               />
             </label>
-          </v-card-text>
-        </v-card>
+          </div>
+        </section>
         <ProjectStatusTimeline
           v-else-if="statusPayload"
           :status="statusPayload.status"
@@ -50,22 +49,23 @@
           :music-sections="statusPayload.musicSections"
           :error-message="statusPayload.errorMessage"
           :last-updated-at="statusPayload.lastUpdatedAt"
+          :render-runtime="statusPayload.renderRuntime"
           :is-possibly-stalled="statusPayload.isPossiblyStalled"
         />
-        <v-card v-else class="surface-card" rounded="xl">
-          <v-card-text>
+        <section v-else class="surface-card">
+          <div class="project-detail-card">
             <h3 class="section-title">Projeto criado</h3>
             <p class="section-copy">O próximo passo é enviar o arquivo MP3 ou WAV original.</p>
             <p class="section-copy">
               Depois do upload, voce sera levado automaticamente para a tela de processamento.
             </p>
-          </v-card-text>
-        </v-card>
+          </div>
+        </section>
       </v-col>
 
       <v-col cols="12" lg="5">
-        <v-card class="surface-card" rounded="xl">
-          <v-card-text class="d-flex flex-column ga-4">
+        <section class="surface-card">
+          <div class="project-detail-card d-flex flex-column ga-4">
             <div>
               <h3 class="section-title">Configuração da geração</h3>
               <p class="section-copy">{{ nextStepDescription }}</p>
@@ -159,7 +159,7 @@
             </button>
 
             <button
-              v-if="projectStatus === 'failed' || projectStatus === 'completed'"
+              v-if="canRetryProject"
               class="app-button"
               :disabled="loading"
               type="button"
@@ -177,17 +177,38 @@
             >
               Ver resultado
             </button>
-          </v-card-text>
-        </v-card>
+          </div>
+        </section>
       </v-col>
     </v-row>
 
     <section v-if="scenes.length" class="mt-6">
-      <v-alert type="info" variant="tonal" class="mb-4">
+      <div class="reference-reprocess-banner">
+        <div>
+          <h3>Imagens de referencia prontas para uso</h3>
+          <p>
         Adicione imagens de referência nas cenas abaixo e depois use
         <strong>Reprocessar com referências</strong> para gerar um novo vídeo baseado nelas.
-      </v-alert>
-      <SceneList :scenes="scenes" @reference-upload="uploadSceneReferenceImage" />
+          </p>
+          <p v-if="!canRetryProject" class="reference-reprocess-banner__hint">
+            Esse botao fica disponivel quando o projeto estiver concluido ou falho.
+          </p>
+        </div>
+        <button
+          v-if="canRetryProject"
+          class="app-button"
+          :disabled="loading"
+          type="button"
+          @click="retryProject"
+        >
+          Reprocessar com referencias
+        </button>
+      </div>
+      <SceneList
+        :scenes="scenes"
+        @reference-upload="uploadSceneReferenceImage"
+        @retry-render="retrySceneRender"
+      />
     </section>
   </AppLayout>
 </template>
@@ -264,6 +285,10 @@ export default class ProjectDetailPage extends Vue {
 
   get isProcessing(): boolean {
     return !isTerminalProjectStatus(this.projectStatus) && this.projectStatus !== 'draft';
+  }
+
+  get canRetryProject(): boolean {
+    return this.projectStatus === 'failed' || this.projectStatus === 'completed';
   }
 
   get clipDurationSecondsRawValue(): string {
@@ -488,10 +513,38 @@ export default class ProjectDetailPage extends Vue {
       this.loading = false;
     }
   }
+
+  async retrySceneRender(payload: { sceneId: string }) {
+    if (!this.authStore.token) {
+      return;
+    }
+
+    this.loading = true;
+    this.errorMessage = null;
+
+    try {
+      await this.projectsStore.retrySceneRender(
+        this.projectId,
+        payload.sceneId,
+        this.authStore.token
+      );
+      await this.projectsStore.fetchStatus(this.projectId, this.authStore.token);
+    } catch (error) {
+      this.errorMessage =
+        error instanceof Error ? error.message : 'Falha ao reiniciar render da cena';
+    } finally {
+      this.loading = false;
+    }
+  }
 }
 </script>
 
 <style scoped>
+.project-detail-card {
+  overflow: hidden;
+  padding: 24px;
+}
+
 .reference-info-card {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -528,5 +581,45 @@ export default class ProjectDetailPage extends Vue {
 
 .reference-info-card p:last-child {
   margin-bottom: 0;
+}
+
+.reference-reprocess-banner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 18px;
+  border: 1px solid #cfe1ff;
+  border-radius: 16px;
+  background: #f4f8ff;
+}
+
+.reference-reprocess-banner h3 {
+  margin: 0 0 6px;
+  color: #1c1e21;
+  font-size: 0.95rem;
+}
+
+.reference-reprocess-banner p {
+  margin: 0;
+  color: #4b4f56;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.reference-reprocess-banner__hint {
+  margin-top: 8px !important;
+  color: #65676b !important;
+}
+
+@media (max-width: 600px) {
+  .project-detail-card {
+    padding: 18px;
+  }
+
+  .reference-reprocess-banner {
+    flex-direction: column;
+  }
 }
 </style>

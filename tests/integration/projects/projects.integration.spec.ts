@@ -594,6 +594,7 @@ describe('Projects integration', () => {
       ],
       errorMessage: null,
       lastUpdatedAt: expect.any(String),
+      renderRuntime: null,
       isPossiblyStalled: false
     });
 

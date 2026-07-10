@@ -2,14 +2,27 @@ import { stat, writeFile } from 'node:fs/promises';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AssetType, RenderStatus, SceneStatus } from '@prisma/client';
+import {
+  AssetType,
+  RenderStatus,
+  SceneRenderAttemptStatus,
+  SceneStatus
+} from '@prisma/client';
+import type { ScenePrompt } from '@prisma/client';
 
 import { PrismaService } from '../database/prisma.service';
+import {
+  ComfyUiGenerationCancelledError,
+  type ComfyUiHeartbeat
+} from './comfyui-client.service';
 import { FfmpegRenderingService } from './ffmpeg-rendering.service';
 import { ProcessingProgressService } from './processing-progress.service';
 import { RenderStorageService } from './render-storage.service';
 import { SceneImageGenerationService } from './scene-image-generation.service';
-import { SceneVideoGenerationService } from './scene-video-generation.service';
+import {
+  SceneVideoGenerationService,
+  type SceneVideoResult
+} from './scene-video-generation.service';
 
 interface RenderSceneInput {
   id: string;
@@ -29,6 +42,12 @@ interface RenderProjectInput {
   durationSeconds: number;
   visualCheckpointName: string | null;
   scenes: RenderSceneInput[];
+}
+
+interface SceneVideoAttemptOutcome {
+  result: SceneVideoResult | null;
+  errorMessage: string | null;
+  restarted: boolean;
 }
 
 @Injectable()
@@ -141,36 +160,17 @@ export class ProjectRenderService {
           throw new Error(message);
         }
 
-        let generatedSceneVideo = null;
+        let generatedSceneVideo: SceneVideoResult | null = null;
         if (scenePrompt) {
-          try {
-            generatedSceneVideo = await this.sceneVideoGenerationService.generate({
-              sceneId: scene.id,
-              positivePrompt: scenePrompt.positivePrompt,
-              negativePrompt: scenePrompt.negativePrompt,
-              width: this.configService.get<number>('visual.comfyuiWidth', 640),
-              height: this.configService.get<number>('visual.comfyuiHeight', 360),
-              durationSeconds: scene.durationSeconds,
-              referenceImagePath: scene.referenceImageStoragePath
-                ? this.renderStorageService.getAbsolutePath(scene.referenceImageStoragePath)
-                : null
-            });
-          } catch (error) {
-            videoGenerationError = this.toErrorMessage(error);
-            await this.processingProgressService.heartbeat(
-              input.projectId,
-              this.sceneRenderProgress(index, input.scenes.length),
-              `Falha ao gerar a cena ${index + 1} em video no ComfyUI.`,
-              {
-                stage: 'rendering',
-                message: `Falha de video IA na cena ${index + 1}: ${videoGenerationError}`,
-                provider: 'comfyui-video'
-              }
-            );
-            this.logger.warn(
-              `Scene ${index + 1}/${input.scenes.length} [${scene.title}] video generation failed: ${videoGenerationError}`
-            );
-          }
+          const videoAttemptOutcome = await this.generateSceneVideoWithAttempts(
+            input,
+            scene,
+            scenePrompt,
+            index
+          );
+
+          generatedSceneVideo = videoAttemptOutcome.result;
+          videoGenerationError = videoAttemptOutcome.errorMessage;
         }
 
         if (generatedSceneVideo) {
@@ -416,6 +416,272 @@ export class ProjectRenderService {
 
       throw error;
     }
+  }
+
+  private async generateSceneVideoWithAttempts(
+    input: RenderProjectInput,
+    scene: RenderSceneInput,
+    scenePrompt: ScenePrompt,
+    sceneIndex: number
+  ): Promise<SceneVideoAttemptOutcome> {
+    if (this.configService.get<string>('visual.provider', 'procedural') !== 'comfyui') {
+      return {
+        result: null,
+        errorMessage: null,
+        restarted: false
+      };
+    }
+
+    let restarted = false;
+
+    for (;;) {
+      const attempt = await this.createSceneRenderAttempt(input, scene, sceneIndex);
+
+      try {
+        const result = await this.sceneVideoGenerationService.generate({
+          sceneId: scene.id,
+          positivePrompt: scenePrompt.positivePrompt,
+          negativePrompt: scenePrompt.negativePrompt,
+          width: this.configService.get<number>('visual.comfyuiWidth', 640),
+          height: this.configService.get<number>('visual.comfyuiHeight', 360),
+          durationSeconds: scene.durationSeconds,
+          referenceImagePath: scene.referenceImageStoragePath
+            ? this.renderStorageService.getAbsolutePath(scene.referenceImageStoragePath)
+            : null,
+          onSubmitted: (promptId) => this.markSceneRenderAttemptSubmitted(attempt.id, promptId),
+          onHeartbeat: (heartbeat) =>
+            this.heartbeatSceneRenderAttempt(input, scene, sceneIndex, attempt.id, heartbeat),
+          shouldCancel: () => this.shouldCancelSceneRenderAttempt(attempt.id)
+        });
+
+        if (result) {
+          await this.finishSceneRenderAttempt(attempt.id, SceneRenderAttemptStatus.completed);
+        } else {
+          await this.finishSceneRenderAttempt(attempt.id, SceneRenderAttemptStatus.abandoned);
+        }
+
+        return {
+          result,
+          errorMessage: null,
+          restarted
+        };
+      } catch (error) {
+        if (error instanceof ComfyUiGenerationCancelledError) {
+          restarted = true;
+          await this.finishSceneRenderAttempt(
+            attempt.id,
+            SceneRenderAttemptStatus.abandoned,
+            error.message
+          );
+          await this.processingProgressService.heartbeat(
+            input.projectId,
+            this.sceneRenderProgress(sceneIndex, input.scenes.length),
+            `Reiniciando render da cena ${sceneIndex + 1} por solicitacao do usuario.`,
+            {
+              stage: 'rendering',
+              message:
+                `Tentativa ${attempt.attemptNumber} da cena ${sceneIndex + 1} abandonada. ` +
+                'Uma nova tentativa sera iniciada.',
+              provider: 'comfyui-video'
+            }
+          );
+          continue;
+        }
+
+        const message = this.toErrorMessage(error);
+        await this.finishSceneRenderAttempt(
+          attempt.id,
+          SceneRenderAttemptStatus.failed,
+          message
+        );
+        await this.processingProgressService.heartbeat(
+          input.projectId,
+          this.sceneRenderProgress(sceneIndex, input.scenes.length),
+          `Falha ao gerar a cena ${sceneIndex + 1} em video no ComfyUI.`,
+          {
+            stage: 'rendering',
+            message: `Falha de video IA na cena ${sceneIndex + 1}: ${message}`,
+            provider: 'comfyui-video'
+          }
+        );
+        this.logger.warn(
+          `Scene ${sceneIndex + 1}/${input.scenes.length} [${scene.title}] video generation failed: ${message}`
+        );
+
+        return {
+          result: null,
+          errorMessage: message,
+          restarted
+        };
+      }
+    }
+  }
+
+  private async createSceneRenderAttempt(
+    input: RenderProjectInput,
+    scene: RenderSceneInput,
+    sceneIndex: number
+  ) {
+    const latestAttempt = await this.prismaService.sceneRenderAttempt.findFirst({
+      where: {
+        sceneId: scene.id
+      },
+      orderBy: {
+        attemptNumber: 'desc'
+      }
+    });
+    const attemptNumber = (latestAttempt?.attemptNumber ?? 0) + 1;
+    const fps = this.configService.get<number>('visual.comfyuiVideoFps', 24);
+    const expectedFrameCount = Math.max(1, Math.round(scene.durationSeconds * fps) + 1);
+
+    return this.prismaService.sceneRenderAttempt.create({
+      data: {
+        projectId: input.projectId,
+        sceneId: scene.id,
+        attemptNumber,
+        provider: 'comfyui-video',
+        status: SceneRenderAttemptStatus.queued,
+        sourceType: scene.referenceImageStoragePath ? 'reference-image' : 'prompt',
+        hasReferenceImage: Boolean(scene.referenceImageStoragePath),
+        width: this.configService.get<number>('visual.comfyuiWidth', 640),
+        height: this.configService.get<number>('visual.comfyuiHeight', 360),
+        fps,
+        durationSeconds: scene.durationSeconds,
+        expectedFrameCount,
+        steps: this.configService.get<number>('visual.comfyuiSteps', 20),
+        cfg: this.configService.get<number>('visual.comfyuiCfg', 5),
+        sampler: this.configService.get<string>('visual.comfyuiSampler', 'uni_pc'),
+        scheduler: this.configService.get<string>('visual.comfyuiScheduler', 'simple'),
+        checkpointName: input.visualCheckpointName,
+        unetName: this.configService.get<string>('visual.comfyuiVideoUnetName') ?? null,
+        clipName: this.configService.get<string>('visual.comfyuiVideoClipName') ?? null,
+        clipType: this.configService.get<string>('visual.comfyuiVideoClipType') ?? null,
+        vaeName: this.configService.get<string>('visual.comfyuiVideoVaeName') ?? null,
+        modelShift: this.configService.get<number>('visual.comfyuiVideoModelShift', 8),
+        metadata: {
+          sceneIndex,
+          sceneTitle: scene.title,
+          totalScenes: input.scenes.length
+        }
+      }
+    });
+  }
+
+  private async markSceneRenderAttemptSubmitted(
+    attemptId: string,
+    promptId: string
+  ): Promise<void> {
+    await this.prismaService.sceneRenderAttempt.update({
+      where: {
+        id: attemptId
+      },
+      data: {
+        promptId,
+        submittedAt: new Date(),
+        lastHeartbeatAt: new Date(),
+        status: SceneRenderAttemptStatus.waiting_external
+      }
+    });
+  }
+
+  private async heartbeatSceneRenderAttempt(
+    input: RenderProjectInput,
+    scene: RenderSceneInput,
+    sceneIndex: number,
+    attemptId: string,
+    heartbeat: ComfyUiHeartbeat
+  ): Promise<void> {
+    const currentAttempt = await this.prismaService.sceneRenderAttempt.findUnique({
+      where: {
+        id: attemptId
+      }
+    });
+
+    if (!currentAttempt) {
+      return;
+    }
+
+    const status =
+      heartbeat.state === 'history_seen'
+        ? SceneRenderAttemptStatus.confirmed_external_active
+        : SceneRenderAttemptStatus.waiting_external;
+    const now = new Date();
+    const elapsedMinutes = Math.max(1, Math.floor(heartbeat.elapsedMs / 60000));
+
+    await this.prismaService.sceneRenderAttempt.update({
+      where: {
+        id: attemptId
+      },
+      data: {
+        status,
+        lastHeartbeatAt: now,
+        firstExternalSeenAt:
+          heartbeat.state === 'history_seen' && !currentAttempt.firstExternalSeenAt
+            ? now
+            : currentAttempt.firstExternalSeenAt
+      }
+    });
+    await this.processingProgressService.heartbeat(
+      input.projectId,
+      this.sceneRenderProgress(sceneIndex, input.scenes.length),
+      `Cena ${sceneIndex + 1} de ${input.scenes.length} ainda aguardando o ComfyUI ha ${elapsedMinutes} min.`,
+      {
+        stage: 'rendering',
+        message:
+          `Confirmacao periodica: cena ${sceneIndex + 1} de ${input.scenes.length} ` +
+          `continua aguardando o ComfyUI ha ${elapsedMinutes} min. Prompt: ${heartbeat.promptId}.`,
+        provider: 'comfyui-video'
+      }
+    );
+    this.logger.log(
+      `Scene ${sceneIndex + 1}/${input.scenes.length} [${scene.title}] heartbeat: ` +
+        `prompt=${heartbeat.promptId}, elapsedMs=${heartbeat.elapsedMs}, polls=${heartbeat.pollCount}`
+    );
+  }
+
+  private async shouldCancelSceneRenderAttempt(attemptId: string): Promise<boolean> {
+    const attempt = await this.prismaService.sceneRenderAttempt.findUnique({
+      where: {
+        id: attemptId
+      },
+      select: {
+        status: true
+      }
+    });
+
+    return (
+      attempt?.status === SceneRenderAttemptStatus.abandoned ||
+      attempt?.status === SceneRenderAttemptStatus.cancelled
+    );
+  }
+
+  private async finishSceneRenderAttempt(
+    attemptId: string,
+    status: SceneRenderAttemptStatus,
+    errorMessage?: string
+  ): Promise<void> {
+    const attempt = await this.prismaService.sceneRenderAttempt.findUnique({
+      where: {
+        id: attemptId
+      },
+      select: {
+        startedAt: true
+      }
+    });
+    const finishedAt = new Date();
+
+    await this.prismaService.sceneRenderAttempt.update({
+      where: {
+        id: attemptId
+      },
+      data: {
+        status,
+        finishedAt,
+        lastHeartbeatAt: finishedAt,
+        durationMs: attempt ? finishedAt.getTime() - attempt.startedAt.getTime() : null,
+        errorMessage: errorMessage ?? null
+      }
+    });
   }
 
   private resolveSceneColor(sectionType: string, index: number): string {

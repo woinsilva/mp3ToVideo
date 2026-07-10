@@ -133,6 +133,15 @@ describe('ProjectPresenter', () => {
       ],
       errorMessage: null,
       lastUpdatedAt: now,
+      renderRuntime: {
+        totalElapsedSeconds: expect.any(Number),
+        currentStageElapsedSeconds: expect.any(Number),
+        currentSceneElapsedSeconds: null,
+        lastServerHeartbeatAt: now.toISOString(),
+        lastExternalHeartbeatAt: null,
+        health: 'normal',
+        activeScene: null
+      },
       isPossiblyStalled: false
     });
   });

@@ -45,11 +45,33 @@ export interface GenerateVideoInput {
   durationSeconds: number;
   sceneId: string;
   referenceImagePath?: string | null;
+  onSubmitted?: (promptId: string) => Promise<void>;
+  onHeartbeat?: (heartbeat: ComfyUiHeartbeat) => Promise<void>;
+  shouldCancel?: () => Promise<boolean>;
 }
 
 export interface ComfyUiGenerationResult {
   buffer: Buffer;
   provider: 'comfyui-video' | 'comfyui-image';
+}
+
+export interface ComfyUiHeartbeat {
+  promptId: string;
+  pollCount: number;
+  elapsedMs: number;
+  state: 'waiting' | 'history_seen';
+}
+
+export class ComfyUiGenerationCancelledError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ComfyUiGenerationCancelledError';
+  }
+}
+
+interface WaitForHistoryOptions {
+  onHeartbeat?: (heartbeat: ComfyUiHeartbeat) => Promise<void>;
+  shouldCancel?: () => Promise<boolean>;
 }
 
 @Injectable()
@@ -224,8 +246,12 @@ export class ComfyUiClientService {
       this.logger.log(
         `[ComfyUI Video] Workflow submitted for scene=${input.sceneId}, prompt_id=${promptId}. Polling for result...`
       );
+      await input.onSubmitted?.(promptId);
 
-      const historyEntry = await this.waitForHistory(promptId);
+      const historyEntry = await this.waitForHistory(promptId, {
+        onHeartbeat: input.onHeartbeat,
+        shouldCancel: input.shouldCancel
+      });
       const video = this.extractOutputAsset(historyEntry, ['videos', 'animated', 'gifs'], {
         allowImageVideoExtensionFallback: true
       });
@@ -346,16 +372,40 @@ export class ComfyUiClientService {
     return uploadedName;
   }
 
-  private async waitForHistory(promptId: string): Promise<ComfyUiHistoryEntry> {
+  private async waitForHistory(
+    promptId: string,
+    options: WaitForHistoryOptions = {}
+  ): Promise<ComfyUiHistoryEntry> {
     const baseUrl = this.configService.get<string>('visual.comfyuiBaseUrl', 'http://localhost:8188');
     const timeoutMs = this.configService.get<number>('visual.comfyuiTimeoutMs', 1200000);
     const pollIntervalMs = this.configService.get<number>('visual.comfyuiPollIntervalMs', 3000);
+    const heartbeatIntervalMs = 5 * 60 * 1000;
+    const startedAt = Date.now();
     const deadline = Date.now() + timeoutMs;
+    let nextHeartbeatAt = startedAt + heartbeatIntervalMs;
     let pollCount = 0;
 
     while (Date.now() < deadline) {
       await this.sleep(pollIntervalMs);
       pollCount++;
+
+      if (await options.shouldCancel?.()) {
+        throw new ComfyUiGenerationCancelledError(
+          `ComfyUI generation cancelled for prompt_id=${promptId}`
+        );
+      }
+
+      const now = Date.now();
+
+      if (now >= nextHeartbeatAt) {
+        await options.onHeartbeat?.({
+          promptId,
+          pollCount,
+          elapsedMs: now - startedAt,
+          state: 'waiting'
+        });
+        nextHeartbeatAt = now + heartbeatIntervalMs;
+      }
 
       let historyResponse: Response;
 
@@ -383,6 +433,13 @@ export class ComfyUiClientService {
         }
         continue;
       }
+
+      await options.onHeartbeat?.({
+        promptId,
+        pollCount,
+        elapsedMs: Date.now() - startedAt,
+        state: 'history_seen'
+      });
 
       // Check for execution errors in the ComfyUI status
       if (historyEntry.status?.status_str === 'error') {

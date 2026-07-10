@@ -1,6 +1,6 @@
 <template>
-  <v-card class="surface-card upload-card" rounded="xl">
-    <v-card-text class="d-flex flex-column ga-4">
+  <section class="surface-card upload-card">
+    <div class="d-flex flex-column ga-4">
       <div class="upload-heading">
         <span class="upload-heading__icon"><v-icon icon="mdi-music-note-plus" size="26" /></span>
         <div>
@@ -45,8 +45,8 @@
         <v-icon icon="mdi-shield-check-outline" size="17" />
         Seu arquivo é usado apenas para gerar este videoclipe.
       </p>
-    </v-card-text>
-  </v-card>
+    </div>
+  </section>
 </template>
 
 <script lang="ts">
@@ -99,7 +99,8 @@ export default class FileUploadCard extends Vue {
 
 <style scoped>
 .upload-card {
-  padding: 8px;
+  overflow: hidden;
+  padding: 24px;
 }
 
 .upload-heading {
@@ -181,5 +182,11 @@ export default class FileUploadCard extends Vue {
   margin: -4px 0 0;
   color: #65676b;
   font-size: 0.78rem;
+}
+
+@media (max-width: 600px) {
+  .upload-card {
+    padding: 18px;
+  }
 }
 </style>

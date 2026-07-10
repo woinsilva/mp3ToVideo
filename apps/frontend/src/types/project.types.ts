@@ -39,7 +39,27 @@ export interface ProjectStatusResponse {
   musicSections: ProjectMusicSectionStatus[];
   errorMessage: string | null;
   lastUpdatedAt: string;
+  renderRuntime: ProjectRenderRuntime | null;
   isPossiblyStalled: boolean;
+}
+
+export interface ProjectRenderRuntime {
+  totalElapsedSeconds: number | null;
+  currentStageElapsedSeconds: number | null;
+  currentSceneElapsedSeconds: number | null;
+  lastServerHeartbeatAt: string | null;
+  lastExternalHeartbeatAt: string | null;
+  health: 'normal' | 'long_running' | 'suspected_stuck';
+  activeScene: ProjectActiveRenderScene | null;
+}
+
+export interface ProjectActiveRenderScene {
+  sceneId: string;
+  index: number;
+  title: string;
+  attemptNumber: number;
+  provider: string;
+  promptId: string | null;
 }
 
 export interface ProjectStatusActivityEntry {
@@ -86,7 +106,18 @@ export interface ProjectScene {
   videoAssetId: string | null;
   referenceImageAssetId: string | null;
   hasReferenceImage: boolean;
+  attemptSummary: SceneRenderAttemptSummary | null;
   prompt: ScenePromptView | null;
+}
+
+export interface SceneRenderAttemptSummary {
+  activeAttemptId: string | null;
+  latestAttemptStatus: string | null;
+  attemptNumber: number | null;
+  elapsedSeconds: number | null;
+  lastHeartbeatAt: string | null;
+  lastExternalHeartbeatAt: string | null;
+  canRetryAttempt: boolean;
 }
 
 export interface RenderAssetView {

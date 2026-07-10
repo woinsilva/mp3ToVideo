@@ -31,18 +31,36 @@
       :music-sections="statusPayload.musicSections"
       :error-message="statusPayload.errorMessage"
       :last-updated-at="statusPayload.lastUpdatedAt"
+      :render-runtime="statusPayload.renderRuntime"
       :is-possibly-stalled="statusPayload.isPossiblyStalled"
     />
 
-    <v-card v-else class="surface-card" rounded="xl">
-      <v-card-text class="processing-loading">
+    <section
+      v-if="canRetryActiveScene"
+      class="surface-card mt-4"
+    >
+      <div class="processing-card d-flex flex-column ga-3">
+        <h3 class="section-title">Render da cena atual</h3>
+        <p class="section-copy">
+          A cena atual esta demorando alem do esperado. Voce pode reiniciar apenas esta tentativa.
+        </p>
+        <div class="app-button-row">
+          <button class="app-button app-button--outline" type="button" @click="retryActiveSceneRender">
+            <v-icon icon="mdi-restart" size="18" /> Reiniciar cena atual
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section v-if="!statusPayload" class="surface-card">
+      <div class="processing-loading">
         <v-progress-circular indeterminate color="primary" />
         <span>Buscando o progresso mais recente...</span>
-      </v-card-text>
-    </v-card>
+      </div>
+    </section>
 
-    <v-card v-if="statusPayload?.status === 'failed'" class="surface-card mt-4" rounded="xl">
-      <v-card-text class="d-flex flex-column ga-3">
+    <section v-if="statusPayload?.status === 'failed'" class="surface-card mt-4">
+      <div class="processing-card d-flex flex-column ga-3">
         <h3 class="section-title">A geração foi interrompida</h3>
         <p class="section-copy">
           Abra os detalhes para revisar as configurações e tentar novamente.
@@ -50,8 +68,8 @@
         <div class="app-button-row">
           <button class="app-button" type="button" @click="goBackToProject">Abrir detalhes</button>
         </div>
-      </v-card-text>
-    </v-card>
+      </div>
+    </section>
   </AppLayout>
 </template>
 
@@ -94,6 +112,13 @@ export default class ProcessingPage extends Vue {
     return this.projectsStore.currentStatus?.projectId === this.projectId
       ? this.projectsStore.currentStatus
       : null;
+  }
+
+  get canRetryActiveScene(): boolean {
+    return Boolean(
+      this.statusPayload?.renderRuntime?.activeScene &&
+        this.statusPayload.renderRuntime.health !== 'normal'
+    );
   }
 
   async mounted() {
@@ -165,10 +190,34 @@ export default class ProcessingPage extends Vue {
   goBackToProject() {
     void this.$router.push({ name: 'project-detail', params: { id: this.projectId } });
   }
+
+  async retryActiveSceneRender() {
+    if (!this.authStore.token || !this.statusPayload?.renderRuntime?.activeScene) {
+      return;
+    }
+
+    try {
+      await this.projectsStore.retrySceneRender(
+        this.projectId,
+        this.statusPayload.renderRuntime.activeScene.sceneId,
+        this.authStore.token
+      );
+      await this.refreshStatus();
+    } catch (error) {
+      this.errorMessage =
+        error instanceof Error ? error.message : 'Falha ao reiniciar render da cena';
+    }
+  }
 }
 </script>
 
 <style scoped>
+.processing-card,
+.processing-loading {
+  overflow: hidden;
+  padding: 24px;
+}
+
 .processing-loading {
   display: flex;
   min-height: 180px;
@@ -176,5 +225,12 @@ export default class ProcessingPage extends Vue {
   justify-content: center;
   gap: 14px;
   color: #65676b;
+}
+
+@media (max-width: 600px) {
+  .processing-card,
+  .processing-loading {
+    padding: 18px;
+  }
 }
 </style>

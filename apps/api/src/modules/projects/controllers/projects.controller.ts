@@ -69,6 +69,15 @@ export class ProjectsController {
     return this.projectsService.listProjectScenes(id, user.organizationId);
   }
 
+  @Post(':id/scenes/:sceneId/retry-render')
+  retrySceneRender(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') projectId: string,
+    @Param('sceneId') sceneId: string
+  ) {
+    return this.projectsService.retrySceneRender(projectId, sceneId, user.organizationId);
+  }
+
   @Post(':id/scenes/:sceneId/reference-image')
   @UseInterceptors(FileInterceptor('file'))
   uploadSceneReferenceImage(

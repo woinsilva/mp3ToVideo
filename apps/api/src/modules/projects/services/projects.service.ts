@@ -1,11 +1,12 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
   NotFoundException
 } from '@nestjs/common';
-import { AssetType, Prisma, ProjectStatus } from '@prisma/client';
+import { AssetType, Prisma, ProjectStatus, SceneRenderAttemptStatus } from '@prisma/client';
 import { PROJECT_PROCESS_JOB_NAME, PROJECT_QUEUE_NAME } from '@video/shared';
 
 import { PrismaService } from '../../../database/prisma.service';
@@ -123,6 +124,18 @@ export class ProjectsService {
           orderBy: {
             startSeconds: 'asc'
           }
+        },
+        scenes: {
+          include: {
+            renderAttempts: {
+              orderBy: {
+                attemptNumber: 'desc'
+              }
+            }
+          },
+          orderBy: {
+            index: 'asc'
+          }
         }
       }
     });
@@ -154,7 +167,12 @@ export class ProjectsService {
       },
       include: {
         prompt: true,
-        referenceImageAsset: true
+        referenceImageAsset: true,
+        renderAttempts: {
+          orderBy: {
+            attemptNumber: 'desc'
+          }
+        }
       },
       orderBy: {
         index: 'asc'
@@ -162,6 +180,75 @@ export class ProjectsService {
     });
 
     return scenes.map((scene) => this.projectPresenter.scene(scene));
+  }
+
+  async retrySceneRender(projectId: string, sceneId: string, organizationId: string) {
+    const scene = await this.prismaService.scene.findFirst({
+      where: {
+        id: sceneId,
+        projectId,
+        project: {
+          organizationId,
+          deletedAt: null
+        }
+      },
+      include: {
+        project: true,
+        prompt: true,
+        referenceImageAsset: true,
+        renderAttempts: {
+          orderBy: {
+            attemptNumber: 'desc'
+          }
+        }
+      }
+    });
+
+    if (!scene) {
+      throw new NotFoundException('Scene not found');
+    }
+
+    if (scene.project.status !== ProjectStatus.rendering) {
+      throw new BadRequestException('Scene render retry is only available while project is rendering');
+    }
+
+    const latestAttempt = scene.renderAttempts[0];
+
+    if (!latestAttempt) {
+      throw new BadRequestException('Scene does not have a render attempt to retry');
+    }
+
+    if (!this.isRetryableSceneRenderAttempt(latestAttempt.status)) {
+      throw new ConflictException('Scene render attempt cannot be restarted in its current state');
+    }
+
+    await this.prismaService.sceneRenderAttempt.update({
+      where: {
+        id: latestAttempt.id
+      },
+      data: {
+        status: SceneRenderAttemptStatus.abandoned,
+        finishedAt: new Date(),
+        errorMessage: 'Render attempt restarted by user'
+      }
+    });
+
+    return this.projectPresenter.scene(
+      await this.prismaService.scene.findUniqueOrThrow({
+        where: {
+          id: scene.id
+        },
+        include: {
+          prompt: true,
+          referenceImageAsset: true,
+          renderAttempts: {
+            orderBy: {
+              attemptNumber: 'desc'
+            }
+          }
+        }
+      })
+    );
   }
 
   async uploadSceneReferenceImage(
@@ -836,5 +923,15 @@ export class ProjectsService {
 
     const normalizedValue = value.trim();
     return normalizedValue ? normalizedValue : null;
+  }
+
+  private isRetryableSceneRenderAttempt(status: SceneRenderAttemptStatus): boolean {
+    return (
+      status === SceneRenderAttemptStatus.queued ||
+      status === SceneRenderAttemptStatus.submitted ||
+      status === SceneRenderAttemptStatus.waiting_external ||
+      status === SceneRenderAttemptStatus.confirmed_external_active ||
+      status === SceneRenderAttemptStatus.failed
+    );
   }
 }

@@ -1,6 +1,6 @@
 <template>
-  <v-card class="surface-card scene-panel" rounded="xl">
-    <v-card-text>
+  <section class="surface-card scene-panel">
+    <div>
       <div class="scene-panel__heading">
         <div>
           <h3 class="section-title">Cenas do videoclipe</h3>
@@ -32,6 +32,13 @@
               </v-chip>
             </div>
             <p>{{ scene.description }}</p>
+            <div v-if="scene.attemptSummary" class="scene-attempt">
+              <span>
+                Tentativa {{ scene.attemptSummary.attemptNumber }} ·
+                {{ formatAttemptStatus(scene.attemptSummary.latestAttemptStatus) }}
+              </span>
+              <strong>{{ formatAttemptElapsed(scene.attemptSummary.elapsedSeconds) }}</strong>
+            </div>
             <div class="scene-reference">
               <v-chip
                 :color="scene.hasReferenceImage ? 'success' : 'default'"
@@ -49,11 +56,20 @@
                 {{ scene.hasReferenceImage ? 'Trocar imagem' : 'Adicionar imagem' }}
               </label>
             </div>
+            <button
+              v-if="scene.attemptSummary?.canRetryAttempt"
+              class="scene-retry-button"
+              type="button"
+              @click="retrySceneRender(scene.id)"
+            >
+              <v-icon icon="mdi-restart" size="16" />
+              Reiniciar render desta cena
+            </button>
           </div>
         </article>
       </div>
-    </v-card-text>
-  </v-card>
+    </div>
+  </section>
 </template>
 
 <script lang="ts">
@@ -78,6 +94,10 @@ export default class SceneList extends Vue {
     this.$emit('reference-upload', { sceneId, file });
   }
 
+  retrySceneRender(sceneId: string) {
+    this.$emit('retry-render', { sceneId });
+  }
+
   get totalDuration(): number {
     return this.scenes.length ? Math.max(...this.scenes.map((scene) => scene.endSeconds)) : 0;
   }
@@ -98,12 +118,32 @@ export default class SceneList extends Vue {
     if (status === 'generating') return 'Gerando';
     return status;
   }
+
+  formatAttemptStatus(status: string | null): string {
+    if (!status) return 'sem tentativa';
+    if (status === 'waiting_external') return 'aguardando ComfyUI';
+    if (status === 'confirmed_external_active') return 'ComfyUI ativo';
+    if (status === 'completed') return 'concluida';
+    if (status === 'failed') return 'falhou';
+    if (status === 'abandoned') return 'reiniciada';
+    if (status === 'cancelled') return 'cancelada';
+    return status;
+  }
+
+  formatAttemptElapsed(seconds: number | null): string {
+    if (seconds === null) return '--';
+    const safeValue = Math.max(0, Math.floor(seconds));
+    const minutes = Math.floor(safeValue / 60);
+    const remaining = safeValue % 60;
+    return `${minutes}:${String(remaining).padStart(2, '0')}`;
+  }
 }
 </script>
 
 <style scoped>
 .scene-panel {
-  padding: 8px;
+  overflow: hidden;
+  padding: 24px;
 }
 
 .scene-panel__heading,
@@ -201,6 +241,47 @@ export default class SceneList extends Vue {
   margin-top: 12px;
 }
 
+.scene-attempt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid #dfe3e8;
+  border-radius: 8px;
+  background: #f7f8fa;
+  color: #65676b;
+  font-size: 0.72rem;
+}
+
+.scene-attempt strong {
+  flex: 0 0 auto;
+  color: #1c1e21;
+}
+
+.scene-retry-button {
+  display: inline-flex;
+  width: 100%;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 10px;
+  border: 1px solid #f4b740;
+  border-radius: 8px;
+  color: #7a4b00;
+  background: #fff8e8;
+  cursor: pointer;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.scene-retry-button:hover {
+  border-color: #d69200;
+  background: #ffefc2;
+}
+
 .scene-reference__button {
   display: inline-flex;
   min-height: 30px;
@@ -247,6 +328,7 @@ export default class SceneList extends Vue {
 }
 
 @media (max-width: 480px) {
+  .scene-panel { padding: 18px; }
   .scene-card { grid-template-columns: 96px minmax(0, 1fr); }
 }
 </style>

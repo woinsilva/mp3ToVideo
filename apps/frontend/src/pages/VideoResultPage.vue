@@ -36,13 +36,18 @@
           :music-sections="statusPayload.musicSections"
           :error-message="statusPayload.errorMessage"
           :last-updated-at="statusPayload.lastUpdatedAt"
+          :render-runtime="statusPayload.renderRuntime"
           :is-possibly-stalled="statusPayload.isPossiblyStalled"
         />
       </v-col>
     </v-row>
 
     <section class="mt-6">
-      <SceneList :scenes="scenes" @reference-upload="uploadSceneReferenceImage" />
+      <SceneList
+        :scenes="scenes"
+        @reference-upload="uploadSceneReferenceImage"
+        @retry-render="retrySceneRender"
+      />
     </section>
 
     <v-card
@@ -244,6 +249,29 @@ export default class VideoResultPage extends Vue {
     } catch (error) {
       this.errorMessage =
         error instanceof Error ? error.message : 'Falha ao enviar imagem de referencia';
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  async retrySceneRender(payload: { sceneId: string }) {
+    if (!this.authStore.token) {
+      return;
+    }
+
+    this.loading = true;
+    this.errorMessage = null;
+
+    try {
+      await this.projectsStore.retrySceneRender(
+        this.projectId,
+        payload.sceneId,
+        this.authStore.token
+      );
+      await this.projectsStore.fetchStatus(this.projectId, this.authStore.token);
+    } catch (error) {
+      this.errorMessage =
+        error instanceof Error ? error.message : 'Falha ao reiniciar render da cena';
     } finally {
       this.loading = false;
     }

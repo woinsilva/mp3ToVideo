@@ -236,6 +236,26 @@ export const useProjectsStore = defineStore('projects', {
         this.isLoading = false;
       }
     },
+    async retrySceneRender(projectId: string, sceneId: string, token: string) {
+      this.isLoading = true;
+      this.errorMessage = null;
+
+      try {
+        const updatedScene = await projectsService.retrySceneRender(projectId, sceneId, token);
+
+        this.currentScenes = this.currentScenes.map((scene) =>
+          scene.id === sceneId ? updatedScene : scene
+        );
+
+        return updatedScene;
+      } catch (error) {
+        this.errorMessage =
+          error instanceof Error ? error.message : 'Falha ao reiniciar render da cena';
+        throw error;
+      } finally {
+        this.isLoading = false;
+      }
+    },
     async fetchRender(projectId: string, token: string) {
       this.currentRender = await projectsService.render(projectId, token);
       return this.currentRender;

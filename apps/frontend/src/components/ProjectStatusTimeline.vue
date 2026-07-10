@@ -1,6 +1,6 @@
 <template>
-  <v-card class="surface-card" rounded="xl">
-    <v-card-text class="d-flex flex-column ga-4">
+  <section class="surface-card status-card">
+    <div class="d-flex flex-column ga-4">
       <div class="status-heading">
         <div class="status-heading__main">
           <span class="status-symbol">
@@ -20,6 +20,40 @@
       </div>
 
       <v-progress-linear :model-value="progress" :color="tone" height="12" rounded />
+
+      <div v-if="renderRuntime" class="runtime-panel" :class="`runtime-panel--${renderRuntime.health}`">
+        <div class="runtime-panel__header">
+          <div>
+            <h4 class="runtime-panel__title">Acompanhamento do render</h4>
+            <p class="runtime-panel__copy">{{ runtimeHealthLabel }}</p>
+          </div>
+          <v-chip :color="runtimeHealthColor" size="small" variant="tonal">
+            {{ runtimeHealthChip }}
+          </v-chip>
+        </div>
+        <div class="runtime-grid">
+          <div class="runtime-metric">
+            <span>Tempo total</span>
+            <strong>{{ formatDuration(liveTotalElapsedSeconds) }}</strong>
+          </div>
+          <div class="runtime-metric">
+            <span>Etapa atual</span>
+            <strong>{{ formatDuration(liveStageElapsedSeconds) }}</strong>
+          </div>
+          <div class="runtime-metric">
+            <span>Cena atual</span>
+            <strong>{{ formatDuration(liveSceneElapsedSeconds) }}</strong>
+          </div>
+          <div class="runtime-metric">
+            <span>Servidor</span>
+            <strong>{{ formatHeartbeat(renderRuntime.lastServerHeartbeatAt) }}</strong>
+          </div>
+        </div>
+        <p v-if="renderRuntime.activeScene" class="runtime-active-scene">
+          Cena {{ renderRuntime.activeScene.index + 1 }}: {{ renderRuntime.activeScene.title }}
+          · tentativa {{ renderRuntime.activeScene.attemptNumber }}
+        </p>
+      </div>
 
       <div class="timeline-grid">
         <div
@@ -130,8 +164,8 @@
           </div>
         </div>
       </div>
-    </v-card-text>
-  </v-card>
+    </div>
+  </section>
 </template>
 
 <script lang="ts">
@@ -146,6 +180,7 @@ import {
 import type {
   ProjectLyricsStatus,
   ProjectMusicSectionStatus,
+  ProjectRenderRuntime,
   ProjectStatus,
   ProjectStatusActivityEntry
 } from '@/types/project.types';
@@ -178,6 +213,9 @@ export default class ProjectStatusTimeline extends Vue {
 
   @Prop({ required: true })
   readonly lastUpdatedAt!: string;
+
+  @Prop({ default: null })
+  readonly renderRuntime!: ProjectRenderRuntime | null;
 
   @Prop({ default: false })
   readonly isPossiblyStalled!: boolean;
@@ -215,6 +253,43 @@ export default class ProjectStatusTimeline extends Vue {
     return formatRelativeStatusUpdate(this.lastUpdatedAt);
   }
 
+  get liveTotalElapsedSeconds(): number | null {
+    return this.liveElapsed(this.renderRuntime?.totalElapsedSeconds);
+  }
+
+  get liveStageElapsedSeconds(): number | null {
+    return this.liveElapsed(this.renderRuntime?.currentStageElapsedSeconds);
+  }
+
+  get liveSceneElapsedSeconds(): number | null {
+    return this.liveElapsed(this.renderRuntime?.currentSceneElapsedSeconds);
+  }
+
+  get runtimeHealthLabel(): string {
+    if (!this.renderRuntime) return '';
+    if (this.renderRuntime.health === 'suspected_stuck') {
+      return 'Sem confirmacao recente do servidor. Voce pode aguardar ou reiniciar a cena atual.';
+    }
+    if (this.renderRuntime.health === 'long_running') {
+      return 'Esta etapa esta demorando, mas o servidor segue confirmando atividade.';
+    }
+    return 'Render em andamento com confirmacoes recentes do servidor.';
+  }
+
+  get runtimeHealthChip(): string {
+    if (!this.renderRuntime) return '';
+    if (this.renderRuntime.health === 'suspected_stuck') return 'Verificar';
+    if (this.renderRuntime.health === 'long_running') return 'Demorado';
+    return 'Ativo';
+  }
+
+  get runtimeHealthColor(): string {
+    if (!this.renderRuntime) return 'primary';
+    if (this.renderRuntime.health === 'suspected_stuck') return 'warning';
+    if (this.renderRuntime.health === 'long_running') return 'info';
+    return 'success';
+  }
+
   get allActivity(): ProjectStatusActivityEntry[] {
     return [...this.activityLog].reverse();
   }
@@ -241,6 +316,32 @@ export default class ProjectStatusTimeline extends Vue {
       minute: '2-digit',
       second: '2-digit'
     }).format(new Date(value));
+  }
+
+  formatDuration(value: number | null): string {
+    if (value === null) return '--';
+    const safeValue = Math.max(0, Math.floor(value));
+    const hours = Math.floor(safeValue / 3600);
+    const minutes = Math.floor((safeValue % 3600) / 60);
+    const seconds = safeValue % 60;
+
+    if (hours > 0) {
+      return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
+  }
+
+  formatHeartbeat(value: string | null): string {
+    return value ? formatRelativeStatusUpdate(value) : 'Sem sinal';
+  }
+
+  liveElapsed(value: number | null | undefined): number | null {
+    if (typeof value !== 'number') {
+      return null;
+    }
+
+    return value;
   }
 
   getProviderColor(provider: string): string {
@@ -275,6 +376,11 @@ export default class ProjectStatusTimeline extends Vue {
 </script>
 
 <style scoped>
+.status-card {
+  overflow: hidden;
+  padding: 24px;
+}
+
 .detail-copy {
   color: #4b4f56;
 }
@@ -318,6 +424,79 @@ export default class ProjectStatusTimeline extends Vue {
 .status-heading__meta span {
   color: #65676b;
   font-size: 0.74rem;
+}
+
+.runtime-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #dfe3e8;
+  border-radius: 12px;
+  background: #f7f8fa;
+}
+
+.runtime-panel--long_running {
+  border-color: #b6dcff;
+  background: #f1f8ff;
+}
+
+.runtime-panel--suspected_stuck {
+  border-color: #ffd18a;
+  background: #fff8e8;
+}
+
+.runtime-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.runtime-panel__title {
+  margin: 0;
+  color: #1c1e21;
+  font-size: 0.9rem;
+}
+
+.runtime-panel__copy,
+.runtime-active-scene {
+  margin: 4px 0 0;
+  color: #65676b;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.runtime-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.runtime-metric {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.runtime-metric span,
+.runtime-metric strong {
+  display: block;
+}
+
+.runtime-metric span {
+  color: #65676b;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.runtime-metric strong {
+  margin-top: 4px;
+  color: #1c1e21;
+  font-size: 0.95rem;
 }
 
 .activity-title {
@@ -432,6 +611,10 @@ export default class ProjectStatusTimeline extends Vue {
 }
 
 @media (max-width: 600px) {
+  .status-card {
+    padding: 18px;
+  }
+
   .status-heading {
     flex-direction: column;
   }
@@ -448,6 +631,10 @@ export default class ProjectStatusTimeline extends Vue {
 
   .activity-entry__chips {
     justify-content: flex-start;
+  }
+
+  .runtime-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 </style>
