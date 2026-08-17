@@ -18,7 +18,7 @@ O sistema é dividido em:
 - Ollama para geração local de texto;
 - ComfyUI com Wan 2.2 para geração visual local.
 
-Na configuração de desenvolvimento atual, frontend, API e worker executam diretamente no Windows. PostgreSQL, Redis, Ollama e ComfyUI são fornecidos pelo Docker Compose.
+Na configuração de desenvolvimento atual, frontend, API, worker e ComfyUI executam diretamente no Windows. PostgreSQL, Redis e Ollama são fornecidos pelo Docker Compose.
 
 ```text
 Frontend Vue/Vite (host)
@@ -37,7 +37,7 @@ NestJS API (host)
               |               |                |
               v               v                v
        faster-whisper      FFmpeg          IA visual/textual
-          (host)           (host)       ComfyUI/Ollama (Docker)
+          (host)           (host)       ComfyUI (host) / Ollama (Docker)
 ```
 
 ## 2. Organização do repositório
@@ -49,7 +49,6 @@ NestJS API (host)
 | `apps/worker` | Processamento assíncrono e renderização |
 | `packages/shared` | Tipos e código compartilhado do monorepo |
 | `prisma` | Schema, migrations e seed do banco |
-| `infra/docker` | Dockerfiles e entrypoint do ComfyUI |
 | `storage` | Uploads, temporários, cenas, modelos e renders |
 | `tests/unit` | Testes unitários |
 | `tests/integration` | Testes de integração |
@@ -238,38 +237,16 @@ Na configuração atual da aplicação, o Ollama está desabilitado por `ENABLE_
 
 ### 4.4 ComfyUI
 
-O ComfyUI é um serviço opcional, ativado pelo profile `comfyui`.
+O ComfyUI executa pelo ComfyUI Desktop no Windows e deve estar aberto durante as gerações. Ele não faz parte do Docker Compose.
 
 | Item | Configuração |
 | --- | --- |
-| Imagem | Build local `video-comfyui` |
-| Imagem-base | `python:3.12-trixie` |
-| Contêiner | `video-comfyui` |
-| Porta publicada | `8188` |
-| GPU | Todas as GPUs disponíveis para o Docker |
-| Repositório | `Comfy-Org/ComfyUI` |
-| Referência Git padrão | `master` |
-| Índice PyTorch padrão | CUDA 13.0 (`cu130`) |
+| Runtime | ComfyUI Desktop para Windows |
+| Endpoint | `http://localhost:8188` |
+| GPU | GPU disponível diretamente no Windows |
+| Modelos e custom nodes | Gerenciados pela instalação Desktop |
 
-O build instala:
-
-- Python 3.12 em ambiente virtual;
-- dependências oficiais do ComfyUI;
-- FFmpeg;
-- Git;
-- CMake;
-- bibliotecas OpenGL e GLib;
-- pacotes Python adicionais configurados pelo ambiente;
-- dependências declaradas pelos custom nodes.
-
-Diretórios montados do host:
-
-- modelos: `storage/comfyui/models`;
-- entradas: `storage/comfyui/input`;
-- saídas: `storage/comfyui/output`;
-- custom nodes: `storage/comfyui/custom_nodes`;
-- dados do usuário: `storage/comfyui/user`;
-- temporários: `storage/comfyui/temp`.
+O suporte a um contêiner próprio foi removido da configuração ativa devido aos problemas observados nessa execução. Ele poderá ser reintroduzido futuramente depois que o build e a inicialização forem estabilizados.
 
 Configuração visual ativa:
 
@@ -343,7 +320,6 @@ O storage contém:
 - vídeos de cenas;
 - arquivos temporários;
 - renders MP4 finais;
-- diretórios persistidos do ComfyUI.
 
 ## 7. Autenticação e segurança
 
@@ -367,7 +343,7 @@ O segredo JWT e a URL do banco são fornecidos pelo arquivo `.env` e não devem 
 | PostgreSQL | 5432 | Docker |
 | Redis | 6379 | Docker |
 | Ollama | 11434 | Docker |
-| ComfyUI | 8188 | Docker opcional |
+| ComfyUI | 8188 | Host/Windows |
 
 ## 9. Configuração ativa resumida
 
@@ -405,17 +381,7 @@ docker compose up -d ollama
 docker compose up ollama-model
 ```
 
-Subir o ComfyUI:
-
-```bash
-docker compose --profile comfyui up -d comfyui
-```
-
-Subir toda a infraestrutura, incluindo ComfyUI:
-
-```bash
-docker compose --profile comfyui up -d
-```
+Antes de iniciar uma geração, abra o ComfyUI Desktop no Windows e confirme que `http://localhost:8188` está acessível.
 
 Executar frontend, API e worker no host:
 
@@ -448,13 +414,10 @@ docker compose ps -a
 
 No momento da geração deste documento:
 
-- não havia processos Node.js, Python ou FFmpeg do projeto em execução;
-- nenhuma das portas do sistema estava escutando;
-- PostgreSQL, Redis e Ollama estavam parados;
-- o downloader do modelo Ollama havia terminado normalmente;
-- o ComfyUI estava parado após uma saída com código `137`.
-
-O código `137` indica que o processo recebeu `SIGKILL`. As causas mais comuns são encerramento forçado do contêiner ou pressão/falta de memória, mas esse registro isolado não determina a causa exata.
+- frontend, API e worker estavam em execução no Windows;
+- PostgreSQL, Redis e Ollama estavam ativos no Docker;
+- o ComfyUI Desktop estava ativo no Windows e respondendo na porta `8188`;
+- o antigo contêiner `video-comfyui` havia sido removido.
 
 Esta seção é apenas um snapshot operacional. As demais seções descrevem a stack declarada e a configuração do projeto.
 
@@ -462,8 +425,8 @@ Esta seção é apenas um snapshot operacional. As demais seções descrevem a s
 
 - As versões das dependências Node listadas neste documento são as versões instaladas e resolvidas pelo lockfile, não apenas os intervalos declarados nos `package.json`.
 - As tags `ollama/ollama` e `latest` não fixam uma versão imutável do Ollama.
-- O ComfyUI usa `master` como referência Git padrão, também não imutável.
-- Para builds totalmente reproduzíveis, recomenda-se fixar a versão/tag ou o digest do Ollama e um commit específico do ComfyUI.
+- A versão do ComfyUI Desktop e dos modelos instalados no Windows deve ser registrada quando o ambiente for promovido para produção.
+- Para builds totalmente reproduzíveis, recomenda-se fixar a versão/tag ou o digest do Ollama.
 
 ## 13. Arquivos de referência
 
