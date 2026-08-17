@@ -21,6 +21,7 @@ export interface ProjectSummary {
   generationSeed: number | null;
   generationCfg: number | null;
   generationSteps: number | null;
+  generationFps: number;
   sourceImageAssetId: string | null;
   hasSourceImage: boolean;
   sourceImage: {
@@ -47,6 +48,7 @@ export interface CreateProjectInput {
   generationSeed: number | null;
   generationCfg: number | null;
   generationSteps: number | null;
+  generationFps: 16 | 24;
   clipDurationSeconds: number | null;
   sceneDurationSeconds: number | null;
   visualCheckpointName: string | null;
@@ -177,9 +179,17 @@ export interface SceneRenderAttemptSummary {
   width: number | null;
   height: number | null;
   fps: number | null;
+  requestedFps: number | null;
+  effectiveFps: number | null;
+  requestedFrameCount: number | null;
+  calculatedFrameCount: number | null;
+  effectiveFrameCount: number | null;
   frameCount: number | null;
   requestedDurationSeconds: number | null;
   effectiveDurationSeconds: number | null;
+  calculatedDurationSeconds: number | null;
+  videoValidationStatus: string | null;
+  videoValidationWarnings: string[];
   unetName: string | null;
 }
 

@@ -28,6 +28,7 @@ interface CreateProjectInput {
   generationSeed?: number;
   generationCfg?: number;
   generationSteps?: number;
+  generationFps?: number;
   clipDurationSeconds?: number;
   sceneDurationSeconds?: number;
   visualCheckpointName?: string;
@@ -88,6 +89,11 @@ export class ProjectsService {
     const visualCheckpointName = this.normalizeVisualCheckpointName(input.visualCheckpointName);
     const manualLyrics = this.normalizeManualLyricsText(input.manualLyricsText);
     const isDirectVideoMode = generationMode === 'prompt' || generationMode === 'image';
+    const generationFps = input.generationFps ?? 16;
+
+    if (generationFps !== 16 && generationFps !== 24) {
+      throw new BadRequestException('Generation FPS must be 16 or 24');
+    }
 
     if (isDirectVideoMode && !generationPrompt) {
       throw new BadRequestException('A description is required for direct video generation');
@@ -117,6 +123,7 @@ export class ProjectsService {
         generationSeed: isDirectVideoMode ? input.generationSeed ?? null : null,
         generationCfg: isDirectVideoMode ? input.generationCfg ?? null : null,
         generationSteps: isDirectVideoMode ? input.generationSteps ?? null : null,
+        generationFps,
         clipDurationSeconds,
         sceneDurationSeconds,
         visualCheckpointName,

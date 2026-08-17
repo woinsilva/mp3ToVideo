@@ -38,7 +38,7 @@ export const envValidationSchema = Joi.object({
   COMFYUI_VIDEO_CLIP_TYPE: Joi.string().default('wan'),
   COMFYUI_VIDEO_VAE_NAME: Joi.string().default('wan2.2_vae.safetensors'),
   COMFYUI_VIDEO_MODEL_SHIFT: Joi.number().positive().default(8),
-  COMFYUI_VIDEO_FPS: Joi.number().integer().positive().default(24),
+  COMFYUI_VIDEO_FPS: Joi.number().integer().valid(16, 24).default(16),
   COMFYUI_WIDTH: Joi.number().integer().positive().default(1024),
   COMFYUI_HEIGHT: Joi.number().integer().positive().default(576),
   COMFYUI_STEPS: Joi.number().integer().positive().default(20),

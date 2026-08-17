@@ -85,6 +85,14 @@
             <v-icon icon="mdi-chevron-down" size="20" />
           </summary>
           <div class="advanced-settings__body">
+            <label class="auth-input-group">
+              <span class="auth-input-label">FPS</span>
+              <select v-model.number="generationFps" class="auth-input">
+                <option :value="16">16 FPS</option>
+                <option :value="24">24 FPS</option>
+              </select>
+              <span class="field-help">Altera a quantidade de frames gerados nativamente pelo Wan para a duração escolhida.</span>
+            </label>
             <label v-if="generationMode !== 'music'" class="auth-input-group">
               <span class="auth-input-label">Seed reproduzível</span>
               <input v-model="generationSeedInput" class="auth-input" type="number" min="0" max="2147483646" step="1" placeholder="Aleatório" />
@@ -169,6 +177,7 @@ export default class CreateProjectPage extends Vue {
   generationSeedInput: string | number = '';
   generationCfgInput: string | number = '';
   generationStepsInput: string | number = '';
+  generationFps: 16 | 24 = 16;
   loading = false;
   errorMessage: string | null = null;
   submitted = false;
@@ -246,6 +255,7 @@ export default class CreateProjectPage extends Vue {
         generationSeed: isDirectVideoMode ? this.normalizedGenerationSeed : null,
         generationCfg: isDirectVideoMode ? this.normalizedGenerationCfg : null,
         generationSteps: isDirectVideoMode ? this.normalizedGenerationSteps : null,
+        generationFps: this.generationFps,
         clipDurationSeconds: this.normalizedClipDurationSeconds,
         sceneDurationSeconds: this.normalizedSceneDurationSeconds,
         visualCheckpointName: this.normalizedVisualCheckpointName,

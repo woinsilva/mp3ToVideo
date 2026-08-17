@@ -12,6 +12,7 @@ export interface VideoGenerationOverrides {
   height?: number | null;
   stabilityTest?: boolean;
   imageToVideo?: boolean;
+  fps?: number | null;
 }
 
 export interface ResolvedVideoGenerationSettings {
@@ -26,6 +27,7 @@ export interface ResolvedVideoGenerationSettings {
   width: number;
   height: number;
   fps: number;
+  requestedFrameCount: number;
   frameCount: number;
   requestedDurationSeconds: number;
   effectiveDurationSeconds: number;
@@ -37,7 +39,8 @@ export interface ResolvedVideoGenerationSettings {
 }
 
 export function calculateWanFrameCount(durationSeconds: number, fps: number): number {
-  return Math.max(1, Math.round(durationSeconds * fps) + 1);
+  const requestedFrameCount = Math.max(1, Math.round(durationSeconds * fps));
+  return Math.max(1, Math.round((requestedFrameCount - 1) / 4) * 4 + 1);
 }
 
 @Injectable()
@@ -52,7 +55,11 @@ export class VideoGenerationSettingsService {
     durationSeconds: number,
     overrides: VideoGenerationOverrides = {}
   ): ResolvedVideoGenerationSettings {
-    const fps = this.configService.get<number>('visual.comfyuiVideoFps', 24);
+    const fps = overrides.fps ?? this.configService.get<number>('visual.comfyuiVideoFps', 16);
+    if (fps !== 16 && fps !== 24) {
+      throw new Error(`Unsupported Wan generation FPS: ${fps}. Expected 16 or 24.`);
+    }
+    const requestedFrameCount = Math.max(1, Math.round(durationSeconds * fps));
     const frameCount = calculateWanFrameCount(durationSeconds, fps);
     const basePrompts = overrides.stabilityTest
       ? this.buildStabilityPrompts(prompt)
@@ -72,6 +79,7 @@ export class VideoGenerationSettingsService {
       width: overrides.width ?? this.configService.get<number>('visual.comfyuiWidth', 1024),
       height: overrides.height ?? this.configService.get<number>('visual.comfyuiHeight', 576),
       fps,
+      requestedFrameCount,
       frameCount,
       requestedDurationSeconds: durationSeconds,
       effectiveDurationSeconds: Number(((frameCount - 1) / fps).toFixed(6)),

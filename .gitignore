@@ -12,6 +12,7 @@ coverage/
 storage/uploads/
 storage/generated-scenes/
 storage/scene-reference-images/
+storage/source-images/
 storage/continuity-frames/
 storage/storyboard-images/
 storage/comfyui/

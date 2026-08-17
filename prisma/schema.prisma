@@ -141,6 +141,7 @@ model Project {
   generationSeed       Int?
   generationCfg        Float?
   generationSteps      Int?
+  generationFps        Int                   @default(16)
   sourceImageAssetId   String?               @unique
   clipDurationSeconds  Float?
   sceneDurationSeconds Float?

@@ -37,6 +37,7 @@ describe('ProjectRenderService', () => {
         generationSeed: 123,
         generationCfg: 4.5,
         generationSteps: 24,
+        generationFps: 16,
         scenes: []
       })
     ).rejects.toThrow('Nenhuma cena foi planejada para o projeto');
@@ -72,6 +73,7 @@ describe('ProjectRenderService', () => {
         generationSeed: 123,
         generationCfg: 4.5,
         generationSteps: 24,
+        generationFps: 16,
         scenes: [{
           id: 'scene-1',
           title: 'I2V scene',
@@ -178,6 +180,7 @@ describe('ProjectRenderService', () => {
           width: 1280,
           height: 704,
           fps: 16,
+          requestedFrameCount: 128,
           frameCount: 129,
           requestedDurationSeconds: 8,
           effectiveDurationSeconds: 8,
@@ -202,6 +205,7 @@ describe('ProjectRenderService', () => {
         generationSeed: null,
         generationCfg: null,
         generationSteps: null,
+        generationFps: 16,
         scenes: [
           {
             id: 'scene-1',
@@ -360,6 +364,7 @@ describe('ProjectRenderService', () => {
       generationSeed: 123,
       generationCfg: 4.5,
       generationSteps: 24,
+      generationFps: 16,
       scenes: [
         {
           id: 'scene-1',
@@ -382,6 +387,125 @@ describe('ProjectRenderService', () => {
         type: 'render',
         storagePath: finalPath
       })
+    });
+  });
+
+  it('persists requested and calculated FPS/frame values on the render attempt', async () => {
+    const createAttempt = vi.fn().mockImplementation(({ data }) => ({ id: 'attempt-1', ...data }));
+    const service = new ProjectRenderService(
+      {
+        sceneRenderAttempt: {
+          findFirst: vi.fn().mockResolvedValue(null),
+          create: createAttempt
+        }
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never
+    );
+
+    await (service as any).createSceneRenderAttempt(
+      {
+        projectId: 'project-1',
+        generationMode: 'prompt',
+        visualCheckpointName: null,
+        stabilityTest: false,
+        wanOnly: true,
+        scenes: []
+      },
+      { id: 'scene-1', title: 'Scene', referenceImageStoragePath: null },
+      0,
+      {
+        workflowName: 'wan-2.2-ti2v-5b',
+        positivePrompt: 'motion',
+        negativePrompt: 'blur',
+        seed: 123,
+        cfg: 4.5,
+        steps: 24,
+        sampler: 'uni_pc',
+        scheduler: 'simple',
+        width: 1280,
+        height: 704,
+        fps: 24,
+        requestedFrameCount: 120,
+        frameCount: 121,
+        requestedDurationSeconds: 5,
+        effectiveDurationSeconds: 5,
+        unetName: 'wan.safetensors',
+        clipName: 'clip.safetensors',
+        clipType: 'wan',
+        vaeName: 'vae.safetensors',
+        modelShift: 8
+      }
+    );
+
+    expect(createAttempt).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        fps: 24,
+        expectedFrameCount: 121,
+        steps: 24,
+        metadata: expect.objectContaining({
+          requestedFps: 24,
+          calculatedFps: 24,
+          requestedFrameCount: 120,
+          calculatedFrameCount: 121,
+          effectiveFrameCount: null,
+          videoValidationStatus: 'pending'
+        })
+      })
+    });
+  });
+
+  it('persists the FPS, frames and duration measured from the generated MP4', async () => {
+    const update = vi.fn().mockResolvedValue(undefined);
+    const service = new ProjectRenderService(
+      {
+        sceneRenderAttempt: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: 'attempt-1',
+            fps: 24,
+            expectedFrameCount: 121,
+            effectiveDurationSeconds: 5,
+            metadata: { requestedFps: 24, requestedFrameCount: 120 }
+          }),
+          update
+        }
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        probe: vi.fn().mockResolvedValue({
+          fps: 24,
+          frameCount: 121,
+          durationSeconds: 5.041667
+        })
+      } as never
+    );
+
+    await (service as any).verifyGeneratedVideo('attempt-1', 'scene.mp4');
+
+    expect(update).toHaveBeenCalledWith({
+      where: { id: 'attempt-1' },
+      data: {
+        effectiveDurationSeconds: 5.041667,
+        metadata: expect.objectContaining({
+          effectiveFps: 24,
+          effectiveFrameCount: 121,
+          probedDurationSeconds: 5.041667,
+          videoValidationStatus: 'matched',
+          videoValidationWarnings: []
+        })
+      }
     });
   });
 });

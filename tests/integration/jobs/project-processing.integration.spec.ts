@@ -232,7 +232,8 @@ describe('Project processing integration', () => {
         wanOnly: true,
         generationSeed: 123456,
         generationCfg: 4.5,
-        generationSteps: 24
+        generationSteps: 24,
+        generationFps: 24
       })
       .expect(201);
 
@@ -256,6 +257,7 @@ describe('Project processing integration', () => {
       scenes: Array<{ id: string; durationSeconds: number }>;
       audioPath: string | null;
       durationSeconds: number;
+      generationFps: number;
     }> = [];
     const pipeline = new ProjectProcessingPipelineService(
       prisma as unknown as WorkerPrismaService,
@@ -303,6 +305,7 @@ describe('Project processing integration', () => {
     expect(renderedInputs[0]).toMatchObject({
       audioPath: null,
       durationSeconds: 2,
+      generationFps: 24,
       scenes: [{ id: scenes[0]?.id, durationSeconds: 2 }]
     });
   });
@@ -321,7 +324,8 @@ describe('Project processing integration', () => {
         wanOnly: true,
         generationSeed: 456789,
         generationCfg: 4,
-        generationSteps: 24
+        generationSteps: 24,
+        generationFps: 16
       })
       .expect(201);
 
@@ -351,6 +355,7 @@ describe('Project processing integration', () => {
     const ollamaClientService = new OllamaClientService(configService);
     const renderedInputs: Array<{
       generationMode: string;
+      generationFps: number;
       scenes: Array<{
         id: string;
         referenceImageAssetId: string | null;
@@ -397,6 +402,7 @@ describe('Project processing integration', () => {
     expect(renderedInputs).toHaveLength(1);
     expect(renderedInputs[0]).toMatchObject({
       generationMode: 'image',
+      generationFps: 16,
       scenes: [{
         referenceImageAssetId: project?.sourceImageAssetId,
         referenceImageStoragePath: scenes[0]?.referenceImageAsset?.storagePath,

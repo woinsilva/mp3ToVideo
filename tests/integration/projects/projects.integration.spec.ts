@@ -205,7 +205,8 @@ describe('Projects integration', () => {
         wanOnly: true,
         generationSeed: 424242,
         generationCfg: 3.5,
-        generationSteps: 28
+        generationSteps: 28,
+        generationFps: 24
       })
       .expect(201);
 
@@ -217,6 +218,7 @@ describe('Projects integration', () => {
       generationSeed: 424242,
       generationCfg: 3.5,
       generationSteps: 28,
+      generationFps: 24,
       status: 'queued'
     });
 
@@ -226,8 +228,23 @@ describe('Projects integration', () => {
       wanOnly: true,
       generationSeed: 424242,
       generationCfg: 3.5,
-      generationSteps: 28
+      generationSteps: 28,
+      generationFps: 24
     });
+  });
+
+  it('rejects unsupported native generation FPS values', async () => {
+    await request(app.getHttpServer())
+      .post('/projects')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({
+        title: 'Unsupported FPS',
+        generationMode: 'prompt',
+        generationPrompt: 'A cinematic scene with subtle natural movement.',
+        clipDurationSeconds: 5,
+        generationFps: 30
+      })
+      .expect(400);
   });
 
   it('persists a valid source image and queues an image-to-video project', async () => {
@@ -243,7 +260,8 @@ describe('Projects integration', () => {
         wanOnly: true,
         generationSeed: 777,
         generationCfg: 3.5,
-        generationSteps: 24
+        generationSteps: 24,
+        generationFps: 16
       })
       .expect(201);
 

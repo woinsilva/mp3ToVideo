@@ -49,6 +49,12 @@ export class CreateProjectDto {
 
   @IsOptional()
   @Type(() => Number)
+  @IsInt()
+  @IsIn([16, 24])
+  generationFps?: number;
+
+  @IsOptional()
+  @Type(() => Number)
   @IsNumber()
   @Min(1)
   @Max(600)

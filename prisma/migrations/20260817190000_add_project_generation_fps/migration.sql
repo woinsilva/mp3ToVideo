@@ -1,0 +1,2 @@
+ALTER TABLE "Project"
+ADD COLUMN "generationFps" INTEGER NOT NULL DEFAULT 16;

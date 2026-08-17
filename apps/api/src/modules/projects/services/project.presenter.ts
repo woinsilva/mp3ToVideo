@@ -53,6 +53,7 @@ export class ProjectPresenter {
       generationSeed: project.generationSeed,
       generationCfg: project.generationCfg,
       generationSteps: project.generationSteps,
+      generationFps: project.generationFps,
       sourceImageAssetId: project.sourceImageAssetId,
       hasSourceImage: Boolean(project.sourceImageAssetId),
       sourceImage: project.sourceImageAsset
@@ -89,6 +90,7 @@ export class ProjectPresenter {
       generationSeed: project.generationSeed,
       generationCfg: project.generationCfg,
       generationSteps: project.generationSteps,
+      generationFps: project.generationFps,
       sourceImageAssetId: project.sourceImageAssetId,
       hasSourceImage: Boolean(project.sourceImageAssetId),
       sourceImage: project.sourceImageAsset
@@ -390,11 +392,30 @@ export class ProjectPresenter {
       width: attempt.width,
       height: attempt.height,
       fps: attempt.fps,
+      requestedFps: this.metadataNumber(metadata, 'requestedFps') ?? attempt.fps,
+      effectiveFps: this.metadataNumber(metadata, 'effectiveFps'),
+      requestedFrameCount: this.metadataNumber(metadata, 'requestedFrameCount'),
+      calculatedFrameCount:
+        this.metadataNumber(metadata, 'calculatedFrameCount') ?? attempt.expectedFrameCount,
+      effectiveFrameCount: this.metadataNumber(metadata, 'effectiveFrameCount'),
       frameCount: attempt.expectedFrameCount,
       requestedDurationSeconds: attempt.requestedDurationSeconds ?? attempt.durationSeconds,
       effectiveDurationSeconds: attempt.effectiveDurationSeconds ?? attempt.durationSeconds,
+      calculatedDurationSeconds: this.metadataNumber(metadata, 'calculatedDurationSeconds'),
+      videoValidationStatus:
+        typeof metadata.videoValidationStatus === 'string'
+          ? metadata.videoValidationStatus
+          : null,
+      videoValidationWarnings: Array.isArray(metadata.videoValidationWarnings)
+        ? metadata.videoValidationWarnings.filter((value): value is string => typeof value === 'string')
+        : [],
       unetName: attempt.unetName
     };
+  }
+
+  private metadataNumber(metadata: Record<string, unknown>, key: string): number | null {
+    const value = metadata[key];
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
   }
 
   private canRetryAttempt(attempt: SceneRenderAttempt): boolean {

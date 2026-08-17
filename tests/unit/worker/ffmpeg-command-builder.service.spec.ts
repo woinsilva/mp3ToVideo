@@ -66,12 +66,11 @@ describe('FfmpegCommandBuilderService', () => {
   it('builds concat and mux commands for the final render', () => {
     const service = new FfmpegCommandBuilderService();
 
-    expect(
-      service.buildConcatArgs({
+    const concatArgs = service.buildConcatArgs({
         inputListPath: 'C:/tmp/concat-list.txt',
         outputPath: 'C:/tmp/video-track.mp4'
-      })
-    ).toEqual([
+      });
+    expect(concatArgs).toEqual([
       '-y',
       '-f',
       'concat',
@@ -84,13 +83,12 @@ describe('FfmpegCommandBuilderService', () => {
       'C:/tmp/video-track.mp4'
     ]);
 
-    expect(
-      service.buildMuxAudioArgs({
+    const muxArgs = service.buildMuxAudioArgs({
         videoPath: 'C:/tmp/video-track.mp4',
         audioPath: 'C:/tmp/original.mp3',
         outputPath: 'C:/tmp/final.mp4'
-      })
-    ).toEqual([
+      });
+    expect(muxArgs).toEqual([
       '-y',
       '-i',
       'C:/tmp/video-track.mp4',
@@ -103,6 +101,8 @@ describe('FfmpegCommandBuilderService', () => {
       '-shortest',
       'C:/tmp/final.mp4'
     ]);
+    expect([...concatArgs, ...muxArgs]).not.toContain('-r');
+    expect([...concatArgs, ...muxArgs]).not.toContain('-vf');
   });
 
   it('builds trim audio commands for excerpt generation', () => {

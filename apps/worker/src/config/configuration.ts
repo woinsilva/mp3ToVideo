@@ -50,7 +50,7 @@ export const configuration = () => ({
     comfyuiVideoClipType: process.env.COMFYUI_VIDEO_CLIP_TYPE ?? 'wan',
     comfyuiVideoVaeName: process.env.COMFYUI_VIDEO_VAE_NAME ?? 'wan2.2_vae.safetensors',
     comfyuiVideoModelShift: Number(process.env.COMFYUI_VIDEO_MODEL_SHIFT ?? 8),
-    comfyuiVideoFps: Number(process.env.COMFYUI_VIDEO_FPS ?? 24),
+    comfyuiVideoFps: Number(process.env.COMFYUI_VIDEO_FPS ?? 16),
     comfyuiWidth: Number(process.env.COMFYUI_WIDTH ?? 1024),
     comfyuiHeight: Number(process.env.COMFYUI_HEIGHT ?? 576),
     comfyuiSteps: Number(process.env.COMFYUI_STEPS ?? 20),

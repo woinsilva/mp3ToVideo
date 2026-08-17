@@ -28,6 +28,7 @@ import {
   type ResolvedVideoGenerationSettings,
   VideoGenerationSettingsService
 } from './video-generation-settings.service';
+import { VideoMetadataProbeService } from './video-metadata-probe.service';
 
 interface RenderSceneInput {
   id: string;
@@ -55,6 +56,7 @@ interface RenderProjectInput {
   generationSeed: number | null;
   generationCfg: number | null;
   generationSteps: number | null;
+  generationFps: number;
   scenes: RenderSceneInput[];
 }
 
@@ -62,6 +64,7 @@ interface SceneVideoAttemptOutcome {
   result: SceneVideoResult | null;
   errorMessage: string | null;
   restarted: boolean;
+  attemptId: string | null;
 }
 
 interface SceneReferenceInput {
@@ -91,7 +94,9 @@ export class ProjectRenderService {
     @Inject(ProcessingProgressService)
     private readonly processingProgressService: ProcessingProgressService,
     @Inject(VideoGenerationSettingsService)
-    private readonly videoGenerationSettingsService: VideoGenerationSettingsService
+    private readonly videoGenerationSettingsService: VideoGenerationSettingsService,
+    @Inject(VideoMetadataProbeService)
+    private readonly videoMetadataProbeService: VideoMetadataProbeService
   ) {}
 
   async render(input: RenderProjectInput): Promise<void> {
@@ -223,6 +228,7 @@ export class ProjectRenderService {
         }
 
         let generatedSceneVideo: SceneVideoResult | null = null;
+        let generatedSceneAttemptId: string | null = null;
         if (scenePrompt) {
           const videoAttemptOutcome = await this.generateSceneVideoWithAttempts(
             input,
@@ -233,12 +239,19 @@ export class ProjectRenderService {
           );
 
           generatedSceneVideo = videoAttemptOutcome.result;
+          generatedSceneAttemptId = videoAttemptOutcome.attemptId;
           videoGenerationError = videoAttemptOutcome.errorMessage;
         }
 
         if (generatedSceneVideo) {
           visualProvider = generatedSceneVideo.provider;
           await writeFile(sceneClipAbsolutePath, generatedSceneVideo.buffer);
+          if (generatedSceneAttemptId) {
+            await this.verifyGeneratedVideo(
+              generatedSceneAttemptId,
+              sceneClipAbsolutePath
+            );
+          }
           await this.processingProgressService.heartbeat(
             input.projectId,
             this.sceneRenderProgress(index + 1, input.scenes.length),
@@ -513,7 +526,8 @@ export class ProjectRenderService {
       return {
         result: null,
         errorMessage: null,
-        restarted: false
+        restarted: false,
+        attemptId: null
       };
     }
 
@@ -529,6 +543,7 @@ export class ProjectRenderService {
           seed: input.generationSeed,
           cfg: input.generationCfg,
           steps: input.generationSteps,
+          fps: input.generationFps,
           ...this.resolveReferenceResolution(scene)
         }
       );
@@ -561,7 +576,8 @@ export class ProjectRenderService {
         return {
           result,
           errorMessage: null,
-          restarted
+          restarted,
+          attemptId: attempt.id
         };
       } catch (error) {
         if (error instanceof ComfyUiGenerationCancelledError) {
@@ -609,7 +625,8 @@ export class ProjectRenderService {
         return {
           result: null,
           errorMessage: message,
-          restarted
+          restarted,
+          attemptId: attempt.id
         };
       }
     }
@@ -671,10 +688,101 @@ export class ProjectRenderService {
           wanOnly: input.wanOnly,
           referenceImageAssetId: scene.referenceImageAssetId ?? null,
           referenceImageStoragePath: scene.referenceImageStoragePath,
-          generationMode: input.generationMode ?? ProjectGenerationMode.music
+          generationMode: input.generationMode ?? ProjectGenerationMode.music,
+          requestedFps: settings.fps,
+          calculatedFps: settings.fps,
+          effectiveFps: null,
+          requestedFrameCount: settings.requestedFrameCount,
+          calculatedFrameCount: settings.frameCount,
+          effectiveFrameCount: null,
+          calculatedDurationSeconds: settings.effectiveDurationSeconds,
+          probedDurationSeconds: null,
+          videoValidationStatus: 'pending',
+          videoValidationWarnings: []
         }
       }
     });
+  }
+
+  private async verifyGeneratedVideo(attemptId: string, videoPath: string): Promise<void> {
+    const attempt = await this.prismaService.sceneRenderAttempt.findUnique({
+      where: { id: attemptId }
+    });
+    if (!attempt) return;
+
+    const existingMetadata =
+      attempt.metadata && typeof attempt.metadata === 'object' && !Array.isArray(attempt.metadata)
+        ? attempt.metadata as Record<string, unknown>
+        : {};
+
+    try {
+      const actual = await this.videoMetadataProbeService.probe(videoPath);
+      const warnings: string[] = [];
+      const missingMetrics = [
+        actual.frameCount === null ? 'frames' : null,
+        actual.fps === null ? 'FPS' : null,
+        actual.durationSeconds === null ? 'duracao' : null
+      ].filter((value): value is string => value !== null);
+      if (missingMetrics.length > 0) {
+        warnings.push(`FFprobe nao retornou: ${missingMetrics.join(', ')}`);
+      }
+      if (
+        actual.frameCount !== null &&
+        attempt.expectedFrameCount !== null &&
+        actual.frameCount !== attempt.expectedFrameCount
+      ) {
+        warnings.push(`Frame count divergente: Wan=${attempt.expectedFrameCount}, MP4=${actual.frameCount}`);
+      }
+      if (actual.fps !== null && attempt.fps !== null && Math.abs(actual.fps - attempt.fps) > 0.01) {
+        warnings.push(`FPS divergente: solicitado=${attempt.fps}, MP4=${actual.fps}`);
+      }
+      if (
+        actual.durationSeconds !== null &&
+        attempt.effectiveDurationSeconds !== null &&
+        Math.abs(actual.durationSeconds - attempt.effectiveDurationSeconds) > Math.max(0.1, 1 / (attempt.fps ?? 16))
+      ) {
+        warnings.push(
+          `Duracao divergente: calculada=${attempt.effectiveDurationSeconds}s, MP4=${actual.durationSeconds}s`
+        );
+      }
+
+      await this.prismaService.sceneRenderAttempt.update({
+        where: { id: attemptId },
+        data: {
+          effectiveDurationSeconds: actual.durationSeconds ?? attempt.effectiveDurationSeconds,
+          metadata: {
+            ...existingMetadata,
+            effectiveFps: actual.fps,
+            effectiveFrameCount: actual.frameCount,
+            probedDurationSeconds: actual.durationSeconds,
+            videoValidationStatus:
+              missingMetrics.length > 0
+                ? 'unavailable'
+                : warnings.length === 0
+                  ? 'matched'
+                  : 'diverged',
+            videoValidationWarnings: warnings
+          }
+        }
+      });
+
+      if (warnings.length > 0) {
+        this.logger.warn(`Video validation attempt=${attemptId}: ${warnings.join(' | ')}`);
+      }
+    } catch (error) {
+      const warning = `FFprobe indisponivel: ${this.toErrorMessage(error)}`;
+      this.logger.warn(`Video validation attempt=${attemptId}: ${warning}`);
+      await this.prismaService.sceneRenderAttempt.update({
+        where: { id: attemptId },
+        data: {
+          metadata: {
+            ...existingMetadata,
+            videoValidationStatus: 'unavailable',
+            videoValidationWarnings: [warning]
+          }
+        }
+      });
+    }
   }
 
   private async markSceneRenderAttemptSubmitted(

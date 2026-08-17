@@ -50,9 +50,14 @@
                 <div><dt>CFG / Steps</dt><dd>{{ scene.attemptSummary.cfg ?? '--' }} / {{ scene.attemptSummary.steps ?? '--' }}</dd></div>
                 <div><dt>Sampler</dt><dd>{{ scene.attemptSummary.sampler ?? '--' }} · {{ scene.attemptSummary.scheduler ?? '--' }}</dd></div>
                 <div><dt>Resolução</dt><dd>{{ formatResolution(scene) }}</dd></div>
-                <div><dt>FPS / Frames</dt><dd>{{ scene.attemptSummary.fps ?? '--' }} / {{ scene.attemptSummary.frameCount ?? '--' }}</dd></div>
+                <div><dt>FPS solicitado / MP4</dt><dd>{{ formatFps(scene) }}</dd></div>
+                <div><dt>Frames solicitados / Wan / MP4</dt><dd>{{ formatFrames(scene) }}</dd></div>
                 <div><dt>Duração</dt><dd>{{ formatGenerationDuration(scene) }}</dd></div>
+                <div><dt>Validação FFprobe</dt><dd>{{ formatVideoValidation(scene) }}</dd></div>
               </dl>
+              <v-alert v-if="scene.attemptSummary.videoValidationWarnings.length" type="warning" variant="tonal" density="compact">
+                {{ scene.attemptSummary.videoValidationWarnings.join(' · ') }}
+              </v-alert>
               <div class="generation-prompt"><strong>Prompt positivo final</strong><p>{{ scene.attemptSummary.positivePrompt ?? '--' }}</p></div>
               <div class="generation-prompt"><strong>Negative prompt final</strong><p>{{ scene.attemptSummary.negativePrompt ?? '--' }}</p></div>
             </details>
@@ -167,6 +172,26 @@ export default class SceneList extends Vue {
     return attempt.effectiveDurationSeconds !== null && attempt.effectiveDurationSeconds !== attempt.requestedDurationSeconds
       ? `${requested} solicitada · ${attempt.effectiveDurationSeconds}s efetiva`
       : requested;
+  }
+
+  formatFps(scene: ProjectScene): string {
+    const attempt = scene.attemptSummary;
+    if (!attempt) return '--';
+    return `${attempt.requestedFps ?? attempt.fps ?? '--'} / ${attempt.effectiveFps ?? 'aguardando'}`;
+  }
+
+  formatFrames(scene: ProjectScene): string {
+    const attempt = scene.attemptSummary;
+    if (!attempt) return '--';
+    return `${attempt.requestedFrameCount ?? '--'} / ${attempt.calculatedFrameCount ?? attempt.frameCount ?? '--'} / ${attempt.effectiveFrameCount ?? 'aguardando'}`;
+  }
+
+  formatVideoValidation(scene: ProjectScene): string {
+    const status = scene.attemptSummary?.videoValidationStatus;
+    if (status === 'matched') return 'MP4 confirmado';
+    if (status === 'diverged') return 'divergência detectada';
+    if (status === 'unavailable') return 'indisponível';
+    return 'aguardando';
   }
 }
 </script>

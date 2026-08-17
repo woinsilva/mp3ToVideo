@@ -53,6 +53,7 @@ export class ProjectsController {
       generationSeed: input.generationSeed,
       generationCfg: input.generationCfg,
       generationSteps: input.generationSteps,
+      generationFps: input.generationFps,
       clipDurationSeconds: input.clipDurationSeconds,
       sceneDurationSeconds: input.sceneDurationSeconds,
       visualCheckpointName: input.visualCheckpointName,

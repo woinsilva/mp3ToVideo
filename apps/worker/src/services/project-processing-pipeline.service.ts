@@ -149,6 +149,7 @@ export class ProjectProcessingPipelineService {
         generationSeed: project.generationSeed,
         generationCfg: project.generationCfg,
         generationSteps: project.generationSteps,
+        generationFps: project.generationFps,
         scenes: project.scenes.map((scene) => ({
           id: scene.id,
           title: scene.title,
@@ -545,6 +546,7 @@ export class ProjectProcessingPipelineService {
         generationSeed: project.generationSeed,
         generationCfg: project.generationCfg,
         generationSteps: project.generationSteps,
+        generationFps: project.generationFps,
         scenes: persistedScenes.map((scene) => ({
           id: scene.id,
           title: scene.title,

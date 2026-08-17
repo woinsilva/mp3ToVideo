@@ -40,6 +40,34 @@ describe('VideoGenerationSettingsService', () => {
     expect(calculateWanFrameCount(5, 16)).toBe(81);
   });
 
+  it('generates more native Wan frames at 24 FPS while preserving duration and steps', () => {
+    const at16Fps = createService().resolve(prompt, 5, { fps: 16, steps: 24, seed: 7 });
+    const at24Fps = createService().resolve(prompt, 5, { fps: 24, steps: 24, seed: 7 });
+
+    expect(at16Fps).toMatchObject({
+      fps: 16,
+      requestedFrameCount: 80,
+      frameCount: 81,
+      effectiveDurationSeconds: 5,
+      steps: 24
+    });
+    expect(at24Fps).toMatchObject({
+      fps: 24,
+      requestedFrameCount: 120,
+      frameCount: 121,
+      effectiveDurationSeconds: 5,
+      steps: 24
+    });
+    expect(at24Fps.frameCount).toBeGreaterThan(at16Fps.frameCount);
+  });
+
+  it('always resolves the nearest valid 4n+1 Wan frame count', () => {
+    for (const [duration, fps] of [[2.1, 16], [2.2, 24], [5, 16], [5, 24]]) {
+      const frameCount = calculateWanFrameCount(duration, fps);
+      expect((frameCount - 1) % 4).toBe(0);
+    }
+  });
+
   it('uses reproducible overrides and builds a conservative stability profile', () => {
     const result = createService().resolve(prompt, 3, {
       stabilityTest: true,
@@ -53,6 +81,7 @@ describe('VideoGenerationSettingsService', () => {
       cfg: 3.5,
       steps: 28,
       fps: 16,
+      requestedFrameCount: 48,
       frameCount: 49,
       requestedDurationSeconds: 3,
       effectiveDurationSeconds: 3
