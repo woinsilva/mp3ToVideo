@@ -12,7 +12,12 @@ describe('ProjectsService prompt-based creation', () => {
       title: 'Floresta luminosa',
       generationMode: 'prompt',
       generationPrompt: 'Uma astronauta atravessa uma floresta bioluminescente.',
-      clipDurationSeconds: 10,
+      stabilityTest: true,
+      wanOnly: true,
+      generationSeed: 424242,
+      generationCfg: 3.5,
+      generationSteps: 28,
+      clipDurationSeconds: 5,
       sceneDurationSeconds: 5,
       visualCheckpointName: null,
       status: 'draft',
@@ -53,7 +58,12 @@ describe('ProjectsService prompt-based creation', () => {
       title: 'Floresta luminosa',
       generationMode: 'prompt',
       generationPrompt: '  Uma astronauta atravessa uma floresta bioluminescente.  ',
-      clipDurationSeconds: 10,
+      stabilityTest: true,
+      wanOnly: true,
+      generationSeed: 424242,
+      generationCfg: 3.5,
+      generationSteps: 28,
+      clipDurationSeconds: 5,
       sceneDurationSeconds: 5
     });
 
@@ -62,7 +72,12 @@ describe('ProjectsService prompt-based creation', () => {
         data: expect.objectContaining({
           generationMode: 'prompt',
           generationPrompt: 'Uma astronauta atravessa uma floresta bioluminescente.',
-          clipDurationSeconds: 10
+          stabilityTest: true,
+          wanOnly: true,
+          generationSeed: 424242,
+          generationCfg: 3.5,
+          generationSteps: 28,
+          clipDurationSeconds: 5
         })
       })
     );

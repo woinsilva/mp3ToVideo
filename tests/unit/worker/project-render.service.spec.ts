@@ -12,7 +12,7 @@ describe('ProjectRenderService', () => {
     rmSync(root, { force: true, recursive: true });
   });
 
-  it('fails the scene explicitly when ComfyUI generation fails and should not fall back to a procedural clip', async () => {
+  it('fails a Wan-only scene explicitly without image or procedural fallbacks', async () => {
     const prismaService = {
       render: {
         findFirst: vi.fn().mockResolvedValue(null),
@@ -50,6 +50,7 @@ describe('ProjectRenderService', () => {
     } as never;
 
     const createSceneClip = vi.fn();
+    const generateImage = vi.fn().mockRejectedValue(new Error('image fallback should not run'));
 
     const service = new ProjectRenderService(
       prismaService,
@@ -74,7 +75,7 @@ describe('ProjectRenderService', () => {
         generate: vi.fn().mockRejectedValue(new Error('ComfyUI video workflow rejected: missing video model'))
       } as never,
       {
-        generate: vi.fn().mockRejectedValue(new Error('ComfyUI image workflow rejected: missing checkpoint'))
+        generate: generateImage
       } as never,
       {
         createSceneClip,
@@ -85,6 +86,29 @@ describe('ProjectRenderService', () => {
       } as never,
       {
         heartbeat: vi.fn().mockResolvedValue(undefined)
+      } as never,
+      {
+        resolve: vi.fn().mockReturnValue({
+          workflowName: 'wan-2.2-ti2v-5b',
+          positivePrompt: 'sunset over the ocean',
+          negativePrompt: 'blurry',
+          seed: 123,
+          cfg: 4.5,
+          steps: 24,
+          sampler: 'uni_pc',
+          scheduler: 'simple',
+          width: 1280,
+          height: 704,
+          fps: 16,
+          frameCount: 129,
+          requestedDurationSeconds: 8,
+          effectiveDurationSeconds: 8,
+          unetName: 'wan.safetensors',
+          clipName: 'clip.safetensors',
+          clipType: 'wan',
+          vaeName: 'vae.safetensors',
+          modelShift: 8
+        })
       } as never
     );
 
@@ -95,6 +119,11 @@ describe('ProjectRenderService', () => {
         audioPath: 'storage/uploads/org-1/project-1/original.mp3',
         durationSeconds: 8,
         visualCheckpointName: null,
+        stabilityTest: false,
+        wanOnly: true,
+        generationSeed: null,
+        generationCfg: null,
+        generationSteps: null,
         scenes: [
           {
             id: 'scene-1',
@@ -109,10 +138,11 @@ describe('ProjectRenderService', () => {
         ]
       })
     ).rejects.toThrow(
-      'Cena 1 (Intro Scene) falhou na geracao visual: video: ComfyUI video workflow rejected: missing video model | imagem: ComfyUI image workflow rejected: missing checkpoint.'
+      'ComfyUI video workflow rejected: missing video model'
     );
 
     expect(createSceneClip).not.toHaveBeenCalled();
+    expect(generateImage).not.toHaveBeenCalled();
     expect(prismaService.scene.update).toHaveBeenCalledWith({
       where: {
         id: 'scene-1'
@@ -235,6 +265,9 @@ describe('ProjectRenderService', () => {
       } as never,
       {
         heartbeat: vi.fn().mockResolvedValue(undefined)
+      } as never,
+      {
+        resolve: vi.fn()
       } as never
     );
 
@@ -244,6 +277,11 @@ describe('ProjectRenderService', () => {
       audioPath: null,
       durationSeconds: 8,
       visualCheckpointName: null,
+      stabilityTest: true,
+      wanOnly: true,
+      generationSeed: 123,
+      generationCfg: 4.5,
+      generationSteps: 24,
       scenes: [
         {
           id: 'scene-1',

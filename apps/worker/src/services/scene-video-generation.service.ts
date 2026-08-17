@@ -2,8 +2,9 @@ import { Inject, Injectable } from '@nestjs/common';
 
 import type { ComfyUiGenerationResult, ComfyUiHeartbeat } from './comfyui-client.service';
 import { ComfyUiClientService } from './comfyui-client.service';
+import type { ResolvedVideoGenerationSettings } from './video-generation-settings.service';
 
-interface SceneVideoInput {
+interface SceneVideoInput extends ResolvedVideoGenerationSettings {
   sceneId: string;
   positivePrompt: string;
   negativePrompt: string;
@@ -37,6 +38,18 @@ export class SceneVideoGenerationService {
         width: input.width,
         height: input.height,
         durationSeconds: input.durationSeconds,
+        frameCount: input.frameCount,
+        fps: input.fps,
+        seed: input.seed,
+        steps: input.steps,
+        cfg: input.cfg,
+        sampler: input.sampler,
+        scheduler: input.scheduler,
+        unetName: input.unetName,
+        clipName: input.clipName,
+        clipType: input.clipType,
+        vaeName: input.vaeName,
+        modelShift: input.modelShift,
         referenceImagePath: input.referenceImagePath,
         onSubmitted: input.onSubmitted,
         onHeartbeat: input.onHeartbeat,

@@ -23,6 +23,10 @@ import {
   SceneVideoGenerationService,
   type SceneVideoResult
 } from './scene-video-generation.service';
+import {
+  type ResolvedVideoGenerationSettings,
+  VideoGenerationSettingsService
+} from './video-generation-settings.service';
 
 interface RenderSceneInput {
   id: string;
@@ -41,6 +45,11 @@ interface RenderProjectInput {
   audioPath: string | null;
   durationSeconds: number;
   visualCheckpointName: string | null;
+  stabilityTest: boolean;
+  wanOnly: boolean;
+  generationSeed: number | null;
+  generationCfg: number | null;
+  generationSteps: number | null;
   scenes: RenderSceneInput[];
 }
 
@@ -75,7 +84,9 @@ export class ProjectRenderService {
     @Inject(FfmpegRenderingService)
     private readonly ffmpegRenderingService: FfmpegRenderingService,
     @Inject(ProcessingProgressService)
-    private readonly processingProgressService: ProcessingProgressService
+    private readonly processingProgressService: ProcessingProgressService,
+    @Inject(VideoGenerationSettingsService)
+    private readonly videoGenerationSettingsService: VideoGenerationSettingsService
   ) {}
 
   async render(input: RenderProjectInput): Promise<void> {
@@ -222,6 +233,14 @@ export class ProjectRenderService {
             `Scene ${index + 1}/${input.scenes.length} [${scene.title}]: provider=${generatedSceneVideo.provider}`
           );
         } else {
+          if (input.wanOnly) {
+            const message =
+              videoGenerationError ??
+              `Cena ${index + 1} nao foi gerada pelo ComfyUI/Wan; nenhum fallback foi permitido.`;
+            await this.failScene(input.projectId, scene.id, message, index, input.scenes.length);
+            throw new Error(message);
+          }
+
           let generatedSceneImage = null;
           if (scenePrompt) {
             try {
@@ -481,16 +500,29 @@ export class ProjectRenderService {
     let restarted = false;
 
     for (;;) {
-      const attempt = await this.createSceneRenderAttempt(input, scene, sceneIndex, reference);
+      const settings = this.videoGenerationSettingsService.resolve(
+        scenePrompt,
+        scene.durationSeconds,
+        {
+          stabilityTest: input.stabilityTest,
+          seed: input.generationSeed,
+          cfg: input.generationCfg,
+          steps: input.generationSteps
+        }
+      );
+      const attempt = await this.createSceneRenderAttempt(
+        input,
+        scene,
+        sceneIndex,
+        settings,
+        reference
+      );
 
       try {
         const result = await this.sceneVideoGenerationService.generate({
           sceneId: scene.id,
-          positivePrompt: scenePrompt.positivePrompt,
-          negativePrompt: scenePrompt.negativePrompt,
-          width: this.configService.get<number>('visual.comfyuiWidth', 640),
-          height: this.configService.get<number>('visual.comfyuiHeight', 360),
-          durationSeconds: scene.durationSeconds,
+          ...settings,
+          durationSeconds: settings.requestedDurationSeconds,
           referenceImagePath: reference.path,
           onSubmitted: (promptId) => this.markSceneRenderAttemptSubmitted(attempt.id, promptId),
           onHeartbeat: (heartbeat) =>
@@ -565,6 +597,7 @@ export class ProjectRenderService {
     input: RenderProjectInput,
     scene: RenderSceneInput,
     sceneIndex: number,
+    settings: ResolvedVideoGenerationSettings,
     reference?: SceneReferenceInput
   ) {
     const latestAttempt = await this.prismaService.sceneRenderAttempt.findFirst({
@@ -576,39 +609,44 @@ export class ProjectRenderService {
       }
     });
     const attemptNumber = (latestAttempt?.attemptNumber ?? 0) + 1;
-    const fps = this.configService.get<number>('visual.comfyuiVideoFps', 24);
-    const expectedFrameCount = Math.max(1, Math.round(scene.durationSeconds * fps) + 1);
-
     return this.prismaService.sceneRenderAttempt.create({
       data: {
         projectId: input.projectId,
         sceneId: scene.id,
         attemptNumber,
         provider: 'comfyui-video',
+        workflowName: settings.workflowName,
         status: SceneRenderAttemptStatus.queued,
+        positivePrompt: settings.positivePrompt,
+        negativePrompt: settings.negativePrompt,
+        seed: settings.seed,
         sourceType: reference?.sourceType ?? (scene.referenceImageStoragePath ? 'reference-image' : 'prompt'),
         hasReferenceImage: Boolean(reference?.path ?? scene.referenceImageStoragePath),
-        width: this.configService.get<number>('visual.comfyuiWidth', 640),
-        height: this.configService.get<number>('visual.comfyuiHeight', 360),
-        fps,
-        durationSeconds: scene.durationSeconds,
-        expectedFrameCount,
-        steps: this.configService.get<number>('visual.comfyuiSteps', 20),
-        cfg: this.configService.get<number>('visual.comfyuiCfg', 5),
-        sampler: this.configService.get<string>('visual.comfyuiSampler', 'uni_pc'),
-        scheduler: this.configService.get<string>('visual.comfyuiScheduler', 'simple'),
+        width: settings.width,
+        height: settings.height,
+        fps: settings.fps,
+        durationSeconds: settings.requestedDurationSeconds,
+        requestedDurationSeconds: settings.requestedDurationSeconds,
+        effectiveDurationSeconds: settings.effectiveDurationSeconds,
+        expectedFrameCount: settings.frameCount,
+        steps: settings.steps,
+        cfg: settings.cfg,
+        sampler: settings.sampler,
+        scheduler: settings.scheduler,
         checkpointName: input.visualCheckpointName,
-        unetName: this.configService.get<string>('visual.comfyuiVideoUnetName') ?? null,
-        clipName: this.configService.get<string>('visual.comfyuiVideoClipName') ?? null,
-        clipType: this.configService.get<string>('visual.comfyuiVideoClipType') ?? null,
-        vaeName: this.configService.get<string>('visual.comfyuiVideoVaeName') ?? null,
-        modelShift: this.configService.get<number>('visual.comfyuiVideoModelShift', 8),
+        unetName: settings.unetName,
+        clipName: settings.clipName,
+        clipType: settings.clipType,
+        vaeName: settings.vaeName,
+        modelShift: settings.modelShift,
         metadata: {
           sceneIndex,
           sceneTitle: scene.title,
           totalScenes: input.scenes.length,
           hasManualReferenceImage: reference?.hasManualReferenceImage ?? Boolean(scene.referenceImageStoragePath),
-          hasContinuityFrame: reference?.hasContinuityFrame ?? false
+          hasContinuityFrame: reference?.hasContinuityFrame ?? false,
+          stabilityTest: input.stabilityTest,
+          wanOnly: input.wanOnly
         }
       }
     });

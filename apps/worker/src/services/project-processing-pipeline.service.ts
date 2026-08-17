@@ -137,6 +137,11 @@ export class ProjectProcessingPipelineService {
           : project.track.storagePath,
         durationSeconds: effectiveDurationSeconds,
         visualCheckpointName: project.visualCheckpointName,
+        stabilityTest: project.stabilityTest,
+        wanOnly: project.wanOnly,
+        generationSeed: project.generationSeed,
+        generationCfg: project.generationCfg,
+        generationSteps: project.generationSteps,
         scenes: project.scenes.map((scene) => ({
           id: scene.id,
           title: scene.title,
@@ -394,6 +399,11 @@ export class ProjectProcessingPipelineService {
         audioPath: null,
         durationSeconds: effectiveDurationSeconds,
         visualCheckpointName: project.visualCheckpointName,
+        stabilityTest: project.stabilityTest,
+        wanOnly: project.wanOnly,
+        generationSeed: project.generationSeed,
+        generationCfg: project.generationCfg,
+        generationSteps: project.generationSteps,
         scenes: persistedScenes.map((scene) => ({
           id: scene.id,
           title: scene.title,

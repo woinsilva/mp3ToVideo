@@ -39,6 +39,22 @@
               </span>
               <strong>{{ formatAttemptElapsed(scene.attemptSummary.elapsedSeconds) }}</strong>
             </div>
+            <details v-if="scene.attemptSummary" class="generation-details">
+              <summary>Parâmetros da geração</summary>
+              <dl>
+                <div><dt>Provider</dt><dd>{{ scene.attemptSummary.provider }}</dd></div>
+                <div><dt>Workflow</dt><dd>{{ scene.attemptSummary.workflowName ?? '--' }}</dd></div>
+                <div><dt>Modelo</dt><dd>{{ scene.attemptSummary.unetName ?? '--' }}</dd></div>
+                <div><dt>Seed</dt><dd>{{ scene.attemptSummary.seed ?? '--' }}</dd></div>
+                <div><dt>CFG / Steps</dt><dd>{{ scene.attemptSummary.cfg ?? '--' }} / {{ scene.attemptSummary.steps ?? '--' }}</dd></div>
+                <div><dt>Sampler</dt><dd>{{ scene.attemptSummary.sampler ?? '--' }} · {{ scene.attemptSummary.scheduler ?? '--' }}</dd></div>
+                <div><dt>Resolução</dt><dd>{{ formatResolution(scene) }}</dd></div>
+                <div><dt>FPS / Frames</dt><dd>{{ scene.attemptSummary.fps ?? '--' }} / {{ scene.attemptSummary.frameCount ?? '--' }}</dd></div>
+                <div><dt>Duração</dt><dd>{{ formatGenerationDuration(scene) }}</dd></div>
+              </dl>
+              <div class="generation-prompt"><strong>Prompt positivo final</strong><p>{{ scene.attemptSummary.positivePrompt ?? '--' }}</p></div>
+              <div class="generation-prompt"><strong>Negative prompt final</strong><p>{{ scene.attemptSummary.negativePrompt ?? '--' }}</p></div>
+            </details>
             <div class="scene-reference">
               <v-chip
                 :color="scene.hasReferenceImage ? 'success' : 'default'"
@@ -136,6 +152,20 @@ export default class SceneList extends Vue {
     const minutes = Math.floor(safeValue / 60);
     const remaining = safeValue % 60;
     return `${minutes}:${String(remaining).padStart(2, '0')}`;
+  }
+
+  formatResolution(scene: ProjectScene): string {
+    const attempt = scene.attemptSummary;
+    return attempt?.width && attempt.height ? `${attempt.width}×${attempt.height}` : '--';
+  }
+
+  formatGenerationDuration(scene: ProjectScene): string {
+    const attempt = scene.attemptSummary;
+    if (!attempt?.requestedDurationSeconds) return '--';
+    const requested = `${attempt.requestedDurationSeconds}s`;
+    return attempt.effectiveDurationSeconds !== null && attempt.effectiveDurationSeconds !== attempt.requestedDurationSeconds
+      ? `${requested} solicitada · ${attempt.effectiveDurationSeconds}s efetiva`
+      : requested;
   }
 }
 </script>
@@ -259,6 +289,15 @@ export default class SceneList extends Vue {
   flex: 0 0 auto;
   color: #1c1e21;
 }
+
+.generation-details { margin-top: 9px; border: 1px solid #dfe3e8; border-radius: 8px; background: #fff; font-size: 0.72rem; }
+.generation-details summary { padding: 8px 10px; color: #0866ff; cursor: pointer; font-weight: 800; }
+.generation-details dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px 10px; margin: 0; padding: 0 10px 10px; }
+.generation-details dl div { min-width: 0; }
+.generation-details dt { color: #65676b; }
+.generation-details dd { margin: 2px 0 0; overflow-wrap: anywhere; font-weight: 700; }
+.generation-prompt { margin: 0 10px 10px; padding-top: 8px; border-top: 1px solid #e4e6eb; }
+.generation-prompt p { display: block; margin-top: 4px; overflow: visible; color: #4b4f56; -webkit-line-clamp: unset; }
 
 .scene-retry-button {
   display: inline-flex;

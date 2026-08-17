@@ -134,6 +134,11 @@ model Project {
   title           String
   generationMode  ProjectGenerationMode @default(music)
   generationPrompt String?
+  stabilityTest    Boolean         @default(false)
+  wanOnly           Boolean         @default(false)
+  generationSeed    Int?
+  generationCfg     Float?
+  generationSteps   Int?
   clipDurationSeconds Float?
   sceneDurationSeconds Float?
   visualCheckpointName String?
@@ -246,14 +251,20 @@ model SceneRenderAttempt {
   sceneId             String
   attemptNumber       Int
   provider            String
+  workflowName        String?
   status              SceneRenderAttemptStatus @default(queued)
   promptId            String?
+  positivePrompt      String?
+  negativePrompt      String?
+  seed                Int?
   sourceType          String
   hasReferenceImage   Boolean                  @default(false)
   width               Int?
   height              Int?
   fps                 Int?
   durationSeconds     Float?
+  requestedDurationSeconds Float?
+  effectiveDurationSeconds Float?
   expectedFrameCount  Int?
   steps               Int?
   cfg                 Float?

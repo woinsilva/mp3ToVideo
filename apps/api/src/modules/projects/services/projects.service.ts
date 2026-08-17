@@ -22,6 +22,11 @@ interface CreateProjectInput {
   title: string;
   generationMode?: 'music' | 'prompt';
   generationPrompt?: string;
+  stabilityTest?: boolean;
+  wanOnly?: boolean;
+  generationSeed?: number;
+  generationCfg?: number;
+  generationSteps?: number;
   clipDurationSeconds?: number;
   sceneDurationSeconds?: number;
   visualCheckpointName?: string;
@@ -90,6 +95,14 @@ export class ProjectsService {
       throw new BadRequestException('Video duration is required for prompt-based generation');
     }
 
+    if (
+      generationMode === 'prompt' &&
+      clipDurationSeconds !== null &&
+      ![2, 3, 5].includes(clipDurationSeconds)
+    ) {
+      throw new BadRequestException('Prompt-based video duration must be 2, 3 or 5 seconds');
+    }
+
     const project = await this.prismaService.project.create({
       data: {
         organizationId: input.organizationId,
@@ -97,6 +110,11 @@ export class ProjectsService {
         title: input.title.trim(),
         generationMode,
         generationPrompt,
+        stabilityTest: generationMode === 'prompt' && Boolean(input.stabilityTest),
+        wanOnly: generationMode === 'prompt' && input.wanOnly !== false,
+        generationSeed: generationMode === 'prompt' ? input.generationSeed ?? null : null,
+        generationCfg: generationMode === 'prompt' ? input.generationCfg ?? null : null,
+        generationSteps: generationMode === 'prompt' ? input.generationSteps ?? null : null,
         clipDurationSeconds,
         sceneDurationSeconds,
         visualCheckpointName,

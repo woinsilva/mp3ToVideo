@@ -16,6 +16,11 @@ export interface ProjectSummary {
   title: string;
   generationMode: 'music' | 'prompt';
   generationPrompt: string | null;
+  stabilityTest: boolean;
+  wanOnly: boolean;
+  generationSeed: number | null;
+  generationCfg: number | null;
+  generationSteps: number | null;
   clipDurationSeconds: number | null;
   sceneDurationSeconds: number | null;
   visualCheckpointName: string | null;
@@ -29,6 +34,11 @@ export interface CreateProjectInput {
   title: string;
   generationMode: 'music' | 'prompt';
   generationPrompt: string | null;
+  stabilityTest: boolean;
+  wanOnly: boolean;
+  generationSeed: number | null;
+  generationCfg: number | null;
+  generationSteps: number | null;
   clipDurationSeconds: number | null;
   sceneDurationSeconds: number | null;
   visualCheckpointName: string | null;
@@ -144,6 +154,22 @@ export interface SceneRenderAttemptSummary {
   lastHeartbeatAt: string | null;
   lastExternalHeartbeatAt: string | null;
   canRetryAttempt: boolean;
+  provider: string;
+  workflowName: string | null;
+  positivePrompt: string | null;
+  negativePrompt: string | null;
+  seed: number | null;
+  cfg: number | null;
+  steps: number | null;
+  sampler: string | null;
+  scheduler: string | null;
+  width: number | null;
+  height: number | null;
+  fps: number | null;
+  frameCount: number | null;
+  requestedDurationSeconds: number | null;
+  effectiveDurationSeconds: number | null;
+  unetName: string | null;
 }
 
 export interface RenderAssetView {

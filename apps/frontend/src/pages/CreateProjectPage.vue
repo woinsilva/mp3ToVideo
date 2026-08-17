@@ -51,7 +51,20 @@
 
         <label v-if="generationMode === 'prompt'" class="auth-input-group">
           <span class="auth-input-label">Duração do vídeo em segundos</span>
-          <input v-model="clipDurationSecondsInput" class="auth-input" type="number" min="1" max="600" step="1" placeholder="Ex.: 10" />
+          <select v-model="clipDurationSecondsInput" class="auth-input">
+            <option value="" disabled>Selecione a duração</option>
+            <option :value="2">2 segundos</option>
+            <option :value="3">3 segundos</option>
+            <option :value="5">5 segundos</option>
+          </select>
+        </label>
+
+        <label v-if="generationMode === 'prompt'" class="test-toggle">
+          <input v-model="stabilityTest" type="checkbox" />
+          <span>
+            <strong>Minimal Motion / Stability Test</strong>
+            <small>Câmera fixa, movimento mínimo e preservação de identidade, anatomia e cenário.</small>
+          </span>
         </label>
 
         <details class="advanced-settings">
@@ -60,6 +73,23 @@
             <v-icon icon="mdi-chevron-down" size="20" />
           </summary>
           <div class="advanced-settings__body">
+            <label v-if="generationMode === 'prompt'" class="auth-input-group">
+              <span class="auth-input-label">Seed reproduzível</span>
+              <input v-model="generationSeedInput" class="auth-input" type="number" min="0" max="2147483646" step="1" placeholder="Aleatório" />
+              <span class="field-help">Vazio gera um seed aleatório, que será salvo nos detalhes.</span>
+            </label>
+            <label v-if="generationMode === 'prompt'" class="auth-input-group">
+              <span class="auth-input-label">CFG</span>
+              <input v-model="generationCfgInput" class="auth-input" type="number" min="1" max="20" step="0.1" placeholder="Padrão do ambiente" />
+            </label>
+            <label v-if="generationMode === 'prompt'" class="auth-input-group">
+              <span class="auth-input-label">Steps</span>
+              <input v-model="generationStepsInput" class="auth-input" type="number" min="1" max="100" step="1" placeholder="Padrão do ambiente" />
+            </label>
+            <label v-if="generationMode === 'prompt'" class="test-toggle test-toggle--compact">
+              <input v-model="wanOnly" type="checkbox" />
+              <span><strong>ComfyUI / Wan only</strong><small>Falhar sem fallback caso o Wan não gere o vídeo.</small></span>
+            </label>
             <label v-if="generationMode === 'music'" class="auth-input-group">
               <span class="auth-input-label">Duração total do teste</span>
               <input v-model="clipDurationSecondsInput" class="auth-input" type="number" min="1" max="600" step="1" placeholder="Vídeo completo" />
@@ -85,6 +115,9 @@
         <v-alert v-if="submitted && clipDurationSecondsRawValue && normalizedClipDurationSeconds === null" type="warning" variant="tonal">Informe uma duração entre 1 e 600 segundos.</v-alert>
         <v-alert v-if="submitted && generationMode === 'prompt' && normalizedClipDurationSeconds === null" type="warning" variant="tonal">A duração é obrigatória para gerar pela descrição.</v-alert>
         <v-alert v-if="submitted && sceneDurationSecondsRawValue && normalizedSceneDurationSeconds === null" type="warning" variant="tonal">Informe uma duração por cena entre 3 e 30 segundos.</v-alert>
+        <v-alert v-if="submitted && generationSeedRawValue && normalizedGenerationSeed === null" type="warning" variant="tonal">Informe um seed inteiro entre 0 e 2147483646.</v-alert>
+        <v-alert v-if="submitted && generationCfgRawValue && normalizedGenerationCfg === null" type="warning" variant="tonal">Informe um CFG entre 1 e 20.</v-alert>
+        <v-alert v-if="submitted && generationStepsRawValue && normalizedGenerationSteps === null" type="warning" variant="tonal">Informe steps entre 1 e 100.</v-alert>
 
         <div class="app-button-row">
           <button class="app-button app-button--large" type="submit" :disabled="loading">
@@ -114,6 +147,11 @@ export default class CreateProjectPage extends Vue {
   sceneDurationSecondsInput: string | number = '';
   visualCheckpointName = '';
   manualLyricsText = '';
+  stabilityTest = false;
+  wanOnly = true;
+  generationSeedInput: string | number = '';
+  generationCfgInput: string | number = '';
+  generationStepsInput: string | number = '';
   loading = false;
   errorMessage: string | null = null;
   submitted = false;
@@ -126,6 +164,9 @@ export default class CreateProjectPage extends Vue {
   get normalizedVisualCheckpointName(): string | null { return this.visualCheckpointName.trim() || null; }
   get clipDurationSecondsRawValue(): string { return String(this.clipDurationSecondsInput ?? '').trim(); }
   get sceneDurationSecondsRawValue(): string { return String(this.sceneDurationSecondsInput ?? '').trim(); }
+  get generationSeedRawValue(): string { return String(this.generationSeedInput ?? '').trim(); }
+  get generationCfgRawValue(): string { return String(this.generationCfgInput ?? '').trim(); }
+  get generationStepsRawValue(): string { return String(this.generationStepsInput ?? '').trim(); }
 
   get normalizedClipDurationSeconds(): number | null {
     const value = Number(this.clipDurationSecondsRawValue);
@@ -137,12 +178,27 @@ export default class CreateProjectPage extends Vue {
     return this.sceneDurationSecondsRawValue && Number.isFinite(value) && value >= 3 && value <= 30 ? Math.floor(value) : null;
   }
 
+  get normalizedGenerationSeed(): number | null {
+    const value = Number(this.generationSeedRawValue);
+    return this.generationSeedRawValue && Number.isInteger(value) && value >= 0 && value <= 2147483646 ? value : null;
+  }
+
+  get normalizedGenerationCfg(): number | null {
+    const value = Number(this.generationCfgRawValue);
+    return this.generationCfgRawValue && Number.isFinite(value) && value >= 1 && value <= 20 ? value : null;
+  }
+
+  get normalizedGenerationSteps(): number | null {
+    const value = Number(this.generationStepsRawValue);
+    return this.generationStepsRawValue && Number.isInteger(value) && value >= 1 && value <= 100 ? value : null;
+  }
+
   async submit() {
     if (!this.authStore.token) return;
     this.submitted = true;
 
     const invalidPromptMode = this.generationMode === 'prompt' && (this.normalizedGenerationPrompt.length < 10 || this.normalizedClipDurationSeconds === null);
-    if (!this.normalizedTitle || invalidPromptMode || (this.clipDurationSecondsRawValue && this.normalizedClipDurationSeconds === null) || (this.sceneDurationSecondsRawValue && this.normalizedSceneDurationSeconds === null)) return;
+    if (!this.normalizedTitle || invalidPromptMode || (this.clipDurationSecondsRawValue && this.normalizedClipDurationSeconds === null) || (this.sceneDurationSecondsRawValue && this.normalizedSceneDurationSeconds === null) || (this.generationSeedRawValue && this.normalizedGenerationSeed === null) || (this.generationCfgRawValue && this.normalizedGenerationCfg === null) || (this.generationStepsRawValue && this.normalizedGenerationSteps === null)) return;
 
     this.loading = true;
     this.errorMessage = null;
@@ -151,6 +207,11 @@ export default class CreateProjectPage extends Vue {
         title: this.normalizedTitle,
         generationMode: this.generationMode,
         generationPrompt: this.generationMode === 'prompt' ? this.normalizedGenerationPrompt : null,
+        stabilityTest: this.generationMode === 'prompt' && this.stabilityTest,
+        wanOnly: this.generationMode === 'prompt' && this.wanOnly,
+        generationSeed: this.generationMode === 'prompt' ? this.normalizedGenerationSeed : null,
+        generationCfg: this.generationMode === 'prompt' ? this.normalizedGenerationCfg : null,
+        generationSteps: this.generationMode === 'prompt' ? this.normalizedGenerationSteps : null,
         clipDurationSeconds: this.normalizedClipDurationSeconds,
         sceneDurationSeconds: this.normalizedSceneDurationSeconds,
         visualCheckpointName: this.normalizedVisualCheckpointName,
@@ -184,6 +245,11 @@ export default class CreateProjectPage extends Vue {
 .form-section-heading h3, .form-section-heading p { margin: 0; }
 .form-section-heading p, .field-help { color: #65676b; font-size: 0.8rem; }
 .auth-input-label small { color: #65676b; font-weight: 500; }
+.test-toggle { display: flex; align-items: flex-start; gap: 12px; padding: 14px; border: 1px solid #b9cdf4; border-radius: 12px; background: #f2f7ff; cursor: pointer; }
+.test-toggle input { margin-top: 3px; }
+.test-toggle span { display: flex; flex-direction: column; gap: 3px; }
+.test-toggle small { color: #65676b; line-height: 1.4; }
+.test-toggle--compact { align-self: end; background: #fff; }
 .advanced-settings { border: 1px solid #dfe3e8; border-radius: 12px; background: #f7f8fa; }
 .advanced-settings summary { display: flex; align-items: center; justify-content: space-between; padding: 15px 16px; cursor: pointer; font-weight: 700; list-style: none; }
 .advanced-settings summary span { display: flex; align-items: center; gap: 8px; }

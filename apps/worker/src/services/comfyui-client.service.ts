@@ -43,6 +43,18 @@ export interface GenerateVideoInput {
   width: number;
   height: number;
   durationSeconds: number;
+  frameCount: number;
+  fps: number;
+  seed: number;
+  steps: number;
+  cfg: number;
+  sampler: string;
+  scheduler: string;
+  unetName: string;
+  clipName: string;
+  clipType: string;
+  vaeName: string;
+  modelShift: number;
   sceneId: string;
   referenceImagePath?: string | null;
   onSubmitted?: (promptId: string) => Promise<void>;
@@ -217,13 +229,10 @@ export class ComfyUiClientService {
       return null;
     }
 
-    const fps = this.configService.get<number>('visual.comfyuiVideoFps', 24);
-    const length = Math.max(1, Math.round(input.durationSeconds * fps) + 1);
-
     this.logger.log(
       `[ComfyUI Video] Starting generation for scene=${input.sceneId}: ` +
         `size=${input.width}x${input.height}, duration=${input.durationSeconds}s, ` +
-        `frames=${length}, fps=${fps}`
+        `frames=${input.frameCount}, fps=${input.fps}, seed=${input.seed}, cfg=${input.cfg}, steps=${input.steps}`
     );
 
     try {
@@ -235,8 +244,18 @@ export class ComfyUiClientService {
         negativePrompt: input.negativePrompt,
         width: input.width,
         height: input.height,
-        length,
-        seed: this.randomSeed(),
+        length: input.frameCount,
+        fps: input.fps,
+        seed: input.seed,
+        steps: input.steps,
+        cfg: input.cfg,
+        sampler: input.sampler,
+        scheduler: input.scheduler,
+        unetName: input.unetName,
+        clipName: input.clipName,
+        clipType: input.clipType,
+        vaeName: input.vaeName,
+        modelShift: input.modelShift,
         filenamePrefix: `video/scene-${input.sceneId}`,
         referenceImageFilename
       });

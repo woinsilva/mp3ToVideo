@@ -26,6 +26,7 @@ import { ScenePromptService } from './services/scene-prompt.service';
 import { SceneVideoGenerationService } from './services/scene-video-generation.service';
 import { StoryboardGenerationService } from './services/storyboard-generation.service';
 import { StoryboardFallbackService } from './services/storyboard-fallback.service';
+import { VideoGenerationSettingsService } from './services/video-generation-settings.service';
 import { WhisperTranscriptionService } from './services/whisper-transcription.service';
 import { ProjectProcessingWorkerService } from './workers/project-processing-worker.service';
 import { RedisConnectionService } from './workers/redis-connection.service';
@@ -65,6 +66,7 @@ import { RedisConnectionService } from './workers/redis-connection.service';
     ScenePromptService,
     StoryboardGenerationService,
     StoryboardFallbackService,
+    VideoGenerationSettingsService,
     WhisperTranscriptionService,
     ProjectProcessingWorkerService
   ]

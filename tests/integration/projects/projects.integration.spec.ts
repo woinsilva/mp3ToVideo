@@ -192,6 +192,44 @@ describe('Projects integration', () => {
     });
   });
 
+  it('creates and immediately queues a reproducible Wan stability baseline from a prompt', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/projects')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({
+        title: 'Wan stability baseline',
+        generationMode: 'prompt',
+        generationPrompt: 'A woman standing naturally in a quiet forest at golden hour.',
+        clipDurationSeconds: 3,
+        stabilityTest: true,
+        wanOnly: true,
+        generationSeed: 424242,
+        generationCfg: 3.5,
+        generationSteps: 28
+      })
+      .expect(201);
+
+    expect(response.body).toMatchObject({
+      generationMode: 'prompt',
+      clipDurationSeconds: 3,
+      stabilityTest: true,
+      wanOnly: true,
+      generationSeed: 424242,
+      generationCfg: 3.5,
+      generationSteps: 28,
+      status: 'queued'
+    });
+
+    const project = await prisma.project.findUnique({ where: { id: response.body.id } });
+    expect(project).toMatchObject({
+      stabilityTest: true,
+      wanOnly: true,
+      generationSeed: 424242,
+      generationCfg: 3.5,
+      generationSteps: 28
+    });
+  });
+
   it('uploads an MP3 track, stores it on disk and preserves manual lyrics when provided', async () => {
     const createResponse = await request(app.getHttpServer())
       .post('/projects')

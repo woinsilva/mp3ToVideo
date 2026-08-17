@@ -40,6 +40,7 @@ export const configuration = () => ({
     comfyuiTimeoutMs: Number(process.env.COMFYUI_TIMEOUT_MS ?? 1200000),
     comfyuiPollIntervalMs: Number(process.env.COMFYUI_POLL_INTERVAL_MS ?? 3000),
     comfyuiWorkflowPath: process.env.COMFYUI_WORKFLOW_PATH ?? '',
+    comfyuiVideoWorkflowName: process.env.COMFYUI_VIDEO_WORKFLOW_NAME ?? 'wan-2.2-ti2v-5b',
     comfyuiEnableImageFallback: process.env.COMFYUI_ENABLE_IMAGE_FALLBACK === 'true',
     comfyuiCheckpointName: process.env.COMFYUI_CHECKPOINT_NAME ?? '',
     comfyuiVideoUnetName:
