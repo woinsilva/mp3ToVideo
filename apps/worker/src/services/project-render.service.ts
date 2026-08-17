@@ -90,6 +90,12 @@ export class ProjectRenderService {
   ) {}
 
   async render(input: RenderProjectInput): Promise<void> {
+    if (input.scenes.length === 0) {
+      throw new Error(
+        'Nenhuma cena foi planejada para o projeto. O render foi interrompido antes da concatenacao.'
+      );
+    }
+
     const existingRender = await this.prismaService.render.findFirst({
       where: {
         projectId: input.projectId

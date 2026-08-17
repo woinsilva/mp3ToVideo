@@ -12,6 +12,38 @@ describe('ProjectRenderService', () => {
     rmSync(root, { force: true, recursive: true });
   });
 
+  it('rejects an empty scene list before creating an invalid FFmpeg concat file', async () => {
+    const renderFindFirst = vi.fn();
+    const service = new ProjectRenderService(
+      { render: { findFirst: renderFindFirst } } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never
+    );
+
+    await expect(
+      service.render({
+        organizationId: 'org-1',
+        projectId: 'project-1',
+        audioPath: null,
+        durationSeconds: 2,
+        visualCheckpointName: null,
+        stabilityTest: true,
+        wanOnly: true,
+        generationSeed: 123,
+        generationCfg: 4.5,
+        generationSteps: 24,
+        scenes: []
+      })
+    ).rejects.toThrow('Nenhuma cena foi planejada para o projeto');
+
+    expect(renderFindFirst).not.toHaveBeenCalled();
+  });
+
   it('fails a Wan-only scene explicitly without image or procedural fallbacks', async () => {
     const prismaService = {
       render: {

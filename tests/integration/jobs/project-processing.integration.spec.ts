@@ -212,6 +212,96 @@ describe('Project processing integration', () => {
     expect(Array.isArray(processingJob?.activityLog)).toBe(true);
   });
 
+  it('plans and persists a prompt scene before starting the automatic render', async () => {
+    const generationPrompt =
+      'A man stands still in a modern city, with a fixed camera and subtle natural movement.';
+    const createResponse = await request(app.getHttpServer())
+      .post('/projects')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({
+        title: 'Prompt pipeline regression',
+        generationMode: 'prompt',
+        generationPrompt,
+        clipDurationSeconds: 2,
+        stabilityTest: true,
+        wanOnly: true,
+        generationSeed: 123456,
+        generationCfg: 4.5,
+        generationSteps: 24
+      })
+      .expect(201);
+
+    projectId = createResponse.body.id;
+
+    const configService = {
+      get: (key: string, defaultValue?: unknown) => {
+        const values: Record<string, unknown> = {
+          'ai.enableOllama': false,
+          'ai.enableFallbacks': true
+        };
+
+        return key in values ? values[key] : defaultValue;
+      }
+    } as never;
+    const processingProgressService = new ProcessingProgressService(
+      prisma as unknown as WorkerPrismaService
+    );
+    const ollamaClientService = new OllamaClientService(configService);
+    const renderedInputs: Array<{
+      scenes: Array<{ id: string; durationSeconds: number }>;
+      audioPath: string | null;
+      durationSeconds: number;
+    }> = [];
+    const pipeline = new ProjectProcessingPipelineService(
+      prisma as unknown as WorkerPrismaService,
+      new ProjectPipelineStateService(prisma as unknown as WorkerPrismaService),
+      processingProgressService,
+      {} as AudioMetadataService,
+      {} as AudioExcerptService,
+      {} as LyricsGenerationService,
+      new MusicStructureService(),
+      new StoryboardGenerationService(
+        configService,
+        ollamaClientService,
+        new StoryboardFallbackService()
+      ),
+      new ScenePlanningService(),
+      new ScenePromptGenerationService(
+        configService,
+        ollamaClientService,
+        new ScenePromptService()
+      ),
+      {
+        render: async (input: (typeof renderedInputs)[number]) => {
+          renderedInputs.push(input);
+        }
+      } as ProjectRenderService
+    );
+
+    const result = await pipeline.run({
+      projectId,
+      organizationId,
+      requestedByUserId: userId
+    });
+
+    const scenes = await prisma.scene.findMany({
+      where: { projectId },
+      include: { prompt: true },
+      orderBy: { index: 'asc' }
+    });
+
+    expect(result).toBe('completed');
+    expect(scenes).toHaveLength(1);
+    expect(scenes[0]?.durationSeconds).toBe(2);
+    expect(scenes[0]?.prompt?.positivePrompt).toBe(generationPrompt);
+    expect(renderedInputs).toHaveLength(1);
+    expect(renderedInputs[0]).toMatchObject({
+      audioPath: null,
+      durationSeconds: 2,
+      scenes: [{ id: scenes[0]?.id, durationSeconds: 2 }]
+    });
+  });
+
   it('marks the project as completed when the worker pipeline succeeds', async () => {
     await request(app.getHttpServer())
       .post(`/projects/${projectId}/upload-track`)

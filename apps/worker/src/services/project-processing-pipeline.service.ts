@@ -372,62 +372,18 @@ export class ProjectProcessingPipelineService {
       }
     });
 
-    if (isPromptProject) {
-      const persistedScenes = await this.prismaService.scene.findMany({
-        where: { projectId: project.id },
-        include: {
-          videoAsset: true,
-          referenceImageAsset: true
-        },
-        orderBy: { index: 'asc' }
-      });
-
-      await this.projectPipelineStateService.update(
-        project.id,
-        ProjectStatus.rendering,
-        95,
-        'Cenas planejadas a partir da descricao. Iniciando a geracao do video.',
-        {
-          stage: 'rendering',
-          message: 'Iniciando o render automatico do video descrito pelo usuario.'
-        }
-      );
-
-      await this.projectRenderService.render({
-        organizationId: payload.organizationId,
-        projectId: project.id,
-        audioPath: null,
-        durationSeconds: effectiveDurationSeconds,
-        visualCheckpointName: project.visualCheckpointName,
-        stabilityTest: project.stabilityTest,
-        wanOnly: project.wanOnly,
-        generationSeed: project.generationSeed,
-        generationCfg: project.generationCfg,
-        generationSteps: project.generationSteps,
-        scenes: persistedScenes.map((scene) => ({
-          id: scene.id,
-          title: scene.title,
-          durationSeconds: scene.durationSeconds,
-          sectionType:
-            createdSections.find((section) => section.id === scene.musicSectionId)?.type ?? 'verse',
-          status: scene.status,
-          visualProvider: scene.visualProvider,
-          videoAssetStoragePath: scene.videoAsset?.storagePath ?? null,
-          referenceImageStoragePath: scene.referenceImageAsset?.storagePath ?? null
-        }))
-      });
-
-      return ProjectStatus.completed;
-    }
-
     await this.projectPipelineStateService.update(
       project.id,
       ProjectStatus.generating_scenes,
       85,
-      'Storyboard salvo. Planejando cenas e prompts visuais para cada trecho da musica.',
+      isPromptProject
+        ? 'Storyboard salvo. Planejando a cena descrita pelo usuario.'
+        : 'Storyboard salvo. Planejando cenas e prompts visuais para cada trecho da musica.',
       {
         stage: 'generating_scenes',
-        message: 'Storyboard salvo. Iniciando planejamento das cenas.'
+        message: isPromptProject
+          ? 'Storyboard salvo. Iniciando o planejamento da cena por prompt.'
+          : 'Storyboard salvo. Iniciando planejamento das cenas.'
       }
     );
 
@@ -490,7 +446,13 @@ export class ProjectProcessingPipelineService {
           message: `Gerando prompt da cena ${index + 1} de ${scenes.length}: ${scene.title}.`
         }
       );
-      const promptDraft = await this.scenePromptGenerationService.build(scene, storyboard);
+      const generatedPromptDraft = await this.scenePromptGenerationService.build(scene, storyboard);
+      const promptDraft = isPromptProject
+        ? {
+            ...generatedPromptDraft,
+            positivePrompt: project.generationPrompt!.trim()
+          }
+        : generatedPromptDraft;
       scenePromptDrafts.push(promptDraft);
       await this.processingProgressService.heartbeat(
         project.id,
@@ -538,6 +500,54 @@ export class ProjectProcessingPipelineService {
         });
       }
     });
+
+    if (isPromptProject) {
+      const persistedScenes = await this.prismaService.scene.findMany({
+        where: { projectId: project.id },
+        include: {
+          videoAsset: true,
+          referenceImageAsset: true
+        },
+        orderBy: { index: 'asc' }
+      });
+
+      await this.projectPipelineStateService.update(
+        project.id,
+        ProjectStatus.rendering,
+        95,
+        'Cena planejada a partir da descricao. Iniciando a geracao do video.',
+        {
+          stage: 'rendering',
+          message: 'Iniciando o render automatico do video descrito pelo usuario.'
+        }
+      );
+
+      await this.projectRenderService.render({
+        organizationId: payload.organizationId,
+        projectId: project.id,
+        audioPath: null,
+        durationSeconds: effectiveDurationSeconds,
+        visualCheckpointName: project.visualCheckpointName,
+        stabilityTest: project.stabilityTest,
+        wanOnly: project.wanOnly,
+        generationSeed: project.generationSeed,
+        generationCfg: project.generationCfg,
+        generationSteps: project.generationSteps,
+        scenes: persistedScenes.map((scene) => ({
+          id: scene.id,
+          title: scene.title,
+          durationSeconds: scene.durationSeconds,
+          sectionType:
+            createdSections.find((section) => section.id === scene.musicSectionId)?.type ?? 'verse',
+          status: scene.status,
+          visualProvider: scene.visualProvider,
+          videoAssetStoragePath: scene.videoAsset?.storagePath ?? null,
+          referenceImageStoragePath: scene.referenceImageAsset?.storagePath ?? null
+        }))
+      });
+
+      return ProjectStatus.completed;
+    }
 
     await this.projectPipelineStateService.update(
       project.id,
