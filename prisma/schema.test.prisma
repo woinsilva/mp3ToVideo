@@ -23,9 +23,15 @@ enum ProjectStatus {
   analyzing
   storyboarding
   generating_scenes
+  awaiting_references
   rendering
   completed
   failed
+}
+
+enum ProjectGenerationMode {
+  music
+  prompt
 }
 
 enum LyricsSource {
@@ -53,6 +59,7 @@ enum SceneStatus {
 enum AssetType {
   audio
   image
+  storyboard_image
   video_scene
   render
   subtitle
@@ -127,6 +134,8 @@ model Project {
   organizationId  String
   createdByUserId String
   title           String
+  generationMode  ProjectGenerationMode @default(music)
+  generationPrompt String?
   clipDurationSeconds Float?
   sceneDurationSeconds Float?
   visualCheckpointName String?
@@ -192,14 +201,18 @@ model MusicSection {
 model Storyboard {
   id               String   @id @default(cuid())
   projectId        String   @unique
+  visualAssetId    String?
   concept          String
   visualStyle      String
   mood             String
   colorPalette     String
   narrativeSummary String
+  visualPrompt     String?
+  revisionInstruction String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
   project          Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  visualAsset      Asset?   @relation("StoryboardVisualAsset", fields: [visualAssetId], references: [id], onDelete: SetNull)
 }
 
 model Scene {
@@ -299,6 +312,7 @@ model Asset {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
   render         Render?
+  storyboardVisualFor Storyboard[] @relation("StoryboardVisualAsset")
   sceneVideoFor  Scene[]      @relation("SceneVideoAsset")
   sceneReferenceImageFor Scene[] @relation("SceneReferenceImageAsset")
 

@@ -66,6 +66,27 @@ export class LocalStorageService {
     return relativePath.replace(/\\/g, '/');
   }
 
+  async saveStoryboardImage(
+    organizationId: string,
+    projectId: string,
+    buffer: Buffer
+  ): Promise<string> {
+    const root = this.configService.get<string>('storage.root', './storage');
+    const relativePath = join(
+      root,
+      'storyboard-images',
+      organizationId,
+      projectId,
+      `visual-storyboard-${Date.now()}.png`
+    );
+    const absolutePath = this.getAbsolutePath(relativePath);
+
+    await mkdir(dirname(absolutePath), { recursive: true });
+    await writeFile(absolutePath, buffer);
+
+    return relativePath.replace(/\\/g, '/');
+  }
+
   buildProjectUploadDirectory(organizationId: string, projectId: string): string {
     const root = this.configService.get<string>('storage.root', './storage');
     return join(root, 'uploads', organizationId, projectId).replace(/\\/g, '/');
@@ -81,9 +102,19 @@ export class LocalStorageService {
     return join(root, 'generated-images', organizationId, projectId).replace(/\\/g, '/');
   }
 
+  buildProjectContinuityFramesDirectory(organizationId: string, projectId: string): string {
+    const root = this.configService.get<string>('storage.root', './storage');
+    return join(root, 'continuity-frames', organizationId, projectId).replace(/\\/g, '/');
+  }
+
   buildProjectSceneReferenceImagesDirectory(organizationId: string, projectId: string): string {
     const root = this.configService.get<string>('storage.root', './storage');
     return join(root, 'scene-reference-images', organizationId, projectId).replace(/\\/g, '/');
+  }
+
+  buildProjectStoryboardImagesDirectory(organizationId: string, projectId: string): string {
+    const root = this.configService.get<string>('storage.root', './storage');
+    return join(root, 'storyboard-images', organizationId, projectId).replace(/\\/g, '/');
   }
 
   buildProjectRendersDirectory(organizationId: string, projectId: string): string {

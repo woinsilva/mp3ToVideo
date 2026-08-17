@@ -316,6 +316,10 @@ describe('Project processing integration', () => {
         muxAudio: async (_videoPath: string, _audioPath: string, outputPath: string) => {
           await mkdir(dirname(outputPath), { recursive: true });
           await writeFile(outputPath, Buffer.from('fake-final-mp4'));
+        },
+        extractLastFrame: async (_videoPath: string, outputPath: string) => {
+          await mkdir(dirname(outputPath), { recursive: true });
+          await writeFile(outputPath, Buffer.from('fake-last-frame'));
         }
       } as never,
       processingProgressService
@@ -343,6 +347,23 @@ describe('Project processing integration', () => {
 
     await processor.process({
       id: 'bull-job-1',
+      data: {
+        projectId,
+        organizationId,
+        requestedByUserId: userId
+      }
+    });
+
+    const pausedProject = await prisma.project.findUnique({
+      where: {
+        id: projectId
+      }
+    });
+
+    expect(pausedProject?.status).toBe('awaiting_references');
+
+    await processor.process({
+      id: 'bull-job-2',
       data: {
         projectId,
         organizationId,
@@ -409,6 +430,9 @@ describe('Project processing integration', () => {
     const processingJob = await prisma.processingJob.findFirst({
       where: {
         projectId
+      },
+      orderBy: {
+        updatedAt: 'desc'
       }
     });
 

@@ -31,8 +31,13 @@ export class ProjectProcessingQueueService implements OnModuleDestroy {
     });
   }
 
-  async enqueue(payload: ProjectProcessingJobPayload): Promise<{ bullJobId: string }> {
-    const job = await this.queue.add(PROJECT_PROCESS_JOB_NAME, payload);
+  async enqueue(
+    payload: ProjectProcessingJobPayload,
+    options: { jobId?: string } = {}
+  ): Promise<{ bullJobId: string }> {
+    const job = await this.queue.add(PROJECT_PROCESS_JOB_NAME, payload, {
+      jobId: options.jobId
+    });
 
     return {
       bullJobId: String(job.id)

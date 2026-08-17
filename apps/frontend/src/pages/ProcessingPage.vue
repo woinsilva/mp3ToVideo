@@ -178,7 +178,7 @@ export default class ProcessingPage extends Vue {
       return;
     }
 
-    if (status.status === 'draft') {
+    if (status.status === 'draft' || status.status === 'awaiting_references') {
       void this.$router.push({ name: 'project-detail', params: { id: this.projectId } });
     }
   }

@@ -60,7 +60,31 @@ export class ProjectProcessor {
     });
 
     try {
-      await this.pipelineService.run(job.data);
+      const pipelineResultStatus = await this.pipelineService.run(job.data);
+
+      if (pipelineResultStatus === ProjectStatus.awaiting_references) {
+        await this.upsertProcessingJob(
+          job.data.projectId,
+          bullJobId,
+          ProcessingJobStatus.completed,
+          93,
+          null,
+          'Cenas prontas. Aguardando revisao e imagens de referencia antes do render.',
+          {
+            stage: 'awaiting_references',
+            message:
+              'Cenas e prompts prontos. O usuario pode revisar, adicionar referencias e iniciar o render.'
+          }
+        );
+        await this.updateProject(job.data.projectId, {
+          status: ProjectStatus.awaiting_references,
+          errorMessage: null
+        });
+        console.log(
+          `[worker] paused project processing for references projectId=${job.data.projectId} bullJobId=${bullJobId}`
+        );
+        return;
+      }
 
       await this.upsertProcessingJob(
         job.data.projectId,

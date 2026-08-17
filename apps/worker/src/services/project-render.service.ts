@@ -1,4 +1,4 @@
-import { stat, writeFile } from 'node:fs/promises';
+import { copyFile, stat, writeFile } from 'node:fs/promises';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -38,7 +38,7 @@ interface RenderSceneInput {
 interface RenderProjectInput {
   organizationId: string;
   projectId: string;
-  audioPath: string;
+  audioPath: string | null;
   durationSeconds: number;
   visualCheckpointName: string | null;
   scenes: RenderSceneInput[];
@@ -48,6 +48,13 @@ interface SceneVideoAttemptOutcome {
   result: SceneVideoResult | null;
   errorMessage: string | null;
   restarted: boolean;
+}
+
+interface SceneReferenceInput {
+  path: string | null;
+  sourceType: string;
+  hasManualReferenceImage: boolean;
+  hasContinuityFrame: boolean;
 }
 
 @Injectable()
@@ -101,6 +108,7 @@ export class ProjectRenderService {
 
     try {
       const sceneClipPaths: string[] = [];
+      let previousContinuityFramePath: string | null = null;
 
       for (const [index, scene] of input.scenes.entries()) {
         const reusableSceneClipPath =
@@ -113,6 +121,11 @@ export class ProjectRenderService {
           (await this.pathExists(this.renderStorageService.getAbsolutePath(reusableSceneClipPath)))
         ) {
           sceneClipPaths.push(reusableSceneClipPath);
+          previousContinuityFramePath = await this.extractContinuityFrame(
+            input,
+            index,
+            this.renderStorageService.getAbsolutePath(reusableSceneClipPath)
+          );
           await this.processingProgressService.heartbeat(
             input.projectId,
             this.sceneRenderProgress(index + 1, input.scenes.length),
@@ -153,6 +166,24 @@ export class ProjectRenderService {
         let visualProvider = 'procedural';
         let videoGenerationError: string | null = null;
         let imageGenerationError: string | null = null;
+        const sceneReference = this.resolveSceneReference(scene, previousContinuityFramePath);
+
+        if (sceneReference.hasContinuityFrame) {
+          await this.processingProgressService.heartbeat(
+            input.projectId,
+            this.sceneRenderProgress(index, input.scenes.length),
+            `Cena ${index + 1} usara o ultimo frame da cena anterior como referencia de continuidade.`,
+            {
+              stage: 'rendering',
+              message:
+                `Cena ${index + 1} usara continuidade visual da cena anterior` +
+                (sceneReference.hasManualReferenceImage
+                  ? ' e mantera a referencia manual registrada para revisao.'
+                  : '.'),
+              provider: 'continuity-frame'
+            }
+          );
+        }
 
         if (!scenePrompt && !this.shouldAllowProceduralFallback()) {
           const message = `Cena ${index + 1} falhou: prompt da cena nao encontrado para gerar o video no ComfyUI.`;
@@ -166,7 +197,8 @@ export class ProjectRenderService {
             input,
             scene,
             scenePrompt,
-            index
+            index,
+            sceneReference
           );
 
           generatedSceneVideo = videoAttemptOutcome.result;
@@ -301,6 +333,11 @@ export class ProjectRenderService {
         }
 
         const sceneClipSize = Number((await stat(sceneClipAbsolutePath)).size);
+        previousContinuityFramePath = await this.extractContinuityFrame(
+          input,
+          index,
+          sceneClipAbsolutePath
+        );
         const sceneAsset = await this.prismaService.asset.create({
           data: {
             organizationId: input.organizationId,
@@ -367,18 +404,26 @@ export class ProjectRenderService {
       const finalRenderAbsolutePath =
         await this.renderStorageService.ensureParentDirectory(finalRenderPath);
 
-      await this.ffmpegRenderingService.muxAudio(
-        intermediateVideoAbsolutePath,
-        this.renderStorageService.getAbsolutePath(input.audioPath),
-        finalRenderAbsolutePath
-      );
+      if (input.audioPath) {
+        await this.ffmpegRenderingService.muxAudio(
+          intermediateVideoAbsolutePath,
+          this.renderStorageService.getAbsolutePath(input.audioPath),
+          finalRenderAbsolutePath
+        );
+      } else {
+        await copyFile(intermediateVideoAbsolutePath, finalRenderAbsolutePath);
+      }
       await this.processingProgressService.heartbeat(
         input.projectId,
         99,
-        'Faixa de audio sincronizada. Finalizando o MP4 de saida.',
+        input.audioPath
+          ? 'Faixa de audio sincronizada. Finalizando o MP4 de saida.'
+          : 'Video sem trilha de audio finalizado. Preparando o MP4 de saida.',
         {
           stage: 'rendering',
-          message: 'Sincronizando a faixa de audio com o video final.'
+          message: input.audioPath
+            ? 'Sincronizando a faixa de audio com o video final.'
+            : 'Finalizando o video gerado a partir da descricao.'
         }
       );
 
@@ -422,7 +467,8 @@ export class ProjectRenderService {
     input: RenderProjectInput,
     scene: RenderSceneInput,
     scenePrompt: ScenePrompt,
-    sceneIndex: number
+    sceneIndex: number,
+    reference: SceneReferenceInput
   ): Promise<SceneVideoAttemptOutcome> {
     if (this.configService.get<string>('visual.provider', 'procedural') !== 'comfyui') {
       return {
@@ -435,7 +481,7 @@ export class ProjectRenderService {
     let restarted = false;
 
     for (;;) {
-      const attempt = await this.createSceneRenderAttempt(input, scene, sceneIndex);
+      const attempt = await this.createSceneRenderAttempt(input, scene, sceneIndex, reference);
 
       try {
         const result = await this.sceneVideoGenerationService.generate({
@@ -445,9 +491,7 @@ export class ProjectRenderService {
           width: this.configService.get<number>('visual.comfyuiWidth', 640),
           height: this.configService.get<number>('visual.comfyuiHeight', 360),
           durationSeconds: scene.durationSeconds,
-          referenceImagePath: scene.referenceImageStoragePath
-            ? this.renderStorageService.getAbsolutePath(scene.referenceImageStoragePath)
-            : null,
+          referenceImagePath: reference.path,
           onSubmitted: (promptId) => this.markSceneRenderAttemptSubmitted(attempt.id, promptId),
           onHeartbeat: (heartbeat) =>
             this.heartbeatSceneRenderAttempt(input, scene, sceneIndex, attempt.id, heartbeat),
@@ -520,7 +564,8 @@ export class ProjectRenderService {
   private async createSceneRenderAttempt(
     input: RenderProjectInput,
     scene: RenderSceneInput,
-    sceneIndex: number
+    sceneIndex: number,
+    reference?: SceneReferenceInput
   ) {
     const latestAttempt = await this.prismaService.sceneRenderAttempt.findFirst({
       where: {
@@ -541,8 +586,8 @@ export class ProjectRenderService {
         attemptNumber,
         provider: 'comfyui-video',
         status: SceneRenderAttemptStatus.queued,
-        sourceType: scene.referenceImageStoragePath ? 'reference-image' : 'prompt',
-        hasReferenceImage: Boolean(scene.referenceImageStoragePath),
+        sourceType: reference?.sourceType ?? (scene.referenceImageStoragePath ? 'reference-image' : 'prompt'),
+        hasReferenceImage: Boolean(reference?.path ?? scene.referenceImageStoragePath),
         width: this.configService.get<number>('visual.comfyuiWidth', 640),
         height: this.configService.get<number>('visual.comfyuiHeight', 360),
         fps,
@@ -561,7 +606,9 @@ export class ProjectRenderService {
         metadata: {
           sceneIndex,
           sceneTitle: scene.title,
-          totalScenes: input.scenes.length
+          totalScenes: input.scenes.length,
+          hasManualReferenceImage: reference?.hasManualReferenceImage ?? Boolean(scene.referenceImageStoragePath),
+          hasContinuityFrame: reference?.hasContinuityFrame ?? false
         }
       }
     });
@@ -682,6 +729,60 @@ export class ProjectRenderService {
         errorMessage: errorMessage ?? null
       }
     });
+  }
+
+  private resolveSceneReference(
+    scene: RenderSceneInput,
+    previousContinuityFramePath: string | null
+  ): SceneReferenceInput {
+    if (previousContinuityFramePath) {
+      return {
+        path: previousContinuityFramePath,
+        sourceType: scene.referenceImageStoragePath
+          ? 'continuity-frame-with-manual-reference'
+          : 'continuity-frame',
+        hasManualReferenceImage: Boolean(scene.referenceImageStoragePath),
+        hasContinuityFrame: true
+      };
+    }
+
+    return {
+      path: scene.referenceImageStoragePath
+        ? this.renderStorageService.getAbsolutePath(scene.referenceImageStoragePath)
+        : null,
+      sourceType: scene.referenceImageStoragePath ? 'reference-image' : 'prompt',
+      hasManualReferenceImage: Boolean(scene.referenceImageStoragePath),
+      hasContinuityFrame: false
+    };
+  }
+
+  private async extractContinuityFrame(
+    input: RenderProjectInput,
+    sceneIndex: number,
+    sceneClipAbsolutePath: string
+  ): Promise<string | null> {
+    const continuityFramePath = this.renderStorageService.buildContinuityFramePath(
+      input.organizationId,
+      input.projectId,
+      sceneIndex
+    );
+    const continuityFrameAbsolutePath =
+      await this.renderStorageService.ensureParentDirectory(continuityFramePath);
+
+    try {
+      await this.ffmpegRenderingService.extractLastFrame(
+        sceneClipAbsolutePath,
+        continuityFrameAbsolutePath
+      );
+
+      return continuityFrameAbsolutePath;
+    } catch (error) {
+      this.logger.warn(
+        `Could not extract continuity frame for project=${input.projectId} ` +
+          `scene=${sceneIndex + 1}: ${this.toErrorMessage(error)}`
+      );
+      return null;
+    }
   }
 
   private resolveSceneColor(sectionType: string, index: number): string {

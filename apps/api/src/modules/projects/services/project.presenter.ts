@@ -45,6 +45,8 @@ export class ProjectPresenter {
     return {
       id: project.id,
       title: project.title,
+      generationMode: project.generationMode,
+      generationPrompt: project.generationPrompt,
       clipDurationSeconds: project.clipDurationSeconds,
       sceneDurationSeconds: project.sceneDurationSeconds,
       visualCheckpointName: project.visualCheckpointName,
@@ -63,6 +65,8 @@ export class ProjectPresenter {
     return {
       id: project.id,
       title: project.title,
+      generationMode: project.generationMode,
+      generationPrompt: project.generationPrompt,
       clipDurationSeconds: project.clipDurationSeconds,
       sceneDurationSeconds: project.sceneDurationSeconds,
       visualCheckpointName: project.visualCheckpointName,
@@ -200,6 +204,8 @@ export class ProjectPresenter {
         return 55;
       case 'generating_scenes':
         return 85;
+      case 'awaiting_references':
+        return 93;
       case 'rendering':
         return 95;
       case 'completed':
@@ -227,6 +233,8 @@ export class ProjectPresenter {
         return 'Montando storyboard';
       case 'generating_scenes':
         return 'Gerando cenas';
+      case 'awaiting_references':
+        return 'Aguardando revisao das cenas';
       case 'rendering':
         return 'Renderizando video final';
       case 'completed':

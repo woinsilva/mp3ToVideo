@@ -54,6 +54,18 @@ export class RenderStorageService {
     ).replace(/\\/g, '/');
   }
 
+  buildContinuityFramePath(organizationId: string, projectId: string, sceneIndex: number): string {
+    const root = this.configService.get<string>('storage.root', './storage');
+
+    return join(
+      root,
+      'continuity-frames',
+      organizationId,
+      projectId,
+      `scene-${String(sceneIndex + 1).padStart(3, '0')}-last-frame.png`
+    ).replace(/\\/g, '/');
+  }
+
   buildConcatListPath(projectId: string): string {
     const root = this.configService.get<string>('storage.root', './storage');
 

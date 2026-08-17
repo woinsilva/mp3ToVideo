@@ -20,6 +20,7 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import type { AuthenticatedUser } from '../../auth/types/authenticated-user.type';
 import { CreateProjectDto } from '../dtos/create-project.dto';
 import { RetryProjectDto } from '../dtos/retry-project.dto';
+import { RegenerateVisualStoryboardDto } from '../dtos/regenerate-visual-storyboard.dto';
 import { UploadTrackDto } from '../dtos/upload-track.dto';
 import { ProjectsService } from '../services/projects.service';
 import { TrackUploadPolicyService } from '../services/track-upload-policy.service';
@@ -42,6 +43,8 @@ export class ProjectsController {
       organizationId: user.organizationId,
       createdByUserId: user.userId,
       title: input.title,
+      generationMode: input.generationMode,
+      generationPrompt: input.generationPrompt,
       clipDurationSeconds: input.clipDurationSeconds,
       sceneDurationSeconds: input.sceneDurationSeconds,
       visualCheckpointName: input.visualCheckpointName,
@@ -67,6 +70,41 @@ export class ProjectsController {
   @Get(':id/scenes')
   getProjectScenes(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.projectsService.listProjectScenes(id, user.organizationId);
+  }
+
+  @Get(':id/visual-storyboard')
+  getVisualStoryboard(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.projectsService.getVisualStoryboard(id, user.organizationId);
+  }
+
+  @Get(':id/visual-storyboard/image')
+  async getVisualStoryboardImage(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') projectId: string,
+    @Res() response: Response
+  ) {
+    const image = await this.projectsService.getVisualStoryboardImage(
+      projectId,
+      user.organizationId
+    );
+
+    response.setHeader('Content-Type', image.mimeType);
+    response.setHeader('Content-Disposition', `inline; filename="${image.fileName}"`);
+
+    return response.sendFile(image.absolutePath);
+  }
+
+  @Post(':id/visual-storyboard/regenerate')
+  regenerateVisualStoryboard(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') projectId: string,
+    @Body() input: RegenerateVisualStoryboardDto
+  ) {
+    return this.projectsService.regenerateVisualStoryboard(
+      projectId,
+      user.organizationId,
+      input.instruction
+    );
   }
 
   @Post(':id/scenes/:sceneId/retry-render')
@@ -188,5 +226,10 @@ export class ProjectsController {
     @Body() input: RetryProjectDto
   ) {
     return this.projectsService.retryProject(projectId, user.organizationId, input);
+  }
+
+  @Post(':id/start-render')
+  startProjectRender(@CurrentUser() user: AuthenticatedUser, @Param('id') projectId: string) {
+    return this.projectsService.startProjectRender(projectId, user.organizationId);
   }
 }

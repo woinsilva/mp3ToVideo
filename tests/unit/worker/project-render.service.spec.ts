@@ -79,6 +79,7 @@ describe('ProjectRenderService', () => {
       {
         createSceneClip,
         createSceneClipFromImage: vi.fn(),
+        extractLastFrame: vi.fn(),
         concatSceneClips: vi.fn(),
         muxAudio: vi.fn()
       } as never,
@@ -131,7 +132,7 @@ describe('ProjectRenderService', () => {
     });
   });
 
-  it('reuses a completed scene clip from disk during retry instead of regenerating it', async () => {
+  it('reuses a completed scene and finalizes a prompt-based video without muxing audio', async () => {
     const reusedScenePath = resolve(
       'tests',
       'tmp',
@@ -157,6 +158,15 @@ describe('ProjectRenderService', () => {
       'org-1',
       'project-1',
       'final.mp4'
+    );
+    const continuityFramePath = resolve(
+      'tests',
+      'tmp',
+      'project-render-service',
+      'continuity-frames',
+      'org-1',
+      'project-1',
+      'scene-001-last-frame.png'
     );
 
     mkdirSync(dirname(reusedScenePath), { recursive: true });
@@ -186,6 +196,7 @@ describe('ProjectRenderService', () => {
       }
     } as never;
 
+    const muxAudio = vi.fn();
     const service = new ProjectRenderService(
       prismaService,
       {
@@ -193,12 +204,14 @@ describe('ProjectRenderService', () => {
       } as never,
       {
         getAbsolutePath: vi.fn().mockImplementation((path: string) => path),
+        buildContinuityFramePath: vi.fn().mockReturnValue(continuityFramePath),
         buildConcatListPath: vi.fn().mockReturnValue(resolve('tests', 'tmp', 'project-render-service', 'temp', 'project-1', 'concat-list.txt')),
         writeConcatList: vi.fn().mockResolvedValue(resolve('tests', 'tmp', 'project-render-service', 'temp', 'project-1', 'concat-list.txt')),
         buildIntermediateVideoPath: vi.fn().mockReturnValue(intermediatePath),
-        ensureParentDirectory: vi.fn()
-          .mockResolvedValueOnce(intermediatePath)
-          .mockResolvedValueOnce(finalPath),
+        ensureParentDirectory: vi.fn().mockImplementation(async (path: string) => {
+          mkdirSync(dirname(path), { recursive: true });
+          return path;
+        }),
         buildFinalRenderPath: vi.fn().mockReturnValue(finalPath)
       } as never,
       {
@@ -210,14 +223,15 @@ describe('ProjectRenderService', () => {
       {
         createSceneClip: vi.fn(),
         createSceneClipFromImage: vi.fn(),
+        extractLastFrame: vi.fn().mockImplementation(async (_videoPath: string, outputPath: string) => {
+          mkdirSync(dirname(outputPath), { recursive: true });
+          writeFileSync(outputPath, Buffer.from('last-frame'));
+        }),
         concatSceneClips: vi.fn().mockImplementation(async (_listPath: string, outputPath: string) => {
           mkdirSync(dirname(outputPath), { recursive: true });
           writeFileSync(outputPath, Buffer.from('intermediate'));
         }),
-        muxAudio: vi.fn().mockImplementation(async (_videoPath: string, _audioPath: string, outputPath: string) => {
-          mkdirSync(dirname(outputPath), { recursive: true });
-          writeFileSync(outputPath, Buffer.from('final'));
-        })
+        muxAudio
       } as never,
       {
         heartbeat: vi.fn().mockResolvedValue(undefined)
@@ -227,7 +241,7 @@ describe('ProjectRenderService', () => {
     await service.render({
       organizationId: 'org-1',
       projectId: 'project-1',
-      audioPath: 'storage/uploads/org-1/project-1/original.mp3',
+      audioPath: null,
       durationSeconds: 8,
       visualCheckpointName: null,
       scenes: [
@@ -246,5 +260,12 @@ describe('ProjectRenderService', () => {
 
     expect(prismaService.scenePrompt.findUnique).not.toHaveBeenCalled();
     expect(prismaService.scene.update).not.toHaveBeenCalled();
+    expect(muxAudio).not.toHaveBeenCalled();
+    expect(prismaService.asset.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        type: 'render',
+        storagePath: finalPath
+      })
+    });
   });
 });

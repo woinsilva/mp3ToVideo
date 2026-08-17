@@ -6,6 +6,7 @@ export type ProjectStatus =
   | 'analyzing'
   | 'storyboarding'
   | 'generating_scenes'
+  | 'awaiting_references'
   | 'rendering'
   | 'completed'
   | 'failed';
@@ -13,6 +14,8 @@ export type ProjectStatus =
 export interface ProjectSummary {
   id: string;
   title: string;
+  generationMode: 'music' | 'prompt';
+  generationPrompt: string | null;
   clipDurationSeconds: number | null;
   sceneDurationSeconds: number | null;
   visualCheckpointName: string | null;
@@ -20,6 +23,16 @@ export interface ProjectSummary {
   lyrics: ProjectLyricsStatus | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface CreateProjectInput {
+  title: string;
+  generationMode: 'music' | 'prompt';
+  generationPrompt: string | null;
+  clipDurationSeconds: number | null;
+  sceneDurationSeconds: number | null;
+  visualCheckpointName: string | null;
+  manualLyricsText: string | null;
 }
 
 export interface TrackUploadResult {
@@ -108,6 +121,19 @@ export interface ProjectScene {
   hasReferenceImage: boolean;
   attemptSummary: SceneRenderAttemptSummary | null;
   prompt: ScenePromptView | null;
+}
+
+export interface ProjectVisualStoryboard {
+  concept: string;
+  visualStyle: string;
+  mood: string;
+  colorPalette: string;
+  narrativeSummary: string;
+  visualPrompt: string | null;
+  revisionInstruction: string | null;
+  hasImage: boolean;
+  imageUrl: string | null;
+  updatedAt: string;
 }
 
 export interface SceneRenderAttemptSummary {

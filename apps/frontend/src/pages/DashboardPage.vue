@@ -202,6 +202,7 @@ export default class DashboardPage extends Vue {
   openProjectLabel(status: ProjectStatus): string {
     if (status === 'completed') return 'Ver videoclipe';
     if (status === 'failed') return 'Revisar problema';
+    if (status === 'awaiting_references') return 'Revisar cenas';
     if (status === 'draft') return 'Continuar configuração';
     return 'Acompanhar geração';
   }

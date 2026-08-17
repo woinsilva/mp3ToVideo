@@ -4,7 +4,7 @@
       <div>
         <p class="page-eyebrow">Etapa 2 de 2 · Envio</p>
         <h2 class="page-title">{{ projectTitle }}</h2>
-        <p class="page-subtitle">Revise as opções, escolha a música e inicie a geração.</p>
+        <p class="page-subtitle">{{ isPromptProject ? 'Acompanhe a geração criada a partir da sua descrição.' : 'Revise as opções, escolha a música e inicie a geração.' }}</p>
       </div>
       <v-chip :color="statusTone" variant="tonal">{{ statusLabel }}</v-chip>
     </section>
@@ -16,14 +16,14 @@
     <v-row>
       <v-col cols="12" lg="7">
         <FileUploadCard
-          v-if="projectStatus === 'draft' || projectStatus === 'failed'"
+          v-if="requiresTrackUpload"
           :loading="loading"
           :submit-label="projectStatus === 'failed' ? 'Reenviar música' : 'Enviar música e começar'"
           :loading-label="projectStatus === 'failed' ? 'Reenviando música...' : 'Enviando música...'"
           @upload="uploadTrack"
         />
         <section
-          v-if="projectStatus === 'draft' || projectStatus === 'failed'"
+          v-if="requiresTrackUpload"
           class="surface-card mt-4"
         >
           <div class="project-detail-card">
@@ -71,7 +71,7 @@
               <p class="section-copy">{{ nextStepDescription }}</p>
             </div>
 
-            <div v-if="projectStatus === 'draft' || projectStatus === 'failed'" class="d-flex flex-column ga-3">
+            <div v-if="requiresTrackUpload" class="d-flex flex-column ga-3">
               <label class="auth-input-group">
                 <span class="auth-input-label">Duração total do teste</span>
                 <input
@@ -159,6 +159,16 @@
             </button>
 
             <button
+              v-if="canStartRender"
+              class="app-button"
+              :disabled="loading || !scenes.length"
+              type="button"
+              @click="startRender"
+            >
+              Iniciar renderizacao
+            </button>
+
+            <button
               v-if="canRetryProject"
               class="app-button"
               :disabled="loading"
@@ -183,6 +193,45 @@
     </v-row>
 
     <section v-if="scenes.length" class="mt-6">
+      <div class="visual-storyboard-card">
+        <div class="visual-storyboard-card__header">
+          <div>
+            <h3>Storyboard visual</h3>
+            <p>
+              Use esta imagem como direcao criativa. Ela nao sera usada diretamente como primeiro frame do video.
+            </p>
+          </div>
+          <button
+            class="app-button"
+            :disabled="loading"
+            type="button"
+            @click="regenerateVisualStoryboard"
+          >
+            Regerar storyboard visual
+          </button>
+        </div>
+
+        <img
+          v-if="visualStoryboardImageUrl"
+          class="visual-storyboard-card__image"
+          :src="visualStoryboardImageUrl"
+          alt="Storyboard visual do videoclipe"
+        />
+        <div v-else class="visual-storyboard-card__placeholder">
+          Nenhum storyboard visual gerado ainda.
+        </div>
+
+        <label class="auth-input-group mt-3">
+          <span class="auth-input-label">O que mudar no storyboard?</span>
+          <textarea
+            v-model="visualStoryboardInstruction"
+            class="auth-input auth-input--textarea"
+            rows="3"
+            placeholder="Ex.: mais sertanejo universitario, menos pessoas segurando garrafas, protagonista sempre de camisa jeans e chapeu branco."
+          />
+        </label>
+      </div>
+
       <div class="reference-reprocess-banner">
         <div>
           <h3>Imagens de referencia prontas para uso</h3>
@@ -190,10 +239,19 @@
         Adicione imagens de referência nas cenas abaixo e depois use
         <strong>Reprocessar com referências</strong> para gerar um novo vídeo baseado nelas.
           </p>
-          <p v-if="!canRetryProject" class="reference-reprocess-banner__hint">
+          <p v-if="canRetryProject" class="reference-reprocess-banner__hint">
             Esse botao fica disponivel quando o projeto estiver concluido ou falho.
           </p>
         </div>
+        <button
+          v-if="canStartRender"
+          class="app-button"
+          :disabled="loading"
+          type="button"
+          @click="startRender"
+        >
+          Iniciar renderizacao
+        </button>
         <button
           v-if="canRetryProject"
           class="app-button"
@@ -244,6 +302,7 @@ export default class ProjectDetailPage extends Vue {
   sceneDurationSecondsInput: string | number = '';
   visualCheckpointName = '';
   manualLyricsText = '';
+  visualStoryboardInstruction = '';
 
   get projectId(): string {
     return String(this.$route.params.id);
@@ -259,6 +318,14 @@ export default class ProjectDetailPage extends Vue {
 
   get projectTitle(): string {
     return this.projectsStore.currentProject?.title ?? 'Projeto';
+  }
+
+  get isPromptProject(): boolean {
+    return this.projectsStore.currentProject?.generationMode === 'prompt';
+  }
+
+  get requiresTrackUpload(): boolean {
+    return !this.isPromptProject && (this.projectStatus === 'draft' || this.projectStatus === 'failed');
   }
 
   get projectStatus(): ProjectStatus {
@@ -283,12 +350,24 @@ export default class ProjectDetailPage extends Vue {
     return this.projectsStore.currentScenes;
   }
 
+  get visualStoryboardImageUrl(): string | null {
+    return this.projectsStore.currentVisualStoryboardImageUrl;
+  }
+
   get isProcessing(): boolean {
-    return !isTerminalProjectStatus(this.projectStatus) && this.projectStatus !== 'draft';
+    return (
+      !isTerminalProjectStatus(this.projectStatus) &&
+      this.projectStatus !== 'draft' &&
+      this.projectStatus !== 'awaiting_references'
+    );
   }
 
   get canRetryProject(): boolean {
     return this.projectStatus === 'failed' || this.projectStatus === 'completed';
+  }
+
+  get canStartRender(): boolean {
+    return this.projectStatus === 'awaiting_references';
   }
 
   get clipDurationSecondsRawValue(): string {
@@ -364,10 +443,15 @@ export default class ProjectDetailPage extends Vue {
       case 'analyzing':
       case 'storyboarding':
       case 'generating_scenes':
+        return 'Montando cenas e prompts visuais. Em seguida voce podera revisar as cenas antes do render.';
+      case 'awaiting_references':
+        return 'Cenas prontas. Adicione imagens de referencia opcionais e inicie a renderizacao quando estiver pronto.';
       case 'rendering':
         return 'A geração está em andamento. Você pode acompanhar o progresso em tempo real.';
       case 'failed':
-        return 'A geração falhou. Revise as opções, reenvie o áudio ou tente novamente.';
+        return this.isPromptProject
+          ? 'A geração falhou. Tente novamente para gerar o vídeo a partir da mesma descrição.'
+          : 'A geração falhou. Revise as opções, reenvie o áudio ou tente novamente.';
       case 'completed':
         return 'O videoclipe foi concluído. Abra o resultado para assistir e baixar o MP4.';
       default:
@@ -400,6 +484,7 @@ export default class ProjectDetailPage extends Vue {
       if (this.projectsStore.currentProject?.status !== 'draft') {
         await this.projectsStore.fetchStatus(this.projectId, this.authStore.token);
         await this.projectsStore.fetchScenes(this.projectId, this.authStore.token);
+        await this.loadVisualStoryboard();
       }
     } catch (error) {
       this.errorMessage = error instanceof Error ? error.message : 'Falha ao carregar projeto';
@@ -452,6 +537,61 @@ export default class ProjectDetailPage extends Vue {
 
   openResult() {
     void this.$router.push({ name: 'video-result', params: { id: this.projectId } });
+  }
+
+  async loadVisualStoryboard() {
+    if (!this.authStore.token) {
+      return;
+    }
+
+    try {
+      await this.projectsStore.fetchVisualStoryboard(this.projectId, this.authStore.token);
+      this.visualStoryboardInstruction =
+        this.projectsStore.currentVisualStoryboard?.revisionInstruction ?? '';
+    } catch {
+      this.visualStoryboardInstruction = '';
+    }
+  }
+
+  async regenerateVisualStoryboard() {
+    if (!this.authStore.token) {
+      return;
+    }
+
+    this.loading = true;
+    this.errorMessage = null;
+
+    try {
+      await this.projectsStore.regenerateVisualStoryboard(
+        this.projectId,
+        this.visualStoryboardInstruction,
+        this.authStore.token
+      );
+    } catch (error) {
+      this.errorMessage =
+        error instanceof Error ? error.message : 'Falha ao regerar storyboard visual';
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  async startRender() {
+    if (!this.authStore.token) {
+      return;
+    }
+
+    this.loading = true;
+    this.errorMessage = null;
+
+    try {
+      await this.projectsStore.startRender(this.projectId, this.authStore.token);
+      void this.$router.push({ name: 'processing', params: { id: this.projectId } });
+    } catch (error) {
+      this.errorMessage =
+        error instanceof Error ? error.message : 'Falha ao iniciar renderizacao';
+    } finally {
+      this.loading = false;
+    }
   }
 
   async retryProject() {
@@ -613,12 +753,67 @@ export default class ProjectDetailPage extends Vue {
   color: #65676b !important;
 }
 
+.visual-storyboard-card {
+  margin-bottom: 16px;
+  padding: 18px;
+  border: 1px solid #d8e2f0;
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.06);
+}
+
+.visual-storyboard-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.visual-storyboard-card h3 {
+  margin: 0 0 6px;
+  color: #1c1e21;
+  font-size: 1rem;
+}
+
+.visual-storyboard-card p {
+  margin: 0;
+  color: #65676b;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.visual-storyboard-card__image {
+  display: block;
+  width: 100%;
+  max-height: 460px;
+  object-fit: contain;
+  border: 1px solid #edf0f5;
+  border-radius: 14px;
+  background: #0b1020;
+}
+
+.visual-storyboard-card__placeholder {
+  display: grid;
+  min-height: 180px;
+  place-items: center;
+  border: 1px dashed #c8d3e1;
+  border-radius: 14px;
+  background: #f8fafc;
+  color: #65676b;
+  font-size: 0.9rem;
+}
+
 @media (max-width: 600px) {
   .project-detail-card {
     padding: 18px;
   }
 
   .reference-reprocess-banner {
+    flex-direction: column;
+  }
+
+  .visual-storyboard-card__header {
     flex-direction: column;
   }
 }

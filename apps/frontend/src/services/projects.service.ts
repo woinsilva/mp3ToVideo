@@ -1,9 +1,11 @@
 import { apiService } from '@/services/api.service';
 import type {
+  CreateProjectInput,
   ProjectRender,
   ProjectScene,
   ProjectStatusResponse,
   ProjectSummary,
+  ProjectVisualStoryboard,
   TrackUploadResult
 } from '@/types/project.types';
 
@@ -12,25 +14,12 @@ class ProjectsService {
     return apiService.request<ProjectSummary[]>('/projects', {}, token);
   }
 
-  create(
-    title: string,
-    clipDurationSeconds: number | null,
-    sceneDurationSeconds: number | null,
-    visualCheckpointName: string | null,
-    manualLyricsText: string | null,
-    token: string
-  ) {
+  create(input: CreateProjectInput, token: string) {
     return apiService.request<ProjectSummary>(
       '/projects',
       {
         method: 'POST',
-        body: JSON.stringify({
-          title,
-          clipDurationSeconds,
-          sceneDurationSeconds,
-          visualCheckpointName,
-          manualLyricsText
-        })
+        body: JSON.stringify(input)
       },
       token
     );
@@ -105,6 +94,29 @@ class ProjectsService {
     return apiService.request<ProjectScene[]>(`/projects/${projectId}/scenes`, {}, token);
   }
 
+  visualStoryboard(projectId: string, token: string) {
+    return apiService.request<ProjectVisualStoryboard>(
+      `/projects/${projectId}/visual-storyboard`,
+      {},
+      token
+    );
+  }
+
+  regenerateVisualStoryboard(projectId: string, instruction: string, token: string) {
+    return apiService.request<ProjectVisualStoryboard>(
+      `/projects/${projectId}/visual-storyboard/regenerate`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ instruction })
+      },
+      token
+    );
+  }
+
+  downloadVisualStoryboardImage(projectId: string, token: string) {
+    return apiService.download(`/projects/${projectId}/visual-storyboard/image`, token);
+  }
+
   uploadSceneReferenceImage(projectId: string, sceneId: string, file: File, token: string) {
     const formData = new FormData();
     formData.append('file', file);
@@ -122,6 +134,16 @@ class ProjectsService {
   retrySceneRender(projectId: string, sceneId: string, token: string) {
     return apiService.request<ProjectScene>(
       `/projects/${projectId}/scenes/${sceneId}/retry-render`,
+      {
+        method: 'POST'
+      },
+      token
+    );
+  }
+
+  startRender(projectId: string, token: string) {
+    return apiService.request<ProjectSummary>(
+      `/projects/${projectId}/start-render`,
       {
         method: 'POST'
       },
