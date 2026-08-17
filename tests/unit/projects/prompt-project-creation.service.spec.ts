@@ -105,6 +105,6 @@ describe('ProjectsService prompt-based creation', () => {
         generationMode: 'prompt',
         generationPrompt: 'Uma cena cinematográfica detalhada.'
       })
-    ).rejects.toThrow('Video duration is required for prompt-based generation');
+    ).rejects.toThrow('Video duration is required for direct video generation');
   });
 });

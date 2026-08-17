@@ -78,6 +78,22 @@ export const useProjectsStore = defineStore('projects', {
         this.isLoading = false;
       }
     },
+    async uploadSourceImage(projectId: string, file: File, token: string) {
+      this.isLoading = true;
+      this.errorMessage = null;
+
+      try {
+        const project = await projectsService.uploadSourceImage(projectId, file, token);
+        this.currentProject = project;
+        this.projects = this.projects.map((item) => item.id === project.id ? project : item);
+        return project;
+      } catch (error) {
+        this.errorMessage = error instanceof Error ? error.message : 'Falha ao enviar imagem';
+        throw error;
+      } finally {
+        this.isLoading = false;
+      }
+    },
     async fetchProject(projectId: string, token: string) {
       this.isLoading = true;
       this.errorMessage = null;

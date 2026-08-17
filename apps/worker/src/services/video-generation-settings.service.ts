@@ -8,7 +8,10 @@ export interface VideoGenerationOverrides {
   seed?: number | null;
   cfg?: number | null;
   steps?: number | null;
+  width?: number | null;
+  height?: number | null;
   stabilityTest?: boolean;
+  imageToVideo?: boolean;
 }
 
 export interface ResolvedVideoGenerationSettings {
@@ -51,9 +54,12 @@ export class VideoGenerationSettingsService {
   ): ResolvedVideoGenerationSettings {
     const fps = this.configService.get<number>('visual.comfyuiVideoFps', 24);
     const frameCount = calculateWanFrameCount(durationSeconds, fps);
-    const resolvedPrompts = overrides.stabilityTest
+    const basePrompts = overrides.stabilityTest
       ? this.buildStabilityPrompts(prompt)
       : { positivePrompt: prompt.positivePrompt, negativePrompt: prompt.negativePrompt };
+    const resolvedPrompts = overrides.imageToVideo
+      ? this.buildImageToVideoPrompts(basePrompts)
+      : basePrompts;
 
     return {
       workflowName: this.configService.get<string>('visual.comfyuiVideoWorkflowName', 'wan-2.2-ti2v-5b'),
@@ -63,8 +69,8 @@ export class VideoGenerationSettingsService {
       steps: overrides.steps ?? this.configService.get<number>('visual.comfyuiSteps', 20),
       sampler: this.configService.get<string>('visual.comfyuiSampler', 'uni_pc'),
       scheduler: this.configService.get<string>('visual.comfyuiScheduler', 'simple'),
-      width: this.configService.get<number>('visual.comfyuiWidth', 1024),
-      height: this.configService.get<number>('visual.comfyuiHeight', 576),
+      width: overrides.width ?? this.configService.get<number>('visual.comfyuiWidth', 1024),
+      height: overrides.height ?? this.configService.get<number>('visual.comfyuiHeight', 576),
       fps,
       frameCount,
       requestedDurationSeconds: durationSeconds,
@@ -95,6 +101,20 @@ export class VideoGenerationSettingsService {
     return {
       positivePrompt,
       negativePrompt: this.mergeNegativePrompts(prompt.negativePrompt, stabilityNegatives)
+    };
+  }
+
+  private buildImageToVideoPrompts(prompts: {
+    positivePrompt: string;
+    negativePrompt: string;
+  }) {
+    return {
+      positivePrompt: prompts.positivePrompt,
+      negativePrompt: this.mergeNegativePrompts(prompts.negativePrompt, [
+        'identity change', 'face distortion', 'morphing', 'deformed hands', 'extra fingers',
+        'extra limbs', 'duplicated body parts', 'body deformation', 'background transformation',
+        'unexpected scene transition', 'surreal transformation', 'sudden camera changes'
+      ])
     };
   }
 

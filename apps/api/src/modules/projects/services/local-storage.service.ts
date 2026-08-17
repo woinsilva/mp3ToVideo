@@ -66,6 +66,29 @@ export class LocalStorageService {
     return relativePath.replace(/\\/g, '/');
   }
 
+  async saveProjectSourceImage(
+    organizationId: string,
+    projectId: string,
+    originalFileName: string,
+    buffer: Buffer
+  ): Promise<string> {
+    const root = this.configService.get<string>('storage.root', './storage');
+    const extension = extname(originalFileName).toLowerCase() || '.png';
+    const relativePath = join(
+      root,
+      'source-images',
+      organizationId,
+      projectId,
+      `original-${Date.now()}${extension}`
+    );
+    const absolutePath = this.getAbsolutePath(relativePath);
+
+    await mkdir(dirname(absolutePath), { recursive: true });
+    await writeFile(absolutePath, buffer);
+
+    return relativePath.replace(/\\/g, '/');
+  }
+
   async saveStoryboardImage(
     organizationId: string,
     projectId: string,
@@ -110,6 +133,11 @@ export class LocalStorageService {
   buildProjectSceneReferenceImagesDirectory(organizationId: string, projectId: string): string {
     const root = this.configService.get<string>('storage.root', './storage');
     return join(root, 'scene-reference-images', organizationId, projectId).replace(/\\/g, '/');
+  }
+
+  buildProjectSourceImagesDirectory(organizationId: string, projectId: string): string {
+    const root = this.configService.get<string>('storage.root', './storage');
+    return join(root, 'source-images', organizationId, projectId).replace(/\\/g, '/');
   }
 
   buildProjectStoryboardImagesDirectory(organizationId: string, projectId: string): string {

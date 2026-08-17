@@ -25,6 +25,20 @@ class ProjectsService {
     );
   }
 
+  uploadSourceImage(projectId: string, file: File, token: string) {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    return apiService.request<ProjectSummary>(
+      `/projects/${projectId}/source-image`,
+      {
+        method: 'POST',
+        body: formData
+      },
+      token
+    );
+  }
+
   detail(projectId: string, token: string) {
     return apiService.request<ProjectSummary>(`/projects/${projectId}`, {}, token);
   }

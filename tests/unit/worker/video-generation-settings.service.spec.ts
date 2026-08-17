@@ -72,4 +72,24 @@ describe('VideoGenerationSettingsService', () => {
     expect(result.seed).toBe(7);
     expect(result.frameCount).toBe(81);
   });
+
+  it('adds I2V-specific protections without replacing the movement prompt', () => {
+    const result = createService().resolve(prompt, 2, {
+      imageToVideo: true,
+      seed: 99,
+      width: 704,
+      height: 1280
+    });
+
+    expect(result.positivePrompt).toBe(prompt.positivePrompt);
+    expect(result.negativePrompt).toContain('deformed hands');
+    expect(result.negativePrompt).toContain('extra fingers');
+    expect(result.negativePrompt).toContain('unexpected scene transition');
+    expect(result).toMatchObject({
+      seed: 99,
+      width: 704,
+      height: 1280,
+      frameCount: 33
+    });
+  });
 });

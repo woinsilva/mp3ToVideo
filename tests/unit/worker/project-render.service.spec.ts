@@ -44,6 +44,52 @@ describe('ProjectRenderService', () => {
     expect(renderFindFirst).not.toHaveBeenCalled();
   });
 
+  it('rejects I2V without the original image before any T2V or procedural fallback', async () => {
+    const renderFindFirst = vi.fn();
+    const generateVideo = vi.fn();
+    const createSceneClip = vi.fn();
+    const service = new ProjectRenderService(
+      { render: { findFirst: renderFindFirst } } as never,
+      {} as never,
+      {} as never,
+      { generate: generateVideo } as never,
+      {} as never,
+      { createSceneClip } as never,
+      {} as never,
+      {} as never
+    );
+
+    await expect(
+      service.render({
+        organizationId: 'org-1',
+        projectId: 'project-1',
+        generationMode: 'image',
+        audioPath: null,
+        durationSeconds: 2,
+        visualCheckpointName: null,
+        stabilityTest: false,
+        wanOnly: true,
+        generationSeed: 123,
+        generationCfg: 4.5,
+        generationSteps: 24,
+        scenes: [{
+          id: 'scene-1',
+          title: 'I2V scene',
+          durationSeconds: 2,
+          sectionType: 'intro',
+          status: 'pending',
+          visualProvider: null,
+          videoAssetStoragePath: null,
+          referenceImageStoragePath: null
+        }]
+      })
+    ).rejects.toThrow('Nenhum fallback T2V foi executado');
+
+    expect(renderFindFirst).not.toHaveBeenCalled();
+    expect(generateVideo).not.toHaveBeenCalled();
+    expect(createSceneClip).not.toHaveBeenCalled();
+  });
+
   it('fails a Wan-only scene explicitly without image or procedural fallbacks', async () => {
     const prismaService = {
       render: {

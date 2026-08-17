@@ -4,7 +4,7 @@
       <div>
         <p class="page-eyebrow">Etapa 2 de 2 · Envio</p>
         <h2 class="page-title">{{ projectTitle }}</h2>
-        <p class="page-subtitle">{{ isPromptProject ? 'Acompanhe a geração criada a partir da sua descrição.' : 'Revise as opções, escolha a música e inicie a geração.' }}</p>
+        <p class="page-subtitle">{{ isPromptProject ? 'Acompanhe a geração direta criada a partir da sua descrição ou imagem.' : 'Revise as opções, escolha a música e inicie a geração.' }}</p>
       </div>
       <v-chip :color="statusTone" variant="tonal">{{ statusLabel }}</v-chip>
     </section>
@@ -321,7 +321,7 @@ export default class ProjectDetailPage extends Vue {
   }
 
   get isPromptProject(): boolean {
-    return this.projectsStore.currentProject?.generationMode === 'prompt';
+    return this.projectsStore.currentProject?.generationMode !== 'music';
   }
 
   get requiresTrackUpload(): boolean {

@@ -4,7 +4,7 @@
       <div>
         <p class="page-eyebrow">Novo vídeo</p>
         <h2 class="page-title">O que você quer criar?</h2>
-        <p class="page-subtitle">Comece com uma música ou descreva diretamente a cena que deseja gerar.</p>
+        <p class="page-subtitle">Descreva uma cena, anime uma imagem ou crie um videoclipe a partir de música.</p>
       </div>
       <span class="step-indicator"><strong>1</strong> · Configuração</span>
     </section>
@@ -17,6 +17,11 @@
             <strong>Descrever uma cena</strong>
             <span>Digite um prompt e gere o vídeo sem precisar enviar música.</span>
           </button>
+          <button type="button" class="generation-mode-card" :class="{ 'generation-mode-card--active': generationMode === 'image' }" @click="generationMode = 'image'">
+            <v-icon icon="mdi-image-move" size="28" />
+            <strong>Usar uma imagem</strong>
+            <span>Anime uma imagem de referência e transforme-a em vídeo.</span>
+          </button>
           <button type="button" class="generation-mode-card" :class="{ 'generation-mode-card--active': generationMode === 'music' }" @click="generationMode = 'music'">
             <v-icon icon="mdi-music-note" size="28" />
             <strong>Usar uma música</strong>
@@ -28,7 +33,7 @@
           <span>1</span>
           <div>
             <h3>Informações básicas</h3>
-            <p>{{ generationMode === 'prompt' ? 'Descreva a cena e defina sua duração.' : 'Prepare o projeto antes de enviar a música.' }}</p>
+            <p>{{ generationMode === 'music' ? 'Prepare o projeto antes de enviar a música.' : generationMode === 'image' ? 'Escolha a imagem e descreva o movimento.' : 'Descreva a cena e defina sua duração.' }}</p>
           </div>
         </div>
 
@@ -37,10 +42,17 @@
           <input v-model="title" class="auth-input" type="text" placeholder="Ex.: Cidade do futuro" autofocus />
         </label>
 
-        <label v-if="generationMode === 'prompt'" class="auth-input-group">
-          <span class="auth-input-label">Descreva a cena</span>
-          <textarea v-model="generationPrompt" class="auth-input auth-input--textarea" rows="8" placeholder="Ex.: Uma astronauta caminha por uma floresta bioluminescente à noite, câmera acompanhando de lado, estilo cinematográfico e realista." />
-          <span class="field-help">Inclua ambiente, personagem, ação, estilo visual, iluminação e movimento de câmera.</span>
+        <label v-if="generationMode === 'image'" class="auth-input-group source-image-upload">
+          <span class="auth-input-label">Imagem de referência</span>
+          <input class="auth-input" type="file" accept="image/jpeg,image/png,image/webp" @change="onSourceImageSelected" />
+          <span class="field-help">JPG, PNG ou WEBP. A imagem será usada diretamente como primeiro frame do Wan I2V.</span>
+          <img v-if="sourceImagePreviewUrl" :src="sourceImagePreviewUrl" class="source-image-preview" alt="Preview da imagem de referência" />
+        </label>
+
+        <label v-if="generationMode !== 'music'" class="auth-input-group">
+          <span class="auth-input-label">{{ generationMode === 'image' ? 'Descreva o movimento' : 'Descreva a cena' }}</span>
+          <textarea v-model="generationPrompt" class="auth-input auth-input--textarea" rows="8" :placeholder="generationMode === 'image' ? 'Ex.: A pessoa começa a caminhar lentamente em direção à câmera, com movimento natural e suave.' : 'Ex.: Uma astronauta caminha por uma floresta bioluminescente à noite, câmera acompanhando de lado, estilo cinematográfico e realista.'" />
+          <span class="field-help">{{ generationMode === 'image' ? 'Oriente ação, movimento do personagem e movimento de câmera; a imagem define aparência e composição.' : 'Inclua ambiente, personagem, ação, estilo visual, iluminação e movimento de câmera.' }}</span>
         </label>
 
         <label v-else class="auth-input-group">
@@ -49,7 +61,7 @@
           <span class="field-help">Com a letra original, as cenas ficam mais fiéis à história da música.</span>
         </label>
 
-        <label v-if="generationMode === 'prompt'" class="auth-input-group">
+        <label v-if="generationMode !== 'music'" class="auth-input-group">
           <span class="auth-input-label">Duração do vídeo em segundos</span>
           <select v-model="clipDurationSecondsInput" class="auth-input">
             <option value="" disabled>Selecione a duração</option>
@@ -59,7 +71,7 @@
           </select>
         </label>
 
-        <label v-if="generationMode === 'prompt'" class="test-toggle">
+        <label v-if="generationMode !== 'music'" class="test-toggle">
           <input v-model="stabilityTest" type="checkbox" />
           <span>
             <strong>Minimal Motion / Stability Test</strong>
@@ -73,20 +85,20 @@
             <v-icon icon="mdi-chevron-down" size="20" />
           </summary>
           <div class="advanced-settings__body">
-            <label v-if="generationMode === 'prompt'" class="auth-input-group">
+            <label v-if="generationMode !== 'music'" class="auth-input-group">
               <span class="auth-input-label">Seed reproduzível</span>
               <input v-model="generationSeedInput" class="auth-input" type="number" min="0" max="2147483646" step="1" placeholder="Aleatório" />
               <span class="field-help">Vazio gera um seed aleatório, que será salvo nos detalhes.</span>
             </label>
-            <label v-if="generationMode === 'prompt'" class="auth-input-group">
+            <label v-if="generationMode !== 'music'" class="auth-input-group">
               <span class="auth-input-label">CFG</span>
               <input v-model="generationCfgInput" class="auth-input" type="number" min="1" max="20" step="0.1" placeholder="Padrão do ambiente" />
             </label>
-            <label v-if="generationMode === 'prompt'" class="auth-input-group">
+            <label v-if="generationMode !== 'music'" class="auth-input-group">
               <span class="auth-input-label">Steps</span>
               <input v-model="generationStepsInput" class="auth-input" type="number" min="1" max="100" step="1" placeholder="Padrão do ambiente" />
             </label>
-            <label v-if="generationMode === 'prompt'" class="test-toggle test-toggle--compact">
+            <label v-if="generationMode !== 'music'" class="test-toggle test-toggle--compact">
               <input v-model="wanOnly" type="checkbox" />
               <span><strong>ComfyUI / Wan only</strong><small>Falhar sem fallback caso o Wan não gere o vídeo.</small></span>
             </label>
@@ -95,25 +107,30 @@
               <input v-model="clipDurationSecondsInput" class="auth-input" type="number" min="1" max="600" step="1" placeholder="Vídeo completo" />
               <span class="field-help">Deixe vazio para usar a música inteira.</span>
             </label>
-            <label class="auth-input-group">
+            <label v-if="generationMode === 'music'" class="auth-input-group">
               <span class="auth-input-label">Duração aproximada de cada cena</span>
               <input v-model="sceneDurationSecondsInput" class="auth-input" type="number" min="3" max="30" step="1" placeholder="6 segundos" />
             </label>
-            <label class="auth-input-group">
+            <label v-if="generationMode === 'music'" class="auth-input-group">
               <span class="auth-input-label">Modelo visual</span>
               <select v-model="visualCheckpointName" class="auth-input">
                 <option value="">Automático (recomendado)</option>
                 <option value="sd_xl_turbo_1.0.safetensors">SDXL Turbo</option>
               </select>
             </label>
+            <label v-else class="auth-input-group">
+              <span class="auth-input-label">Modelo visual</span>
+              <input class="auth-input" value="Wan 2.2 TI2V 5B" disabled />
+            </label>
           </div>
         </details>
 
         <v-alert v-if="errorMessage" type="error" variant="tonal">{{ errorMessage }}</v-alert>
         <v-alert v-if="submitted && !normalizedTitle" type="warning" variant="tonal">Informe um título para criar o projeto.</v-alert>
-        <v-alert v-if="submitted && generationMode === 'prompt' && normalizedGenerationPrompt.length < 10" type="warning" variant="tonal">Descreva a cena com pelo menos 10 caracteres.</v-alert>
+        <v-alert v-if="submitted && generationMode !== 'music' && normalizedGenerationPrompt.length < 10" type="warning" variant="tonal">Descreva a cena ou movimento com pelo menos 10 caracteres.</v-alert>
+        <v-alert v-if="submitted && generationMode === 'image' && !sourceImageFile" type="warning" variant="tonal">Selecione uma imagem JPG, PNG ou WEBP.</v-alert>
         <v-alert v-if="submitted && clipDurationSecondsRawValue && normalizedClipDurationSeconds === null" type="warning" variant="tonal">Informe uma duração entre 1 e 600 segundos.</v-alert>
-        <v-alert v-if="submitted && generationMode === 'prompt' && normalizedClipDurationSeconds === null" type="warning" variant="tonal">A duração é obrigatória para gerar pela descrição.</v-alert>
+        <v-alert v-if="submitted && generationMode !== 'music' && normalizedClipDurationSeconds === null" type="warning" variant="tonal">A duração é obrigatória para geração direta.</v-alert>
         <v-alert v-if="submitted && sceneDurationSecondsRawValue && normalizedSceneDurationSeconds === null" type="warning" variant="tonal">Informe uma duração por cena entre 3 e 30 segundos.</v-alert>
         <v-alert v-if="submitted && generationSeedRawValue && normalizedGenerationSeed === null" type="warning" variant="tonal">Informe um seed inteiro entre 0 e 2147483646.</v-alert>
         <v-alert v-if="submitted && generationCfgRawValue && normalizedGenerationCfg === null" type="warning" variant="tonal">Informe um CFG entre 1 e 20.</v-alert>
@@ -121,7 +138,7 @@
 
         <div class="app-button-row">
           <button class="app-button app-button--large" type="submit" :disabled="loading">
-            {{ loading ? 'Preparando...' : generationMode === 'prompt' ? 'Gerar vídeo' : 'Continuar para o upload' }}
+            {{ loading ? 'Preparando...' : generationMode === 'music' ? 'Continuar para o upload' : 'Gerar vídeo' }}
             <v-icon v-if="!loading" icon="mdi-arrow-right" size="19" />
           </button>
           <button class="app-button app-button--outline" type="button" @click="cancel">Cancelar</button>
@@ -140,7 +157,7 @@ import { useProjectsStore } from '@/stores/projects.store';
 
 @Component({ components: { AppLayout } })
 export default class CreateProjectPage extends Vue {
-  generationMode: 'music' | 'prompt' = 'prompt';
+  generationMode: 'music' | 'prompt' | 'image' = 'prompt';
   generationPrompt = '';
   title = '';
   clipDurationSecondsInput: string | number = '';
@@ -155,6 +172,8 @@ export default class CreateProjectPage extends Vue {
   loading = false;
   errorMessage: string | null = null;
   submitted = false;
+  sourceImageFile: File | null = null;
+  sourceImagePreviewUrl: string | null = null;
 
   get authStore(): any { return useAuthStore(); }
   get projectsStore(): any { return useProjectsStore(); }
@@ -193,12 +212,27 @@ export default class CreateProjectPage extends Vue {
     return this.generationStepsRawValue && Number.isInteger(value) && value >= 1 && value <= 100 ? value : null;
   }
 
+  onSourceImageSelected(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+
+    if (this.sourceImagePreviewUrl) URL.revokeObjectURL(this.sourceImagePreviewUrl);
+    this.sourceImageFile = file;
+    this.sourceImagePreviewUrl = file ? URL.createObjectURL(file) : null;
+  }
+
+  beforeUnmount() {
+    if (this.sourceImagePreviewUrl) URL.revokeObjectURL(this.sourceImagePreviewUrl);
+  }
+
   async submit() {
     if (!this.authStore.token) return;
     this.submitted = true;
 
-    const invalidPromptMode = this.generationMode === 'prompt' && (this.normalizedGenerationPrompt.length < 10 || this.normalizedClipDurationSeconds === null);
-    if (!this.normalizedTitle || invalidPromptMode || (this.clipDurationSecondsRawValue && this.normalizedClipDurationSeconds === null) || (this.sceneDurationSecondsRawValue && this.normalizedSceneDurationSeconds === null) || (this.generationSeedRawValue && this.normalizedGenerationSeed === null) || (this.generationCfgRawValue && this.normalizedGenerationCfg === null) || (this.generationStepsRawValue && this.normalizedGenerationSteps === null)) return;
+    const isDirectVideoMode = this.generationMode !== 'music';
+    const invalidPromptMode = isDirectVideoMode && (this.normalizedGenerationPrompt.length < 10 || this.normalizedClipDurationSeconds === null);
+    const invalidImageMode = this.generationMode === 'image' && !this.sourceImageFile;
+    if (!this.normalizedTitle || invalidPromptMode || invalidImageMode || (this.clipDurationSecondsRawValue && this.normalizedClipDurationSeconds === null) || (this.sceneDurationSecondsRawValue && this.normalizedSceneDurationSeconds === null) || (this.generationSeedRawValue && this.normalizedGenerationSeed === null) || (this.generationCfgRawValue && this.normalizedGenerationCfg === null) || (this.generationStepsRawValue && this.normalizedGenerationSteps === null)) return;
 
     this.loading = true;
     this.errorMessage = null;
@@ -206,18 +240,21 @@ export default class CreateProjectPage extends Vue {
       const project = await this.projectsStore.createProject({
         title: this.normalizedTitle,
         generationMode: this.generationMode,
-        generationPrompt: this.generationMode === 'prompt' ? this.normalizedGenerationPrompt : null,
-        stabilityTest: this.generationMode === 'prompt' && this.stabilityTest,
-        wanOnly: this.generationMode === 'prompt' && this.wanOnly,
-        generationSeed: this.generationMode === 'prompt' ? this.normalizedGenerationSeed : null,
-        generationCfg: this.generationMode === 'prompt' ? this.normalizedGenerationCfg : null,
-        generationSteps: this.generationMode === 'prompt' ? this.normalizedGenerationSteps : null,
+        generationPrompt: isDirectVideoMode ? this.normalizedGenerationPrompt : null,
+        stabilityTest: isDirectVideoMode && this.stabilityTest,
+        wanOnly: isDirectVideoMode && this.wanOnly,
+        generationSeed: isDirectVideoMode ? this.normalizedGenerationSeed : null,
+        generationCfg: isDirectVideoMode ? this.normalizedGenerationCfg : null,
+        generationSteps: isDirectVideoMode ? this.normalizedGenerationSteps : null,
         clipDurationSeconds: this.normalizedClipDurationSeconds,
         sceneDurationSeconds: this.normalizedSceneDurationSeconds,
         visualCheckpointName: this.normalizedVisualCheckpointName,
         manualLyricsText: this.generationMode === 'music' ? this.normalizedManualLyricsText : null
       }, this.authStore.token);
-      void this.$router.push({ name: this.generationMode === 'prompt' ? 'processing' : 'project-detail', params: { id: project.id } });
+      if (this.generationMode === 'image' && this.sourceImageFile) {
+        await this.projectsStore.uploadSourceImage(project.id, this.sourceImageFile, this.authStore.token);
+      }
+      void this.$router.push({ name: isDirectVideoMode ? 'processing' : 'project-detail', params: { id: project.id } });
     } catch (error) {
       this.errorMessage = error instanceof Error ? error.message : 'Falha ao criar projeto';
     } finally {
@@ -234,7 +271,7 @@ export default class CreateProjectPage extends Vue {
 .step-indicator { color: #65676b; font-size: 0.84rem; white-space: nowrap; }
 .step-indicator strong { color: #0866ff; }
 .create-form { overflow: hidden; padding: 24px; }
-.generation-mode-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.generation-mode-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 .generation-mode-card { display: flex; min-height: 142px; flex-direction: column; align-items: flex-start; gap: 7px; padding: 18px; border: 2px solid #dfe3e8; border-radius: 14px; color: #25282d; background: #fff; text-align: left; cursor: pointer; transition: border-color 0.15s, background 0.15s, transform 0.15s; }
 .generation-mode-card:hover { transform: translateY(-1px); border-color: #9fbff8; }
 .generation-mode-card--active { border-color: #0866ff; background: #f2f7ff; box-shadow: 0 0 0 1px #0866ff; }
@@ -254,5 +291,6 @@ export default class CreateProjectPage extends Vue {
 .advanced-settings summary { display: flex; align-items: center; justify-content: space-between; padding: 15px 16px; cursor: pointer; font-weight: 700; list-style: none; }
 .advanced-settings summary span { display: flex; align-items: center; gap: 8px; }
 .advanced-settings__body { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding: 4px 16px 18px; }
+.source-image-preview { display: block; width: min(100%, 560px); max-height: 420px; border: 1px solid #dfe3e8; border-radius: 12px; object-fit: contain; background: #f7f8fa; }
 @media (max-width: 640px) { .create-form { padding: 18px; } .generation-mode-grid, .advanced-settings__body { grid-template-columns: 1fr; } }
 </style>

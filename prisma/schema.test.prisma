@@ -32,6 +32,7 @@ enum ProjectStatus {
 enum ProjectGenerationMode {
   music
   prompt
+  image
 }
 
 enum LyricsSource {
@@ -59,6 +60,7 @@ enum SceneStatus {
 enum AssetType {
   audio
   image
+  source_image
   storyboard_image
   video_scene
   render
@@ -130,36 +132,38 @@ model OrganizationMember {
 }
 
 model Project {
-  id              String          @id @default(cuid())
-  organizationId  String
-  createdByUserId String
-  title           String
-  generationMode  ProjectGenerationMode @default(music)
-  generationPrompt String?
-  stabilityTest    Boolean         @default(false)
-  wanOnly           Boolean         @default(false)
-  generationSeed    Int?
-  generationCfg     Float?
-  generationSteps   Int?
-  clipDurationSeconds Float?
+  id                   String                @id @default(cuid())
+  organizationId       String
+  createdByUserId      String
+  title                String
+  generationMode       ProjectGenerationMode @default(music)
+  generationPrompt     String?
+  stabilityTest        Boolean               @default(false)
+  wanOnly              Boolean               @default(false)
+  generationSeed       Int?
+  generationCfg        Float?
+  generationSteps      Int?
+  sourceImageAssetId   String?               @unique
+  clipDurationSeconds  Float?
   sceneDurationSeconds Float?
   visualCheckpointName String?
-  status          ProjectStatus   @default(draft)
-  errorMessage    String?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-  deletedAt       DateTime?
-  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  createdByUser   User            @relation("ProjectCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  track           Track?
-  lyrics          Lyrics?
-  musicSections   MusicSection[]
-  storyboard      Storyboard?
-  scenes          Scene[]
-  renders         Render[]
-  assets          Asset[]
-  processingJobs  ProcessingJob[]
-  sceneRenderAttempts SceneRenderAttempt[]
+  status               ProjectStatus         @default(draft)
+  errorMessage         String?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  deletedAt            DateTime?
+  organization         Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdByUser        User                  @relation("ProjectCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  track                Track?
+  lyrics               Lyrics?
+  musicSections        MusicSection[]
+  storyboard           Storyboard?
+  scenes               Scene[]
+  renders              Render[]
+  assets               Asset[]
+  processingJobs       ProcessingJob[]
+  sceneRenderAttempts  SceneRenderAttempt[]
+  sourceImageAsset     Asset?                @relation("ProjectSourceImageAsset", fields: [sourceImageAssetId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 }
 
 model Track {
@@ -204,92 +208,92 @@ model MusicSection {
 }
 
 model Storyboard {
-  id               String   @id @default(cuid())
-  projectId        String   @unique
-  visualAssetId    String?
-  concept          String
-  visualStyle      String
-  mood             String
-  colorPalette     String
-  narrativeSummary String
-  visualPrompt     String?
+  id                  String   @id @default(cuid())
+  projectId           String   @unique
+  visualAssetId       String?
+  concept             String
+  visualStyle         String
+  mood                String
+  colorPalette        String
+  narrativeSummary    String
+  visualPrompt        String?
   revisionInstruction String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  project          Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  visualAsset      Asset?   @relation("StoryboardVisualAsset", fields: [visualAssetId], references: [id], onDelete: SetNull)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  project             Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  visualAsset         Asset?   @relation("StoryboardVisualAsset", fields: [visualAssetId], references: [id], onDelete: SetNull)
 }
 
 model Scene {
-  id              String        @id @default(cuid())
-  projectId       String
-  musicSectionId  String?
-  index           Int
-  title           String
-  description     String
-  startSeconds    Float
-  endSeconds      Float
-  durationSeconds Float
-  status          SceneStatus   @default(pending)
-  visualProvider  String?
-  videoAssetId    String?
+  id                    String               @id @default(cuid())
+  projectId             String
+  musicSectionId        String?
+  index                 Int
+  title                 String
+  description           String
+  startSeconds          Float
+  endSeconds            Float
+  durationSeconds       Float
+  status                SceneStatus          @default(pending)
+  visualProvider        String?
+  videoAssetId          String?
   referenceImageAssetId String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  project         Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  musicSection    MusicSection? @relation(fields: [musicSectionId], references: [id], onDelete: SetNull)
-  videoAsset      Asset?        @relation("SceneVideoAsset", fields: [videoAssetId], references: [id], onDelete: SetNull)
-  referenceImageAsset Asset?    @relation("SceneReferenceImageAsset", fields: [referenceImageAssetId], references: [id], onDelete: SetNull)
-  prompt          ScenePrompt?
-  renderAttempts  SceneRenderAttempt[]
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  project               Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  musicSection          MusicSection?        @relation(fields: [musicSectionId], references: [id], onDelete: SetNull)
+  videoAsset            Asset?               @relation("SceneVideoAsset", fields: [videoAssetId], references: [id], onDelete: SetNull)
+  referenceImageAsset   Asset?               @relation("SceneReferenceImageAsset", fields: [referenceImageAssetId], references: [id], onDelete: SetNull)
+  prompt                ScenePrompt?
+  renderAttempts        SceneRenderAttempt[]
 
   @@unique([projectId, index])
   @@index([projectId, startSeconds])
 }
 
 model SceneRenderAttempt {
-  id                  String                   @id @default(cuid())
-  projectId           String
-  sceneId             String
-  attemptNumber       Int
-  provider            String
-  workflowName        String?
-  status              SceneRenderAttemptStatus @default(queued)
-  promptId            String?
-  positivePrompt      String?
-  negativePrompt      String?
-  seed                Int?
-  sourceType          String
-  hasReferenceImage   Boolean                  @default(false)
-  width               Int?
-  height              Int?
-  fps                 Int?
-  durationSeconds     Float?
+  id                       String                   @id @default(cuid())
+  projectId                String
+  sceneId                  String
+  attemptNumber            Int
+  provider                 String
+  workflowName             String?
+  status                   SceneRenderAttemptStatus @default(queued)
+  promptId                 String?
+  positivePrompt           String?
+  negativePrompt           String?
+  seed                     Int?
+  sourceType               String
+  hasReferenceImage        Boolean                  @default(false)
+  width                    Int?
+  height                   Int?
+  fps                      Int?
+  durationSeconds          Float?
   requestedDurationSeconds Float?
   effectiveDurationSeconds Float?
-  expectedFrameCount  Int?
-  steps               Int?
-  cfg                 Float?
-  sampler             String?
-  scheduler           String?
-  checkpointName      String?
-  unetName            String?
-  clipName            String?
-  clipType            String?
-  vaeName             String?
-  modelShift          Float?
-  startedAt           DateTime                 @default(now())
-  submittedAt         DateTime?
-  firstExternalSeenAt DateTime?
-  lastHeartbeatAt     DateTime?
-  finishedAt          DateTime?
-  durationMs          Int?
-  errorMessage        String?
-  metadata            Json?
-  createdAt           DateTime                 @default(now())
-  updatedAt           DateTime                 @updatedAt
-  project             Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  scene               Scene                    @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  expectedFrameCount       Int?
+  steps                    Int?
+  cfg                      Float?
+  sampler                  String?
+  scheduler                String?
+  checkpointName           String?
+  unetName                 String?
+  clipName                 String?
+  clipType                 String?
+  vaeName                  String?
+  modelShift               Float?
+  startedAt                DateTime                 @default(now())
+  submittedAt              DateTime?
+  firstExternalSeenAt      DateTime?
+  lastHeartbeatAt          DateTime?
+  finishedAt               DateTime?
+  durationMs               Int?
+  errorMessage             String?
+  metadata                 Json?
+  createdAt                DateTime                 @default(now())
+  updatedAt                DateTime                 @updatedAt
+  project                  Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  scene                    Scene                    @relation(fields: [sceneId], references: [id], onDelete: Cascade)
 
   @@unique([sceneId, attemptNumber])
   @@index([projectId, status])
@@ -311,21 +315,24 @@ model ScenePrompt {
 }
 
 model Asset {
-  id             String       @id @default(cuid())
-  organizationId String
-  projectId      String
-  type           AssetType
-  mimeType       String
-  storagePath    String
-  sizeBytes      Int
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  render         Render?
-  storyboardVisualFor Storyboard[] @relation("StoryboardVisualAsset")
-  sceneVideoFor  Scene[]      @relation("SceneVideoAsset")
-  sceneReferenceImageFor Scene[] @relation("SceneReferenceImageAsset")
+  id                     String       @id @default(cuid())
+  organizationId         String
+  projectId              String
+  type                   AssetType
+  mimeType               String
+  storagePath            String
+  sizeBytes              Int
+  width                  Int?
+  height                 Int?
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+  organization           Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project                Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  render                 Render?
+  storyboardVisualFor    Storyboard[] @relation("StoryboardVisualAsset")
+  sceneVideoFor          Scene[]      @relation("SceneVideoAsset")
+  sceneReferenceImageFor Scene[]      @relation("SceneReferenceImageAsset")
+  sourceImageFor         Project?     @relation("ProjectSourceImageAsset")
 
   @@index([organizationId, projectId, type])
 }
@@ -343,19 +350,19 @@ model Render {
 }
 
 model ProcessingJob {
-  id           String              @id @default(cuid())
-  projectId    String
-  queueName    String
-  jobName      String
-  bullJobId    String?
-  status       ProcessingJobStatus
-  progress     Int                 @default(0)
+  id            String              @id @default(cuid())
+  projectId     String
+  queueName     String
+  jobName       String
+  bullJobId     String?
+  status        ProcessingJobStatus
+  progress      Int                 @default(0)
   detailMessage String?
-  activityLog  Json?
-  errorMessage String?
-  createdAt    DateTime            @default(now())
-  updatedAt    DateTime            @updatedAt
-  project      Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  activityLog   Json?
+  errorMessage  String?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  project       Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId, queueName])
 }

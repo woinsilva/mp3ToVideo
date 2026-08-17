@@ -164,6 +164,7 @@ describe('Project processing integration', () => {
       const projectTempDir = resolve('storage', 'temp', projectId);
       const projectSceneDir = resolve('storage', 'generated-scenes', organizationId, projectId);
       const projectRenderDir = resolve('storage', 'renders', organizationId, projectId);
+      const projectSourceImageDir = resolve('storage', 'source-images', organizationId, projectId);
 
       if (existsSync(projectTempDir)) {
         rmSync(projectTempDir, { force: true, recursive: true });
@@ -175,6 +176,10 @@ describe('Project processing integration', () => {
 
       if (existsSync(projectRenderDir)) {
         rmSync(projectRenderDir, { force: true, recursive: true });
+      }
+
+      if (existsSync(projectSourceImageDir)) {
+        rmSync(projectSourceImageDir, { force: true, recursive: true });
       }
     }
   });
@@ -299,6 +304,105 @@ describe('Project processing integration', () => {
       audioPath: null,
       durationSeconds: 2,
       scenes: [{ id: scenes[0]?.id, durationSeconds: 2 }]
+    });
+  });
+
+  it('attaches the original project image to the scene before Wan I2V rendering', async () => {
+    const generationPrompt = 'The person walks slowly and naturally toward the camera.';
+    const createResponse = await request(app.getHttpServer())
+      .post('/projects')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({
+        title: 'I2V pipeline regression',
+        generationMode: 'image',
+        generationPrompt,
+        clipDurationSeconds: 2,
+        stabilityTest: false,
+        wanOnly: true,
+        generationSeed: 456789,
+        generationCfg: 4,
+        generationSteps: 24
+      })
+      .expect(201);
+
+    projectId = createResponse.body.id;
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAACCAQAAAC1HAwCAAAADklEQVR42mP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC',
+      'base64'
+    );
+    await request(app.getHttpServer())
+      .post(`/projects/${projectId}/source-image`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .attach('file', png, { filename: 'portrait.png', contentType: 'image/png' })
+      .expect(201);
+
+    const configService = {
+      get: (key: string, defaultValue?: unknown) => {
+        const values: Record<string, unknown> = {
+          'ai.enableOllama': false,
+          'ai.enableFallbacks': true
+        };
+        return key in values ? values[key] : defaultValue;
+      }
+    } as never;
+    const processingProgressService = new ProcessingProgressService(
+      prisma as unknown as WorkerPrismaService
+    );
+    const ollamaClientService = new OllamaClientService(configService);
+    const renderedInputs: Array<{
+      generationMode: string;
+      scenes: Array<{
+        id: string;
+        referenceImageAssetId: string | null;
+        referenceImageStoragePath: string | null;
+        referenceImageWidth: number | null;
+        referenceImageHeight: number | null;
+      }>;
+    }> = [];
+    const pipeline = new ProjectProcessingPipelineService(
+      prisma as unknown as WorkerPrismaService,
+      new ProjectPipelineStateService(prisma as unknown as WorkerPrismaService),
+      processingProgressService,
+      {} as AudioMetadataService,
+      {} as AudioExcerptService,
+      {} as LyricsGenerationService,
+      new MusicStructureService(),
+      new StoryboardGenerationService(
+        configService,
+        ollamaClientService,
+        new StoryboardFallbackService()
+      ),
+      new ScenePlanningService(),
+      new ScenePromptGenerationService(
+        configService,
+        ollamaClientService,
+        new ScenePromptService()
+      ),
+      {
+        render: async (input: (typeof renderedInputs)[number]) => renderedInputs.push(input)
+      } as ProjectRenderService
+    );
+
+    const result = await pipeline.run({ projectId, organizationId, requestedByUserId: userId });
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
+    const scenes = await prisma.scene.findMany({
+      where: { projectId },
+      include: { referenceImageAsset: true, prompt: true }
+    });
+
+    expect(result).toBe('completed');
+    expect(scenes).toHaveLength(1);
+    expect(scenes[0]?.referenceImageAssetId).toBe(project?.sourceImageAssetId);
+    expect(scenes[0]?.prompt?.positivePrompt).toBe(generationPrompt);
+    expect(renderedInputs).toHaveLength(1);
+    expect(renderedInputs[0]).toMatchObject({
+      generationMode: 'image',
+      scenes: [{
+        referenceImageAssetId: project?.sourceImageAssetId,
+        referenceImageStoragePath: scenes[0]?.referenceImageAsset?.storagePath,
+        referenceImageWidth: 1,
+        referenceImageHeight: 2
+      }]
     });
   });
 

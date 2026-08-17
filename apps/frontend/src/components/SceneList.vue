@@ -43,6 +43,7 @@
               <summary>Parâmetros da geração</summary>
               <dl>
                 <div><dt>Provider</dt><dd>{{ scene.attemptSummary.provider }}</dd></div>
+                <div><dt>Entrada</dt><dd>{{ scene.attemptSummary.sourceType }} · {{ scene.attemptSummary.hasReferenceImage ? 'imagem vinculada' : 'sem imagem' }}</dd></div>
                 <div><dt>Workflow</dt><dd>{{ scene.attemptSummary.workflowName ?? '--' }}</dd></div>
                 <div><dt>Modelo</dt><dd>{{ scene.attemptSummary.unetName ?? '--' }}</dd></div>
                 <div><dt>Seed</dt><dd>{{ scene.attemptSummary.seed ?? '--' }}</dd></div>

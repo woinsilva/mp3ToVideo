@@ -9,6 +9,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { AssetType, Prisma, ProjectStatus, SceneRenderAttemptStatus } from '@prisma/client';
 import { PROJECT_PROCESS_JOB_NAME, PROJECT_QUEUE_NAME } from '@video/shared';
+import { imageSize } from 'image-size';
 
 import { PrismaService } from '../../../database/prisma.service';
 import { ProjectProcessingPayloadFactory } from '../../jobs/services/project-processing-payload.factory';
@@ -20,7 +21,7 @@ interface CreateProjectInput {
   organizationId: string;
   createdByUserId: string;
   title: string;
-  generationMode?: 'music' | 'prompt';
+  generationMode?: 'music' | 'prompt' | 'image';
   generationPrompt?: string;
   stabilityTest?: boolean;
   wanOnly?: boolean;
@@ -86,21 +87,22 @@ export class ProjectsService {
     const sceneDurationSeconds = this.normalizeSceneDurationSeconds(input.sceneDurationSeconds);
     const visualCheckpointName = this.normalizeVisualCheckpointName(input.visualCheckpointName);
     const manualLyrics = this.normalizeManualLyricsText(input.manualLyricsText);
+    const isDirectVideoMode = generationMode === 'prompt' || generationMode === 'image';
 
-    if (generationMode === 'prompt' && !generationPrompt) {
-      throw new BadRequestException('A description is required for prompt-based generation');
+    if (isDirectVideoMode && !generationPrompt) {
+      throw new BadRequestException('A description is required for direct video generation');
     }
 
-    if (generationMode === 'prompt' && clipDurationSeconds === null) {
-      throw new BadRequestException('Video duration is required for prompt-based generation');
+    if (isDirectVideoMode && clipDurationSeconds === null) {
+      throw new BadRequestException('Video duration is required for direct video generation');
     }
 
     if (
-      generationMode === 'prompt' &&
+      isDirectVideoMode &&
       clipDurationSeconds !== null &&
       ![2, 3, 5].includes(clipDurationSeconds)
     ) {
-      throw new BadRequestException('Prompt-based video duration must be 2, 3 or 5 seconds');
+      throw new BadRequestException('Direct video duration must be 2, 3 or 5 seconds');
     }
 
     const project = await this.prismaService.project.create({
@@ -110,11 +112,11 @@ export class ProjectsService {
         title: input.title.trim(),
         generationMode,
         generationPrompt,
-        stabilityTest: generationMode === 'prompt' && Boolean(input.stabilityTest),
-        wanOnly: generationMode === 'prompt' && input.wanOnly !== false,
-        generationSeed: generationMode === 'prompt' ? input.generationSeed ?? null : null,
-        generationCfg: generationMode === 'prompt' ? input.generationCfg ?? null : null,
-        generationSteps: generationMode === 'prompt' ? input.generationSteps ?? null : null,
+        stabilityTest: isDirectVideoMode && Boolean(input.stabilityTest),
+        wanOnly: isDirectVideoMode && input.wanOnly !== false,
+        generationSeed: isDirectVideoMode ? input.generationSeed ?? null : null,
+        generationCfg: isDirectVideoMode ? input.generationCfg ?? null : null,
+        generationSteps: isDirectVideoMode ? input.generationSteps ?? null : null,
         clipDurationSeconds,
         sceneDurationSeconds,
         visualCheckpointName,
@@ -151,6 +153,105 @@ export class ProjectsService {
     }
 
     return this.projectPresenter.summaryWithLyrics(project);
+  }
+
+  async uploadProjectSourceImage(
+    projectId: string,
+    organizationId: string,
+    file: Express.Multer.File
+  ) {
+    const project = await this.prismaService.project.findFirst({
+      where: {
+        id: projectId,
+        organizationId,
+        deletedAt: null
+      },
+      include: {
+        sourceImageAsset: true
+      }
+    });
+
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    if (project.generationMode !== 'image') {
+      throw new BadRequestException('Source image upload is only available for image-to-video projects');
+    }
+
+    if (project.status !== ProjectStatus.draft) {
+      throw new BadRequestException('Source image can only be uploaded before image-to-video processing starts');
+    }
+
+    let dimensions: ReturnType<typeof imageSize>;
+    try {
+      dimensions = imageSize(new Uint8Array(file.buffer));
+    } catch {
+      throw new BadRequestException('Uploaded file is not a valid JPEG, PNG or WebP image');
+    }
+
+    if (!dimensions.width || !dimensions.height) {
+      throw new BadRequestException('Could not determine the uploaded image dimensions');
+    }
+
+    const storagePath = await this.localStorageService.saveProjectSourceImage(
+      organizationId,
+      projectId,
+      file.originalname,
+      file.buffer
+    );
+    const sourceImageAsset = await this.prismaService.asset.create({
+      data: {
+        organizationId,
+        projectId,
+        type: AssetType.source_image,
+        mimeType: file.mimetype,
+        storagePath,
+        sizeBytes: file.size,
+        width: dimensions.width,
+        height: dimensions.height
+      }
+    });
+
+    await this.prismaService.project.update({
+      where: { id: projectId },
+      data: { sourceImageAssetId: sourceImageAsset.id }
+    });
+
+    if (project.sourceImageAsset) {
+      await this.localStorageService.removePath(project.sourceImageAsset.storagePath);
+      await this.prismaService.asset.delete({ where: { id: project.sourceImageAsset.id } });
+    }
+
+    await this.queueProjectProcessing({
+      projectId,
+      organizationId,
+      requestedByUserId: project.createdByUserId,
+      clipDurationSeconds: project.clipDurationSeconds,
+      sceneDurationSeconds: project.sceneDurationSeconds,
+      visualCheckpointName: project.visualCheckpointName
+    });
+
+    return this.projectPresenter.summaryWithLyrics(
+      await this.getOwnedProject(projectId, organizationId, true)
+    );
+  }
+
+  async getProjectSourceImage(projectId: string, organizationId: string) {
+    const project = await this.prismaService.project.findFirst({
+      where: { id: projectId, organizationId, deletedAt: null },
+      include: { sourceImageAsset: true }
+    });
+
+    if (!project?.sourceImageAsset) {
+      throw new NotFoundException('Project source image not found');
+    }
+
+    return {
+      fileName: `source-${project.sourceImageAsset.id}`,
+      absolutePath: this.localStorageService.getAbsolutePath(project.sourceImageAsset.storagePath),
+      mimeType: project.sourceImageAsset.mimeType
+    };
   }
 
   async listProjects(organizationId: string) {
@@ -626,8 +727,8 @@ export class ProjectsService {
       throw new ForbiddenException('Project does not belong to the authenticated organization');
     }
 
-    if (project.generationMode === 'prompt') {
-      throw new BadRequestException('Prompt-based projects do not accept an audio track');
+    if (project.generationMode !== 'music') {
+      throw new BadRequestException('Only music-based projects accept an audio track');
     }
 
     if (project.track && project.status !== ProjectStatus.failed) {
@@ -785,8 +886,12 @@ export class ProjectsService {
       throw new ForbiddenException('Project does not belong to the authenticated organization');
     }
 
-    if (!project.track && project.generationMode !== 'prompt') {
+    if (!project.track && project.generationMode !== 'prompt' && project.generationMode !== 'image') {
       throw new BadRequestException('Project does not have an uploaded track');
+    }
+
+    if (project.generationMode === 'image' && !project.sourceImageAssetId) {
+      throw new BadRequestException('Image-to-video project does not have a source image');
     }
 
     if (project.status !== ProjectStatus.failed && project.status !== ProjectStatus.completed) {
@@ -879,7 +984,7 @@ export class ProjectsService {
       throw new NotFoundException('Project not found');
     }
 
-    if (!project.track && project.generationMode !== 'prompt') {
+    if (!project.track && project.generationMode !== 'prompt' && project.generationMode !== 'image') {
       throw new BadRequestException('Project does not have an uploaded track');
     }
 
@@ -1360,13 +1465,11 @@ export class ProjectsService {
         where: {
           projectId,
           organizationId,
-          ...(options.preserveAudio
-            ? {
-                type: {
-                  in: removableAssetTypes
-                }
-              }
-            : {})
+          type: {
+            in: options.preserveAudio
+              ? removableAssetTypes
+              : [...removableAssetTypes, AssetType.audio]
+          }
         }
       });
     });
@@ -1397,19 +1500,17 @@ export class ProjectsService {
   }
 
   private async getOwnedProject(projectId: string, organizationId: string, includeLyrics = false) {
+    void includeLyrics;
     const project = await this.prismaService.project.findFirst({
       where: {
         id: projectId,
         organizationId,
         deletedAt: null
       },
-      ...(includeLyrics
-        ? {
-            include: {
-              lyrics: true
-            }
-          }
-        : {})
+      include: {
+        lyrics: true,
+        sourceImageAsset: true
+      }
     });
 
     if (!project) {

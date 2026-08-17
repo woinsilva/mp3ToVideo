@@ -10,7 +10,8 @@ import type {
   Render,
   Scene,
   SceneRenderAttempt,
-  ScenePrompt
+  ScenePrompt,
+  Asset
 } from '@prisma/client';
 
 export interface ProcessingActivityEntry {
@@ -41,7 +42,7 @@ export class ProjectPresenter {
   private static readonly quietThresholdMs = 7 * 60_000;
   private static readonly longRunningThresholdMs = 10 * 60_000;
 
-  summary(project: Project) {
+  summary(project: Project & { sourceImageAsset?: Asset | null }) {
     return {
       id: project.id,
       title: project.title,
@@ -52,6 +53,16 @@ export class ProjectPresenter {
       generationSeed: project.generationSeed,
       generationCfg: project.generationCfg,
       generationSteps: project.generationSteps,
+      sourceImageAssetId: project.sourceImageAssetId,
+      hasSourceImage: Boolean(project.sourceImageAssetId),
+      sourceImage: project.sourceImageAsset
+        ? {
+            id: project.sourceImageAsset.id,
+            mimeType: project.sourceImageAsset.mimeType,
+            width: project.sourceImageAsset.width,
+            height: project.sourceImageAsset.height
+          }
+        : null,
       clipDurationSeconds: project.clipDurationSeconds,
       sceneDurationSeconds: project.sceneDurationSeconds,
       visualCheckpointName: project.visualCheckpointName,
@@ -65,6 +76,7 @@ export class ProjectPresenter {
   summaryWithLyrics(
     project: Project & {
       lyrics?: Lyrics | null;
+      sourceImageAsset?: Asset | null;
     }
   ) {
     return {
@@ -77,6 +89,16 @@ export class ProjectPresenter {
       generationSeed: project.generationSeed,
       generationCfg: project.generationCfg,
       generationSteps: project.generationSteps,
+      sourceImageAssetId: project.sourceImageAssetId,
+      hasSourceImage: Boolean(project.sourceImageAssetId),
+      sourceImage: project.sourceImageAsset
+        ? {
+            id: project.sourceImageAsset.id,
+            mimeType: project.sourceImageAsset.mimeType,
+            width: project.sourceImageAsset.width,
+            height: project.sourceImageAsset.height
+          }
+        : null,
       clipDurationSeconds: project.clipDurationSeconds,
       sceneDurationSeconds: project.sceneDurationSeconds,
       visualCheckpointName: project.visualCheckpointName,
@@ -120,7 +142,7 @@ export class ProjectPresenter {
       projectId: project.id,
       status: project.status,
       progress: processingJob?.progress ?? this.defaultProgress(project.status),
-      currentStep: this.currentStep(project.status),
+      currentStep: this.currentStep(project.status, project.generationMode),
       detailMessage: processingJob?.detailMessage ?? null,
       activityLog: this.activityLog(processingJob?.activityLog),
       lyrics: project.lyrics
@@ -227,10 +249,12 @@ export class ProjectPresenter {
     }
   }
 
-  private currentStep(status: ProjectStatus): string {
+  private currentStep(status: ProjectStatus, generationMode: string): string {
     switch (status) {
       case 'draft':
-        return 'Aguardando upload do audio';
+        return generationMode === 'image'
+          ? 'Aguardando upload da imagem'
+          : 'Aguardando upload do audio';
       case 'uploaded':
         return 'Upload concluido';
       case 'queued':
@@ -332,6 +356,10 @@ export class ProjectPresenter {
   }
 
   private attemptSummary(attempt: SceneRenderAttempt) {
+    const metadata =
+      attempt.metadata && typeof attempt.metadata === 'object' && !Array.isArray(attempt.metadata)
+        ? attempt.metadata as Record<string, unknown>
+        : {};
     const elapsedSeconds = Math.floor(
       ((attempt.finishedAt ?? new Date()).getTime() - attempt.startedAt.getTime()) / 1000
     );
@@ -345,6 +373,12 @@ export class ProjectPresenter {
       lastExternalHeartbeatAt: attempt.firstExternalSeenAt?.toISOString() ?? null,
       canRetryAttempt: this.canRetryAttempt(attempt),
       provider: attempt.provider,
+      sourceType: attempt.sourceType,
+      hasReferenceImage: attempt.hasReferenceImage,
+      referenceImageAssetId:
+        typeof metadata.referenceImageAssetId === 'string'
+          ? metadata.referenceImageAssetId
+          : null,
       workflowName: attempt.workflowName,
       positivePrompt: attempt.positivePrompt,
       negativePrompt: attempt.negativePrompt,

@@ -7,10 +7,12 @@ export class CreateProjectDto {
   title!: string;
 
   @IsOptional()
-  @IsIn(['music', 'prompt'])
-  generationMode?: 'music' | 'prompt';
+  @IsIn(['music', 'prompt', 'image'])
+  generationMode?: 'music' | 'prompt' | 'image';
 
-  @ValidateIf((input: CreateProjectDto) => input.generationMode === 'prompt')
+  @ValidateIf((input: CreateProjectDto) =>
+    input.generationMode === 'prompt' || input.generationMode === 'image'
+  )
   @IsString()
   @MinLength(10)
   @MaxLength(4000)

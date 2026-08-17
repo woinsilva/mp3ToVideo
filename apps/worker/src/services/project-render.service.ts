@@ -6,7 +6,8 @@ import {
   AssetType,
   RenderStatus,
   SceneRenderAttemptStatus,
-  SceneStatus
+  SceneStatus,
+  ProjectGenerationMode
 } from '@prisma/client';
 import type { ScenePrompt } from '@prisma/client';
 
@@ -37,11 +38,15 @@ interface RenderSceneInput {
   visualProvider: string | null;
   videoAssetStoragePath: string | null;
   referenceImageStoragePath: string | null;
+  referenceImageAssetId?: string | null;
+  referenceImageWidth?: number | null;
+  referenceImageHeight?: number | null;
 }
 
 interface RenderProjectInput {
   organizationId: string;
   projectId: string;
+  generationMode?: ProjectGenerationMode;
   audioPath: string | null;
   durationSeconds: number;
   visualCheckpointName: string | null;
@@ -93,6 +98,15 @@ export class ProjectRenderService {
     if (input.scenes.length === 0) {
       throw new Error(
         'Nenhuma cena foi planejada para o projeto. O render foi interrompido antes da concatenacao.'
+      );
+    }
+
+    if (
+      input.generationMode === ProjectGenerationMode.image &&
+      input.scenes.some((scene) => !scene.referenceImageStoragePath)
+    ) {
+      throw new Error(
+        'A imagem original obrigatoria nao foi vinculada a cena Image-to-Video. Nenhum fallback T2V foi executado.'
       );
     }
 
@@ -183,7 +197,7 @@ export class ProjectRenderService {
         let visualProvider = 'procedural';
         let videoGenerationError: string | null = null;
         let imageGenerationError: string | null = null;
-        const sceneReference = this.resolveSceneReference(scene, previousContinuityFramePath);
+        const sceneReference = this.resolveSceneReference(input, scene, previousContinuityFramePath);
 
         if (sceneReference.hasContinuityFrame) {
           await this.processingProgressService.heartbeat(
@@ -511,9 +525,11 @@ export class ProjectRenderService {
         scene.durationSeconds,
         {
           stabilityTest: input.stabilityTest,
+          imageToVideo: input.generationMode === ProjectGenerationMode.image,
           seed: input.generationSeed,
           cfg: input.generationCfg,
-          steps: input.generationSteps
+          steps: input.generationSteps,
+          ...this.resolveReferenceResolution(scene)
         }
       );
       const attempt = await this.createSceneRenderAttempt(
@@ -652,7 +668,10 @@ export class ProjectRenderService {
           hasManualReferenceImage: reference?.hasManualReferenceImage ?? Boolean(scene.referenceImageStoragePath),
           hasContinuityFrame: reference?.hasContinuityFrame ?? false,
           stabilityTest: input.stabilityTest,
-          wanOnly: input.wanOnly
+          wanOnly: input.wanOnly,
+          referenceImageAssetId: scene.referenceImageAssetId ?? null,
+          referenceImageStoragePath: scene.referenceImageStoragePath,
+          generationMode: input.generationMode ?? ProjectGenerationMode.music
         }
       }
     });
@@ -776,6 +795,7 @@ export class ProjectRenderService {
   }
 
   private resolveSceneReference(
+    input: RenderProjectInput,
     scene: RenderSceneInput,
     previousContinuityFramePath: string | null
   ): SceneReferenceInput {
@@ -794,9 +814,33 @@ export class ProjectRenderService {
       path: scene.referenceImageStoragePath
         ? this.renderStorageService.getAbsolutePath(scene.referenceImageStoragePath)
         : null,
-      sourceType: scene.referenceImageStoragePath ? 'reference-image' : 'prompt',
+      sourceType: scene.referenceImageStoragePath
+        ? input.generationMode === ProjectGenerationMode.image
+          ? 'project-source-image'
+          : 'reference-image'
+        : 'prompt',
       hasManualReferenceImage: Boolean(scene.referenceImageStoragePath),
       hasContinuityFrame: false
+    };
+  }
+
+  private resolveReferenceResolution(
+    scene: RenderSceneInput
+  ): { width?: number; height?: number } {
+    if (
+      !scene.referenceImageWidth ||
+      !scene.referenceImageHeight ||
+      scene.referenceImageWidth >= scene.referenceImageHeight
+    ) {
+      return {};
+    }
+
+    const configuredWidth = this.configService.get<number>('visual.comfyuiWidth', 1280);
+    const configuredHeight = this.configService.get<number>('visual.comfyuiHeight', 704);
+
+    return {
+      width: Math.min(configuredWidth, configuredHeight),
+      height: Math.max(configuredWidth, configuredHeight)
     };
   }
 

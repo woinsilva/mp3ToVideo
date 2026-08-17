@@ -14,13 +14,21 @@ export type ProjectStatus =
 export interface ProjectSummary {
   id: string;
   title: string;
-  generationMode: 'music' | 'prompt';
+  generationMode: 'music' | 'prompt' | 'image';
   generationPrompt: string | null;
   stabilityTest: boolean;
   wanOnly: boolean;
   generationSeed: number | null;
   generationCfg: number | null;
   generationSteps: number | null;
+  sourceImageAssetId: string | null;
+  hasSourceImage: boolean;
+  sourceImage: {
+    id: string;
+    mimeType: string;
+    width: number | null;
+    height: number | null;
+  } | null;
   clipDurationSeconds: number | null;
   sceneDurationSeconds: number | null;
   visualCheckpointName: string | null;
@@ -32,7 +40,7 @@ export interface ProjectSummary {
 
 export interface CreateProjectInput {
   title: string;
-  generationMode: 'music' | 'prompt';
+  generationMode: 'music' | 'prompt' | 'image';
   generationPrompt: string | null;
   stabilityTest: boolean;
   wanOnly: boolean;
@@ -155,6 +163,9 @@ export interface SceneRenderAttemptSummary {
   lastExternalHeartbeatAt: string | null;
   canRetryAttempt: boolean;
   provider: string;
+  sourceType: string;
+  hasReferenceImage: boolean;
+  referenceImageAssetId: string | null;
   workflowName: string | null;
   positivePrompt: string | null;
   negativePrompt: string | null;
