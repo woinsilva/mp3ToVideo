@@ -91,6 +91,16 @@ export class RenderStorageService {
     return join(root, 'renders', organizationId, projectId, 'final.mp4').replace(/\\/g, '/');
   }
 
+  buildInterpolatedRenderPath(organizationId: string, projectId: string, jobId: string): string {
+    const root = this.configService.get<string>('storage.root', './storage');
+    return join(root, 'renders', organizationId, projectId, `rife-2x-${jobId}.mp4`).replace(/\\/g, '/');
+  }
+
+  buildInterpolationTempDirectory(jobId: string): string {
+    const root = this.configService.get<string>('storage.root', './storage');
+    return join(root, 'temp', 'frame-interpolation', jobId).replace(/\\/g, '/');
+  }
+
   async ensureParentDirectory(relativePath: string): Promise<string> {
     const absolutePath = this.getAbsolutePath(relativePath);
 

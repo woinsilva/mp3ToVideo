@@ -54,6 +54,7 @@ export class ProjectPresenter {
       generationCfg: project.generationCfg,
       generationSteps: project.generationSteps,
       generationFps: project.generationFps,
+      frameInterpolationMode: project.frameInterpolationMode,
       sourceImageAssetId: project.sourceImageAssetId,
       hasSourceImage: Boolean(project.sourceImageAssetId),
       sourceImage: project.sourceImageAsset
@@ -91,6 +92,7 @@ export class ProjectPresenter {
       generationCfg: project.generationCfg,
       generationSteps: project.generationSteps,
       generationFps: project.generationFps,
+      frameInterpolationMode: project.frameInterpolationMode,
       sourceImageAssetId: project.sourceImageAssetId,
       hasSourceImage: Boolean(project.sourceImageAssetId),
       sourceImage: project.sourceImageAsset

@@ -54,6 +54,7 @@ export class ProjectsController {
       generationCfg: input.generationCfg,
       generationSteps: input.generationSteps,
       generationFps: input.generationFps,
+      frameInterpolationMode: input.frameInterpolationMode,
       clipDurationSeconds: input.clipDurationSeconds,
       sceneDurationSeconds: input.sceneDurationSeconds,
       visualCheckpointName: input.visualCheckpointName,
@@ -235,6 +236,28 @@ export class ProjectsController {
     response.setHeader('Content-Type', download.mimeType);
     response.setHeader('Content-Disposition', `attachment; filename="${download.fileName}"`);
 
+    return response.sendFile(download.absolutePath);
+  }
+
+  @Post(':id/interpolation')
+  requestFrameInterpolation(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.projectsService.requestFrameInterpolation(id, user.organizationId);
+  }
+
+  @Get(':id/interpolation')
+  getFrameInterpolation(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.projectsService.getFrameInterpolation(id, user.organizationId);
+  }
+
+  @Get(':id/interpolation/download')
+  async downloadFrameInterpolation(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Res() response: Response
+  ) {
+    const download = await this.projectsService.getFrameInterpolationDownload(id, user.organizationId);
+    response.setHeader('Content-Type', download.mimeType);
+    response.setHeader('Content-Disposition', `attachment; filename="${download.fileName}"`);
     return response.sendFile(download.absolutePath);
   }
 

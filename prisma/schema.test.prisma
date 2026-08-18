@@ -35,6 +35,11 @@ enum ProjectGenerationMode {
   image
 }
 
+enum FrameInterpolationMode {
+  off
+  rife_2x
+}
+
 enum LyricsSource {
   manual
   whisper
@@ -64,6 +69,7 @@ enum AssetType {
   storyboard_image
   video_scene
   render
+  interpolated_render
   subtitle
   temp
 }
@@ -144,6 +150,7 @@ model Project {
   generationCfg        Float?
   generationSteps      Int?
   generationFps        Int                   @default(16)
+  frameInterpolationMode FrameInterpolationMode @default(off)
   sourceImageAssetId   String?               @unique
   clipDurationSeconds  Float?
   sceneDurationSeconds Float?
@@ -325,6 +332,7 @@ model Asset {
   sizeBytes              Int
   width                  Int?
   height                 Int?
+  metadata               Json?
   createdAt              DateTime     @default(now())
   updatedAt              DateTime     @updatedAt
   organization           Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)

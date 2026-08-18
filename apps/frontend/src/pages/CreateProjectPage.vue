@@ -98,6 +98,14 @@
               <input v-model="generationSeedInput" class="auth-input" type="number" min="0" max="2147483646" step="1" placeholder="Aleatório" />
               <span class="field-help">Vazio gera um seed aleatório, que será salvo nos detalhes.</span>
             </label>
+            <label class="auth-input-group">
+              <span class="auth-input-label">Interpolação de frames</span>
+              <select v-model="frameInterpolationMode" class="auth-input">
+                <option value="off">Desativada (vídeo original)</option>
+                <option value="rife_2x">RIFE 2x após a renderização</option>
+              </select>
+              <span class="field-help">Opcional. Duplica o FPS após o Wan, preservando o vídeo original.</span>
+            </label>
             <label v-if="generationMode !== 'music'" class="auth-input-group">
               <span class="auth-input-label">CFG</span>
               <input v-model="generationCfgInput" class="auth-input" type="number" min="1" max="20" step="0.1" placeholder="Padrão do ambiente" />
@@ -178,6 +186,7 @@ export default class CreateProjectPage extends Vue {
   generationCfgInput: string | number = '';
   generationStepsInput: string | number = '';
   generationFps: 16 | 24 = 16;
+  frameInterpolationMode: 'off' | 'rife_2x' = 'off';
   loading = false;
   errorMessage: string | null = null;
   submitted = false;
@@ -256,6 +265,7 @@ export default class CreateProjectPage extends Vue {
         generationCfg: isDirectVideoMode ? this.normalizedGenerationCfg : null,
         generationSteps: isDirectVideoMode ? this.normalizedGenerationSteps : null,
         generationFps: this.generationFps,
+        frameInterpolationMode: this.frameInterpolationMode,
         clipDurationSeconds: this.normalizedClipDurationSeconds,
         sceneDurationSeconds: this.normalizedSceneDurationSeconds,
         visualCheckpointName: this.normalizedVisualCheckpointName,

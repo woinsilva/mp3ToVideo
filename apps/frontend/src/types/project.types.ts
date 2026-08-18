@@ -22,6 +22,7 @@ export interface ProjectSummary {
   generationCfg: number | null;
   generationSteps: number | null;
   generationFps: number;
+  frameInterpolationMode: 'off' | 'rife_2x';
   sourceImageAssetId: string | null;
   hasSourceImage: boolean;
   sourceImage: {
@@ -49,6 +50,7 @@ export interface CreateProjectInput {
   generationCfg: number | null;
   generationSteps: number | null;
   generationFps: 16 | 24;
+  frameInterpolationMode: 'off' | 'rife_2x';
   clipDurationSeconds: number | null;
   sceneDurationSeconds: number | null;
   visualCheckpointName: string | null;
@@ -205,4 +207,16 @@ export interface ProjectRender {
   status: string;
   durationSeconds: number | null;
   asset: RenderAssetView | null;
+}
+
+export interface FrameInterpolationStatus {
+  job: {
+    id: string;
+    status: 'queued' | 'active' | 'completed' | 'failed' | 'retrying';
+    progress: number;
+    detailMessage: string | null;
+    errorMessage: string | null;
+    updatedAt: string;
+  } | null;
+  asset: (RenderAssetView & { metadata: Record<string, unknown> | null }) | null;
 }

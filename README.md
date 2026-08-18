@@ -66,6 +66,9 @@ Variaveis importantes:
 - `COMFYUI_OUTPUT_HOST_PATH`
 - `COMFYUI_ENABLE_IMAGE_FALLBACK`
 - `COMFYUI_CHECKPOINT_NAME`
+- `RIFE_EXECUTABLE_PATH`
+- `RIFE_MODEL_PATH`
+- `RIFE_GPU_ID`
 
 ## Subir ambiente local
 
@@ -130,6 +133,14 @@ Se quiser geracao visual local por prompt:
 - se estiver usando apenas o workflow WAN de video, deixe `COMFYUI_ENABLE_IMAGE_FALLBACK=false`
 
 Sem ComfyUI ativo, o worker continua no modo `procedural` e gera cenas baseadas em composicao simples no `ffmpeg`.
+
+Para habilitar a interpolacao opcional RIFE 2x no Windows, instale o binario oficial portatil:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/install-rife.ps1
+```
+
+O worker executa o RIFE como pos-processamento em uma fila separada, preserva o render original e usa FFprobe para validar FPS, frames, duracao, resolucao e audio.
 
 ### ComfyUI no Windows
 

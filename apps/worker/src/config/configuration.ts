@@ -24,6 +24,17 @@ export const configuration = () => ({
     height: Number(process.env.RENDER_HEIGHT ?? 720),
     frameRate: Number(process.env.RENDER_FRAME_RATE ?? 24)
   },
+  interpolation: {
+    rifeExecutablePath: resolveFromWorkspaceRoot(
+      process.env.RIFE_EXECUTABLE_PATH ?? './tools/rife-ncnn-vulkan/rife-ncnn-vulkan.exe'
+    ),
+    rifeModelPath: resolveFromWorkspaceRoot(
+      process.env.RIFE_MODEL_PATH ?? './tools/rife-ncnn-vulkan/rife-v4.6'
+    ),
+    gpuId: Number(process.env.RIFE_GPU_ID ?? 0),
+    crf: Number(process.env.RIFE_CRF ?? 17),
+    preset: process.env.RIFE_FFMPEG_PRESET ?? 'slow'
+  },
   ai: {
     enableFallbacks: process.env.ENABLE_AI_FALLBACKS !== 'false',
     enableOllama: process.env.ENABLE_OLLAMA === 'true',

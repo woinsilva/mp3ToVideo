@@ -54,6 +54,10 @@ export class CreateProjectDto {
   generationFps?: number;
 
   @IsOptional()
+  @IsIn(['off', 'rife_2x'])
+  frameInterpolationMode?: 'off' | 'rife_2x';
+
+  @IsOptional()
   @Type(() => Number)
   @IsNumber()
   @Min(1)

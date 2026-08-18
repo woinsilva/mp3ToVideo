@@ -6,7 +6,8 @@ import type {
   ProjectStatusResponse,
   ProjectSummary,
   ProjectVisualStoryboard,
-  TrackUploadResult
+  TrackUploadResult,
+  FrameInterpolationStatus
 } from '@/types/project.types';
 
 class ProjectsService {
@@ -171,6 +172,18 @@ class ProjectsService {
 
   download(projectId: string, token: string) {
     return apiService.download(`/projects/${projectId}/download`, token);
+  }
+
+  interpolation(projectId: string, token: string) {
+    return apiService.request<FrameInterpolationStatus>(`/projects/${projectId}/interpolation`, {}, token);
+  }
+
+  requestInterpolation(projectId: string, token: string) {
+    return apiService.request(`/projects/${projectId}/interpolation`, { method: 'POST' }, token);
+  }
+
+  downloadInterpolation(projectId: string, token: string) {
+    return apiService.download(`/projects/${projectId}/interpolation/download`, token);
   }
 }
 

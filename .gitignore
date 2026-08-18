@@ -8,6 +8,8 @@ dist/
 coverage/
 *.log
 *.tsbuildinfo
+tools/rife-ncnn-vulkan/
+tools/rife-ncnn-vulkan-*-windows.zip
 
 storage/uploads/
 storage/generated-scenes/

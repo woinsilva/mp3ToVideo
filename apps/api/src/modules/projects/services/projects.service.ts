@@ -8,12 +8,18 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AssetType, Prisma, ProjectStatus, SceneRenderAttemptStatus } from '@prisma/client';
-import { PROJECT_PROCESS_JOB_NAME, PROJECT_QUEUE_NAME } from '@video/shared';
+import {
+  FRAME_INTERPOLATION_JOB_NAME,
+  FRAME_INTERPOLATION_QUEUE_NAME,
+  PROJECT_PROCESS_JOB_NAME,
+  PROJECT_QUEUE_NAME
+} from '@video/shared';
 import { imageSize } from 'image-size';
 
 import { PrismaService } from '../../../database/prisma.service';
 import { ProjectProcessingPayloadFactory } from '../../jobs/services/project-processing-payload.factory';
 import { ProjectProcessingQueueService } from '../../jobs/services/project-processing-queue.service';
+import { FrameInterpolationQueueService } from '../../jobs/services/frame-interpolation-queue.service';
 import { LocalStorageService } from './local-storage.service';
 import { ProjectPresenter } from './project.presenter';
 
@@ -29,6 +35,7 @@ interface CreateProjectInput {
   generationCfg?: number;
   generationSteps?: number;
   generationFps?: number;
+  frameInterpolationMode?: 'off' | 'rife_2x';
   clipDurationSeconds?: number;
   sceneDurationSeconds?: number;
   visualCheckpointName?: string;
@@ -78,7 +85,9 @@ export class ProjectsService {
     @Inject(ProjectPresenter)
     private readonly projectPresenter: ProjectPresenter,
     @Inject(ConfigService)
-    private readonly configService: ConfigService
+    private readonly configService: ConfigService,
+    @Inject(FrameInterpolationQueueService)
+    private readonly frameInterpolationQueueService: FrameInterpolationQueueService
   ) {}
 
   async createProject(input: CreateProjectInput) {
@@ -124,6 +133,7 @@ export class ProjectsService {
         generationCfg: isDirectVideoMode ? input.generationCfg ?? null : null,
         generationSteps: isDirectVideoMode ? input.generationSteps ?? null : null,
         generationFps,
+        frameInterpolationMode: input.frameInterpolationMode ?? 'off',
         clipDurationSeconds,
         sceneDurationSeconds,
         visualCheckpointName,
@@ -709,6 +719,97 @@ export class ProjectsService {
       fileName: `${projectId}.mp4`,
       absolutePath: this.localStorageService.getAbsolutePath(render.asset.storagePath),
       mimeType: render.asset.mimeType
+    };
+  }
+
+  async requestFrameInterpolation(projectId: string, organizationId: string) {
+    await this.getOwnedProject(projectId, organizationId);
+    const render = await this.prismaService.render.findFirst({
+      where: { projectId, status: 'completed', assetId: { not: null } },
+      include: { asset: true },
+      orderBy: { updatedAt: 'desc' }
+    });
+
+    if (!render?.asset) {
+      throw new BadRequestException('The original rendered video must be completed first');
+    }
+
+    const running = await this.prismaService.processingJob.findFirst({
+      where: {
+        projectId,
+        queueName: FRAME_INTERPOLATION_QUEUE_NAME,
+        status: { in: ['queued', 'active', 'retrying'] }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    if (running) {
+      throw new ConflictException('Frame interpolation is already queued or processing');
+    }
+
+    const processingJob = await this.prismaService.processingJob.create({
+      data: {
+        projectId,
+        queueName: FRAME_INTERPOLATION_QUEUE_NAME,
+        jobName: FRAME_INTERPOLATION_JOB_NAME,
+        status: 'queued',
+        progress: 0,
+        detailMessage: 'Interpolacao RIFE 2x enfileirada. O video original foi preservado.',
+        activityLog: [{
+          stage: 'queued',
+          message: 'Interpolacao RIFE 2x aguardando o worker.',
+          provider: 'rife-ncnn-vulkan',
+          progress: 0,
+          timestamp: new Date().toISOString()
+        }] satisfies Prisma.InputJsonValue
+      }
+    });
+
+    try {
+      const queued = await this.frameInterpolationQueueService.enqueue({
+        projectId,
+        organizationId,
+        sourceAssetId: render.asset.id
+      }, processingJob.id);
+      return this.prismaService.processingJob.update({
+        where: { id: processingJob.id },
+        data: { bullJobId: queued.bullJobId }
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Queue error';
+      await this.prismaService.processingJob.update({
+        where: { id: processingJob.id },
+        data: { status: 'failed', errorMessage: message, detailMessage: `Falha ao enfileirar interpolacao: ${message}` }
+      });
+      throw error;
+    }
+  }
+
+  async getFrameInterpolation(projectId: string, organizationId: string) {
+    await this.getOwnedProject(projectId, organizationId);
+    const [job, asset] = await Promise.all([
+      this.prismaService.processingJob.findFirst({
+        where: { projectId, queueName: FRAME_INTERPOLATION_QUEUE_NAME },
+        orderBy: { createdAt: 'desc' }
+      }),
+      this.prismaService.asset.findFirst({
+        where: { projectId, organizationId, type: AssetType.interpolated_render },
+        orderBy: { createdAt: 'desc' }
+      })
+    ]);
+    return { job, asset };
+  }
+
+  async getFrameInterpolationDownload(projectId: string, organizationId: string) {
+    await this.getOwnedProject(projectId, organizationId);
+    const asset = await this.prismaService.asset.findFirst({
+      where: { projectId, organizationId, type: AssetType.interpolated_render },
+      orderBy: { createdAt: 'desc' }
+    });
+    if (!asset) throw new NotFoundException('Interpolated video not found');
+    return {
+      fileName: `${projectId}-rife-2x.mp4`,
+      absolutePath: this.localStorageService.getAbsolutePath(asset.storagePath),
+      mimeType: asset.mimeType
     };
   }
 
@@ -1422,6 +1523,7 @@ export class ProjectsService {
       AssetType.image,
       AssetType.video_scene,
       AssetType.render,
+      AssetType.interpolated_render,
       AssetType.subtitle,
       AssetType.temp
     ];

@@ -10,6 +10,11 @@ export interface ProbedVideoMetadata {
   frameCount: number | null;
   fps: number | null;
   durationSeconds: number | null;
+  width: number | null;
+  height: number | null;
+  hasAudio: boolean;
+  videoCodec: string | null;
+  audioCodec: string | null;
 }
 
 @Injectable()
@@ -23,9 +28,8 @@ export class VideoMetadataProbeService {
     const ffprobePath = this.configService.get<string>('audio.ffprobePath', 'ffprobe');
     const { stdout } = await execFileAsync(ffprobePath, [
       '-v', 'error',
-      '-select_streams', 'v:0',
       '-count_frames',
-      '-show_entries', 'stream=avg_frame_rate,r_frame_rate,nb_frames,nb_read_frames,duration:format=duration',
+      '-show_entries', 'stream=codec_type,codec_name,width,height,avg_frame_rate,r_frame_rate,nb_frames,nb_read_frames,duration:format=duration',
       '-of', 'json',
       videoPath
     ]);
@@ -33,12 +37,19 @@ export class VideoMetadataProbeService {
       streams?: Array<Record<string, string | undefined>>;
       format?: { duration?: string };
     };
-    const stream = payload.streams?.[0] ?? {};
+    const streams = payload.streams ?? [];
+    const stream = streams.find((entry) => entry.codec_type === 'video') ?? {};
+    const audioStream = streams.find((entry) => entry.codec_type === 'audio');
 
     return {
       frameCount: this.parseInteger(stream.nb_read_frames) ?? this.parseInteger(stream.nb_frames),
       fps: this.parseRate(stream.avg_frame_rate) ?? this.parseRate(stream.r_frame_rate),
-      durationSeconds: this.parseNumber(stream.duration) ?? this.parseNumber(payload.format?.duration)
+      durationSeconds: this.parseNumber(stream.duration) ?? this.parseNumber(payload.format?.duration),
+      width: this.parseInteger(stream.width),
+      height: this.parseInteger(stream.height),
+      hasAudio: Boolean(audioStream),
+      videoCodec: stream.codec_name ?? null,
+      audioCodec: audioStream?.codec_name ?? null
     };
   }
 

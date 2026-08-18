@@ -50,6 +50,32 @@
       />
     </section>
 
+    <v-card v-if="statusPayload?.status === 'completed'" class="surface-card mt-4" rounded="xl">
+      <v-card-text class="d-flex flex-column ga-3">
+        <h3 class="section-title">Interpolação de frames RIFE 2x</h3>
+        <p class="section-copy">Gera uma versão separada com aproximadamente o dobro do FPS, sem executar o Wan novamente.</p>
+        <p v-if="interpolationStatus?.job">{{ interpolationStatus.job.detailMessage }} ({{ interpolationStatus.job.progress }}%)</p>
+        <v-alert v-if="interpolationStatus?.job?.status === 'failed'" type="error" variant="tonal">
+          {{ interpolationStatus.job.errorMessage }} O vídeo original continua disponível.
+        </v-alert>
+        <video v-if="interpolatedVideoUrl" class="interpolated-video" :src="interpolatedVideoUrl" controls playsinline />
+        <div class="app-button-row">
+          <button
+            v-if="!interpolationStatus?.asset && !interpolationRunning"
+            class="app-button"
+            type="button"
+            :disabled="interpolationLoading"
+            @click="requestInterpolation"
+          >
+            {{ interpolationStatus?.job?.status === 'failed' ? 'Tentar interpolar novamente' : 'Interpolar com RIFE 2x' }}
+          </button>
+          <button v-if="interpolationStatus?.asset" class="app-button" type="button" @click="downloadInterpolatedVideo">
+            Baixar versão RIFE 2x
+          </button>
+        </div>
+      </v-card-text>
+    </v-card>
+
     <v-card
       v-if="statusPayload && statusPayload.status !== 'completed'"
       class="surface-card mt-4"
@@ -85,6 +111,8 @@ import VideoPreview from '@/components/VideoPreview.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { useAuthStore } from '@/stores/auth.store';
 import { useProjectsStore } from '@/stores/projects.store';
+import { projectsService } from '@/services/projects.service';
+import type { FrameInterpolationStatus } from '@/types/project.types';
 
 @Component({
   components: {
@@ -99,6 +127,11 @@ export default class VideoResultPage extends Vue {
   videoUrl: string | null = null;
   loading = false;
   errorMessage: string | null = null;
+  interpolationStatus: FrameInterpolationStatus | null = null;
+  interpolationLoading = false;
+  interpolatedBlob: Blob | null = null;
+  interpolatedVideoUrl: string | null = null;
+  interpolationPollTimer: ReturnType<typeof setTimeout> | null = null;
 
   get authStore(): any {
     return useAuthStore();
@@ -124,6 +157,10 @@ export default class VideoResultPage extends Vue {
 
   get scenes() {
     return this.projectsStore.currentScenes;
+  }
+
+  get interpolationRunning(): boolean {
+    return ['queued', 'active', 'retrying'].includes(this.interpolationStatus?.job?.status ?? '');
   }
 
   get resultBlockedMessage(): string {
@@ -153,6 +190,8 @@ export default class VideoResultPage extends Vue {
     }
 
     this.videoBlob = null;
+    if (this.interpolationPollTimer) clearTimeout(this.interpolationPollTimer);
+    if (this.interpolatedVideoUrl) URL.revokeObjectURL(this.interpolatedVideoUrl);
   }
 
   async loadPage() {
@@ -188,11 +227,50 @@ export default class VideoResultPage extends Vue {
       await this.projectsStore.fetchRender(this.projectId, this.authStore.token);
       await this.projectsStore.fetchScenes(this.projectId, this.authStore.token);
       await this.loadVideoBlob();
+      await this.loadInterpolationStatus();
     } catch (error) {
       this.errorMessage = error instanceof Error ? error.message : 'Falha ao carregar resultado';
     } finally {
       this.loading = false;
     }
+  }
+
+  async loadInterpolationStatus() {
+    if (!this.authStore.token) return;
+    this.interpolationStatus = await projectsService.interpolation(this.projectId, this.authStore.token);
+    if (this.interpolationStatus.asset && !this.interpolatedVideoUrl) {
+      this.interpolatedBlob = await projectsService.downloadInterpolation(this.projectId, this.authStore.token);
+      this.interpolatedVideoUrl = URL.createObjectURL(this.interpolatedBlob);
+    }
+    if (this.interpolationRunning) {
+      if (this.interpolationPollTimer) clearTimeout(this.interpolationPollTimer);
+      this.interpolationPollTimer = setTimeout(() => void this.loadInterpolationStatus(), 3000);
+    }
+  }
+
+  async requestInterpolation() {
+    if (!this.authStore.token) return;
+    this.interpolationLoading = true;
+    this.errorMessage = null;
+    try {
+      await projectsService.requestInterpolation(this.projectId, this.authStore.token);
+      await this.loadInterpolationStatus();
+    } catch (error) {
+      this.errorMessage = error instanceof Error ? error.message : 'Falha ao enfileirar interpolação';
+    } finally {
+      this.interpolationLoading = false;
+    }
+  }
+
+  async downloadInterpolatedVideo() {
+    if (!this.authStore.token) return;
+    const blob = this.interpolatedBlob ?? await projectsService.downloadInterpolation(this.projectId, this.authStore.token);
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${this.projectId}-rife-2x.mp4`;
+    anchor.click();
+    URL.revokeObjectURL(url);
   }
 
   async loadVideoBlob() {
@@ -290,3 +368,7 @@ export default class VideoResultPage extends Vue {
   }
 }
 </script>
+
+<style scoped>
+.interpolated-video { width: 100%; max-height: 520px; border-radius: 12px; background: #000; }
+</style>
