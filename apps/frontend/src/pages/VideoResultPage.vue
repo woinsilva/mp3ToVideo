@@ -56,18 +56,29 @@
         <p class="section-copy">Gera uma versão separada com aproximadamente o dobro do FPS, sem executar o Wan novamente.</p>
         <p v-if="interpolationStatus?.job">{{ interpolationStatus.job.detailMessage }} ({{ interpolationStatus.job.progress }}%)</p>
         <v-alert v-if="interpolationStatus?.job?.status === 'failed'" type="error" variant="tonal">
-          {{ interpolationStatus.job.errorMessage }} O vídeo original continua disponível.
+          <strong>A interpolação falhou.</strong>
+          {{ interpolationStatus.job.errorMessage || interpolationStatus.job.detailMessage || 'Erro desconhecido no worker RIFE.' }}
+          O vídeo original continua disponível e você pode tentar novamente sem executar o Wan.
         </v-alert>
         <video v-if="interpolatedVideoUrl" class="interpolated-video" :src="interpolatedVideoUrl" controls playsinline />
         <div class="app-button-row">
           <button
-            v-if="!interpolationStatus?.asset && !interpolationRunning"
+            v-if="interpolationStatus?.job?.status === 'failed'"
             class="app-button"
             type="button"
             :disabled="interpolationLoading"
             @click="requestInterpolation"
           >
-            {{ interpolationStatus?.job?.status === 'failed' ? 'Tentar interpolar novamente' : 'Interpolar com RIFE 2x' }}
+            {{ interpolationLoading ? 'Enfileirando novamente...' : 'Tentar interpolação novamente' }}
+          </button>
+          <button
+            v-else-if="!interpolationStatus?.asset && !interpolationRunning"
+            class="app-button"
+            type="button"
+            :disabled="interpolationLoading"
+            @click="requestInterpolation"
+          >
+            {{ interpolationLoading ? 'Enfileirando...' : 'Interpolar com RIFE 2x' }}
           </button>
           <button v-if="interpolationStatus?.asset" class="app-button" type="button" @click="downloadInterpolatedVideo">
             Baixar versão RIFE 2x

@@ -1,9 +1,8 @@
-import { execFile } from 'node:child_process';
-import { mkdir, rm, stat } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import { mkdir, readdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AssetType, type Prisma } from '@prisma/client';
 
@@ -11,10 +10,10 @@ import { PrismaService } from '../database/prisma.service';
 import { RenderStorageService } from './render-storage.service';
 import { VideoMetadataProbeService, type ProbedVideoMetadata } from './video-metadata-probe.service';
 
-const execFileAsync = promisify(execFile);
-
 @Injectable()
 export class FrameInterpolationService {
+  private readonly logger = new Logger(FrameInterpolationService.name);
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(ConfigService) private readonly config: ConfigService,
@@ -27,7 +26,7 @@ export class FrameInterpolationService {
     projectId: string;
     organizationId: string;
     sourceAssetId: string;
-    onProgress?: (progress: number, message: string) => Promise<void>;
+    onProgress?: (stage: string, progress: number, message: string) => Promise<void>;
   }) {
     const source = await this.prisma.asset.findFirst({
       where: {
@@ -60,26 +59,50 @@ export class FrameInterpolationService {
     await mkdir(outputFrames, { recursive: true });
 
     try {
-      await input.onProgress?.(15, 'Extraindo os frames originais sem alterar o video fonte.');
-      await this.run(this.config.get<string>('rendering.ffmpegPath', 'ffmpeg'), [
+      await input.onProgress?.('EXTRACTING_FRAMES', 15, 'Extraindo os frames originais sem alterar o video fonte.');
+      await this.run(input.jobId, 'EXTRACTING_FRAMES', this.config.get<string>('rendering.ffmpegPath', 'ffmpeg'), [
         '-y', '-i', sourcePath, '-map', '0:v:0', '-vsync', '0', '-start_number', '0',
         join(inputFrames, '%08d.png')
       ]);
 
-      await input.onProgress?.(35, 'RIFE 2x processando os frames na GPU Vulkan.');
+      const expectedFrames = original.frameCount! * 2 - 1;
+      await input.onProgress?.(
+        'LOADING_RIFE',
+        30,
+        `Carregando RIFE v4.6 na GPU Vulkan ${this.config.get<number>('interpolation.gpuId', 0)}.`
+      );
       await this.run(
+        input.jobId,
+        'INTERPOLATING',
         this.config.get<string>('interpolation.rifeExecutablePath', ''),
-        this.buildRifeArguments(inputFrames, outputFrames, original.frameCount!)
+        this.buildRifeArguments(inputFrames, outputFrames, original.frameCount!),
+        async () => {
+          const generatedFrames = await this.countPngFiles(outputFrames);
+          if (generatedFrames === 0) return;
+          const progress = Math.min(74, 35 + Math.floor((generatedFrames / expectedFrames) * 39));
+          await input.onProgress?.(
+            'INTERPOLATING',
+            progress,
+            `RIFE interpolando ${generatedFrames}/${expectedFrames} frames na GPU Vulkan.`
+          );
+        }
+      );
+      await input.onProgress?.(
+        'INTERPOLATING',
+        74,
+        `RIFE interpolou ${expectedFrames}/${expectedFrames} frames na GPU Vulkan.`
       );
 
-      await input.onProgress?.(75, 'Codificando o MP4 interpolado e preservando o audio original.');
+      await input.onProgress?.('ENCODING', 75, 'Codificando o MP4 interpolado e preservando o audio original.');
       const targetFps = original.fps! * 2;
       await this.run(
+        input.jobId,
+        'ENCODING',
         this.config.get<string>('rendering.ffmpegPath', 'ffmpeg'),
         this.buildEncodeArguments(outputFrames, sourcePath, outputPath, targetFps)
       );
 
-      await input.onProgress?.(90, 'Validando FPS, frames, duracao, resolucao e audio com FFprobe.');
+      await input.onProgress?.('VALIDATING', 90, 'Validando FPS, frames, duracao, resolucao e audio com FFprobe.');
       const result = await this.probeService.probe(outputPath);
       this.assertValidResult(original, result);
       const file = await stat(outputPath);
@@ -117,9 +140,67 @@ export class FrameInterpolationService {
     }
   }
 
-  private async run(executable: string, args: string[]): Promise<void> {
+  private async run(
+    jobId: string,
+    stage: string,
+    executable: string,
+    args: string[],
+    onTick?: () => Promise<void>
+  ): Promise<void> {
     if (!executable) throw new Error('RIFE executable is not configured');
-    await execFileAsync(executable, args, { maxBuffer: 20 * 1024 * 1024, windowsHide: true });
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(executable, args, { windowsHide: true });
+      let stderr = '';
+      let stdout = '';
+      let tickRunning = false;
+      let lastTickError: Error | null = null;
+      this.logger.log(`[${jobId}] ${stage} process started pid=${child.pid ?? 'unknown'} executable=${executable}`);
+
+      child.stdout.on('data', (chunk: Buffer) => {
+        stdout = this.appendOutput(stdout, chunk.toString());
+      });
+      child.stderr.on('data', (chunk: Buffer) => {
+        stderr = this.appendOutput(stderr, chunk.toString());
+      });
+      child.on('error', reject);
+
+      const timer = onTick
+        ? setInterval(() => {
+            if (tickRunning) return;
+            tickRunning = true;
+            void onTick()
+              .catch((error: unknown) => {
+                lastTickError = error instanceof Error ? error : new Error(String(error));
+              })
+              .finally(() => { tickRunning = false; });
+          }, 1000)
+        : null;
+
+      child.on('close', (code, signal) => {
+        if (timer) clearInterval(timer);
+        if (lastTickError) {
+          reject(lastTickError);
+          return;
+        }
+        if (code !== 0) {
+          reject(new Error(
+            `${stage} process failed with code ${String(code)} signal ${signal ?? 'none'}: ${stderr || stdout || 'no process output'}`
+          ));
+          return;
+        }
+        this.logger.log(`[${jobId}] ${stage} process completed pid=${child.pid ?? 'unknown'}`);
+        resolve();
+      });
+    });
+  }
+
+  private async countPngFiles(directory: string): Promise<number> {
+    const entries = await readdir(directory, { withFileTypes: true });
+    return entries.filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.png')).length;
+  }
+
+  private appendOutput(current: string, next: string): string {
+    return `${current}${next}`.slice(-20_000);
   }
 
   buildRifeArguments(inputFrames: string, outputFrames: string, sourceFrameCount: number): string[] {

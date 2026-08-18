@@ -7,7 +7,13 @@ import {
   NotFoundException
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AssetType, Prisma, ProjectStatus, SceneRenderAttemptStatus } from '@prisma/client';
+import {
+  AssetType,
+  Prisma,
+  ProjectStatus,
+  SceneRenderAttemptStatus,
+  type ProcessingJob
+} from '@prisma/client';
 import {
   FRAME_INTERPOLATION_JOB_NAME,
   FRAME_INTERPOLATION_QUEUE_NAME,
@@ -743,7 +749,10 @@ export class ProjectsService {
       orderBy: { createdAt: 'desc' }
     });
     if (running) {
-      throw new ConflictException('Frame interpolation is already queued or processing');
+      const reconciled = await this.reconcileFrameInterpolationJob(running);
+      if (reconciled.status === 'queued' || reconciled.status === 'active' || reconciled.status === 'retrying') {
+        throw new ConflictException('Frame interpolation is already queued or processing');
+      }
     }
 
     const processingJob = await this.prismaService.processingJob.create({
@@ -786,7 +795,7 @@ export class ProjectsService {
 
   async getFrameInterpolation(projectId: string, organizationId: string) {
     await this.getOwnedProject(projectId, organizationId);
-    const [job, asset] = await Promise.all([
+    const [storedJob, asset] = await Promise.all([
       this.prismaService.processingJob.findFirst({
         where: { projectId, queueName: FRAME_INTERPOLATION_QUEUE_NAME },
         orderBy: { createdAt: 'desc' }
@@ -796,7 +805,33 @@ export class ProjectsService {
         orderBy: { createdAt: 'desc' }
       })
     ]);
+    const job = storedJob ? await this.reconcileFrameInterpolationJob(storedJob) : null;
     return { job, asset };
+  }
+
+  private async reconcileFrameInterpolationJob(job: ProcessingJob): Promise<ProcessingJob> {
+    const bullJob = await this.frameInterpolationQueueService.inspect(job.bullJobId ?? job.id);
+    if (!bullJob || bullJob.state !== 'failed' || job.status === 'failed') return job;
+
+    const message = bullJob.failedReason ?? 'Interpolation failed in BullMQ without an error message';
+    const activityLog = Array.isArray(job.activityLog) ? [...job.activityLog] : [];
+    activityLog.push({
+      stage: 'FAILED',
+      message: `Falha na interpolacao: ${message}`,
+      provider: 'rife-ncnn-vulkan',
+      progress: job.progress,
+      timestamp: new Date().toISOString(),
+      reconciledFrom: 'bullmq'
+    });
+    return this.prismaService.processingJob.update({
+      where: { id: job.id },
+      data: {
+        status: 'failed',
+        detailMessage: `Falha na interpolacao: ${message}`,
+        errorMessage: message,
+        activityLog: activityLog.slice(-200) as Prisma.InputJsonValue
+      }
+    });
   }
 
   async getFrameInterpolationDownload(projectId: string, organizationId: string) {

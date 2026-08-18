@@ -27,6 +27,18 @@ export class FrameInterpolationQueueService implements OnModuleDestroy {
     return { bullJobId: String(job.id) };
   }
 
+  async inspect(jobId: string) {
+    const job = await this.queue.getJob(jobId);
+    if (!job) return null;
+    return {
+      state: await job.getState(),
+      progress: job.progress,
+      failedReason: job.failedReason || null,
+      processedOn: job.processedOn ?? null,
+      finishedOn: job.finishedOn ?? null
+    };
+  }
+
   async onModuleDestroy() {
     await this.queue.close();
   }
