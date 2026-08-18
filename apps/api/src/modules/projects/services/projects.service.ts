@@ -118,14 +118,6 @@ export class ProjectsService {
       throw new BadRequestException('Video duration is required for direct video generation');
     }
 
-    if (
-      isDirectVideoMode &&
-      clipDurationSeconds !== null &&
-      ![2, 3, 5].includes(clipDurationSeconds)
-    ) {
-      throw new BadRequestException('Direct video duration must be 2, 3 or 5 seconds');
-    }
-
     const project = await this.prismaService.project.create({
       data: {
         organizationId: input.organizationId,

@@ -200,7 +200,7 @@ describe('Projects integration', () => {
         title: 'Wan stability baseline',
         generationMode: 'prompt',
         generationPrompt: 'A woman standing naturally in a quiet forest at golden hour.',
-        clipDurationSeconds: 3,
+        clipDurationSeconds: 7,
         stabilityTest: true,
         wanOnly: true,
         generationSeed: 424242,
@@ -212,7 +212,7 @@ describe('Projects integration', () => {
 
     expect(response.body).toMatchObject({
       generationMode: 'prompt',
-      clipDurationSeconds: 3,
+      clipDurationSeconds: 7,
       stabilityTest: true,
       wanOnly: true,
       generationSeed: 424242,

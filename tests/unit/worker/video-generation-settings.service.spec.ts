@@ -40,6 +40,17 @@ describe('VideoGenerationSettingsService', () => {
     expect(calculateWanFrameCount(5, 16)).toBe(81);
   });
 
+  it('calculates a valid Wan frame count for an arbitrary duration entered in seconds', () => {
+    const result = createService().resolve(prompt, 7, { fps: 16, seed: 7 });
+
+    expect(result).toMatchObject({
+      requestedDurationSeconds: 7,
+      requestedFrameCount: 112,
+      frameCount: 113,
+      effectiveDurationSeconds: 7
+    });
+  });
+
   it('generates more native Wan frames at 24 FPS while preserving duration and steps', () => {
     const at16Fps = createService().resolve(prompt, 5, { fps: 16, steps: 24, seed: 7 });
     const at24Fps = createService().resolve(prompt, 5, { fps: 24, steps: 24, seed: 7 });

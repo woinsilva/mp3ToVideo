@@ -63,12 +63,17 @@
 
         <label v-if="generationMode !== 'music'" class="auth-input-group">
           <span class="auth-input-label">Duração do vídeo em segundos</span>
-          <select v-model="clipDurationSecondsInput" class="auth-input">
-            <option value="" disabled>Selecione a duração</option>
-            <option :value="2">2 segundos</option>
-            <option :value="3">3 segundos</option>
-            <option :value="5">5 segundos</option>
-          </select>
+          <input
+            v-model="clipDurationSecondsInput"
+            class="auth-input"
+            type="number"
+            min="1"
+            max="600"
+            step="1"
+            inputmode="numeric"
+            placeholder="Ex.: 8"
+          />
+          <span class="field-help">Digite a duração desejada entre 1 e 600 segundos.</span>
         </label>
 
         <label v-if="generationMode !== 'music'" class="test-toggle">
