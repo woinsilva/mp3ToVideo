@@ -10,7 +10,10 @@ export class FrameInterpolationWorkerService implements OnModuleInit, OnModuleDe
   private readonly logger = new Logger(FrameInterpolationWorkerService.name);
   private readonly worker: Worker<FrameInterpolationJobPayload>;
 
-  constructor(config: ConfigService, @Inject(FrameInterpolationProcessor) processor: FrameInterpolationProcessor) {
+  constructor(
+    @Inject(ConfigService) config: ConfigService,
+    @Inject(FrameInterpolationProcessor) processor: FrameInterpolationProcessor
+  ) {
     const connection: ConnectionOptions = {
       host: config.get<string>('redis.host', 'localhost'),
       port: config.get<number>('redis.port', 6379)
