@@ -134,6 +134,61 @@ export interface CreateChildrenClipCharacterInput {
   invariants: string[];
 }
 
+export interface ChildrenClipAudioAnalysis {
+  id: string;
+  status: 'queued' | 'analyzing' | 'completed' | 'failed';
+  bullJobId: string | null;
+  durationSeconds: number | null;
+  sampleRate: number | null;
+  channels: number | null;
+  bitrate: number | null;
+  bpm: number | null;
+  beatConfidence: number | null;
+  timeSignature: number;
+  loudnessDb: number | null;
+  peakDb: number | null;
+  beatGrid: number[] | null;
+  energyCurve: Array<{ time: number; energy: number }> | null;
+  waveform: Array<{ time: number; min: number; max: number }> | null;
+  errorMessage: string | null;
+  analysisStartedAt: string | null;
+  analysisCompletedAt: string | null;
+}
+
+export interface ChildrenClipLyricCue {
+  id: string;
+  lineIndex: number;
+  text: string;
+  startSeconds: number;
+  endSeconds: number;
+  confidence: number;
+  words: Array<{ text: string; startSeconds: number; endSeconds: number }> | null;
+}
+
+export interface ChildrenClipMusicSection {
+  id: string;
+  type: string;
+  title: string;
+  startSeconds: number;
+  endSeconds: number;
+  lyricsExcerpt: string | null;
+  energy: number | null;
+}
+
+export interface ChildrenClipAudioStatus {
+  analysis: ChildrenClipAudioAnalysis | null;
+  lyricCues: ChildrenClipLyricCue[];
+  musicSections: ChildrenClipMusicSection[];
+  job: {
+    id: string;
+    status: 'queued' | 'active' | 'completed' | 'failed' | 'retrying';
+    progress: number;
+    detailMessage: string | null;
+    errorMessage: string | null;
+    activityLog: Array<{ stage: string; message: string; progress: number; timestamp: string }> | null;
+  } | null;
+}
+
 export interface TrackUploadResult {
   projectId: string;
   trackId: string;

@@ -2,7 +2,9 @@ import { Inject, Injectable, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   CHILDREN_CLIP_CHARACTER_GENERATE_JOB_NAME,
+  CHILDREN_CLIP_AUDIO_ANALYZE_JOB_NAME,
   CHILDREN_CLIP_QUEUE_NAME,
+  type ChildrenClipAudioAnalysisJobPayload,
   type ChildrenClipCharacterGenerationJobPayload
 } from '@video/shared';
 import { Queue } from 'bullmq';
@@ -10,7 +12,7 @@ import type { ConnectionOptions } from 'bullmq';
 
 @Injectable()
 export class ChildrenClipQueueService implements OnModuleDestroy {
-  private readonly queue: Queue<ChildrenClipCharacterGenerationJobPayload>;
+  private readonly queue: Queue<ChildrenClipCharacterGenerationJobPayload | ChildrenClipAudioAnalysisJobPayload>;
 
   constructor(@Inject(ConfigService) configService: ConfigService) {
     const connection: ConnectionOptions = {
@@ -33,7 +35,19 @@ export class ChildrenClipQueueService implements OnModuleDestroy {
     payload: ChildrenClipCharacterGenerationJobPayload
   ): Promise<{ bullJobId: string }> {
     const job = await this.queue.add(CHILDREN_CLIP_CHARACTER_GENERATE_JOB_NAME, payload, {
-      jobId: `character-${payload.characterVersionId}-${Date.now()}`
+      jobId: `character-${payload.characterVersionId}-${Date.now()}`,
+      delay: 500
+    });
+
+    return { bullJobId: String(job.id) };
+  }
+
+  async enqueueAudioAnalysis(
+    payload: ChildrenClipAudioAnalysisJobPayload
+  ): Promise<{ bullJobId: string }> {
+    const job = await this.queue.add(CHILDREN_CLIP_AUDIO_ANALYZE_JOB_NAME, payload, {
+      jobId: `audio-${payload.projectId}-${Date.now()}`,
+      delay: 500
     });
 
     return { bullJobId: String(job.id) };

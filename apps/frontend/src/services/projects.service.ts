@@ -3,6 +3,7 @@ import type {
   CharacterAssetRole,
   ChildrenClipCharacter,
   ChildrenClipCharacterVersion,
+  ChildrenClipAudioStatus,
   CreateChildrenClipCharacterInput,
   CreateProjectInput,
   FrameInterpolationStatus,
@@ -239,6 +240,14 @@ class ProjectsService {
 
   downloadChildrenClipCharacterAsset(projectId: string, characterId: string, versionId: string, assetId: string, token: string) {
     return apiService.download(`/projects/${projectId}/children-clip/characters/${characterId}/versions/${versionId}/assets/${assetId}`, token);
+  }
+
+  getChildrenClipAudioAnalysis(projectId: string, token: string) {
+    return apiService.request<ChildrenClipAudioStatus>(`/projects/${projectId}/children-clip/audio-analysis`, {}, token);
+  }
+
+  retryChildrenClipAudioAnalysis(projectId: string, token: string) {
+    return apiService.request<ChildrenClipAudioStatus>(`/projects/${projectId}/children-clip/audio-analysis`, { method: 'POST' }, token);
   }
 }
 

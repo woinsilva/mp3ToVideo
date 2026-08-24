@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nest
 import { ConfigService } from '@nestjs/config';
 import {
   CHILDREN_CLIP_CHARACTER_GENERATE_JOB_NAME,
+  CHILDREN_CLIP_AUDIO_ANALYZE_JOB_NAME,
   CHILDREN_CLIP_QUEUE_NAME,
   type ChildrenClipCharacterGenerationJobPayload
 } from '@video/shared';
@@ -25,10 +26,13 @@ export class ChildrenClipWorkerService implements OnModuleInit, OnModuleDestroy 
     this.worker = new Worker<ChildrenClipCharacterGenerationJobPayload>(
       CHILDREN_CLIP_QUEUE_NAME,
       async (job) => {
-        if (job.name !== CHILDREN_CLIP_CHARACTER_GENERATE_JOB_NAME) {
-          throw new Error(`Unsupported children clip job: ${job.name}`);
+        if (job.name === CHILDREN_CLIP_CHARACTER_GENERATE_JOB_NAME) {
+          return this.processor.processCharacterGeneration(job);
         }
-        return this.processor.processCharacterGeneration(job);
+        if (job.name === CHILDREN_CLIP_AUDIO_ANALYZE_JOB_NAME) {
+          return this.processor.processAudioAnalysis(job);
+        }
+        throw new Error(`Unsupported children clip job: ${job.name}`);
       },
       {
         connection,

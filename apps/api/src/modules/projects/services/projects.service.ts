@@ -26,6 +26,7 @@ import { PrismaService } from '../../../database/prisma.service';
 import { ProjectProcessingPayloadFactory } from '../../jobs/services/project-processing-payload.factory';
 import { ProjectProcessingQueueService } from '../../jobs/services/project-processing-queue.service';
 import { FrameInterpolationQueueService } from '../../jobs/services/frame-interpolation-queue.service';
+import { ChildrenClipAudioService } from './children-clip-audio.service';
 import { LocalStorageService } from './local-storage.service';
 import { ProjectPresenter } from './project.presenter';
 
@@ -98,7 +99,9 @@ export class ProjectsService {
     @Inject(ConfigService)
     private readonly configService: ConfigService,
     @Inject(FrameInterpolationQueueService)
-    private readonly frameInterpolationQueueService: FrameInterpolationQueueService
+    private readonly frameInterpolationQueueService: FrameInterpolationQueueService,
+    @Inject(ChildrenClipAudioService)
+    private readonly childrenClipAudioService: ChildrenClipAudioService
   ) {}
 
   async createProject(input: CreateProjectInput) {
@@ -893,7 +896,8 @@ export class ProjectsService {
       },
       include: {
         track: true,
-        lyrics: true
+        lyrics: true,
+        childrenClipAudioAnalysis: true
       }
     });
 
@@ -909,11 +913,15 @@ export class ProjectsService {
       throw new BadRequestException('Only music-based projects accept an audio track');
     }
 
-    if (project.track && project.status !== ProjectStatus.failed) {
+    const canReplaceFailedChildrenTrack =
+      project.generationMode === 'children_clip' &&
+      project.childrenClipAudioAnalysis?.status === 'failed';
+
+    if (project.track && project.status !== ProjectStatus.failed && !canReplaceFailedChildrenTrack) {
       throw new BadRequestException('Project already has an uploaded track');
     }
 
-    if (project.status !== ProjectStatus.draft && project.status !== ProjectStatus.failed) {
+    if (project.status !== ProjectStatus.draft && project.status !== ProjectStatus.failed && !canReplaceFailedChildrenTrack) {
       throw new BadRequestException('Track upload is only allowed for draft or failed projects');
     }
 
@@ -926,7 +934,7 @@ export class ProjectsService {
           }
         : null);
 
-    if (project.track && project.status === ProjectStatus.failed) {
+    if (project.track && (project.status === ProjectStatus.failed || canReplaceFailedChildrenTrack)) {
       await this.localStorageService.removePath(
         this.localStorageService.buildProjectUploadDirectory(input.organizationId, input.projectId)
       );
@@ -1020,10 +1028,15 @@ export class ProjectsService {
     }
 
     if (project.generationMode === 'children_clip') {
+      await this.childrenClipAudioService.enqueue(
+        input.projectId,
+        input.organizationId,
+        project.createdByUserId
+      );
       return this.projectPresenter.uploadResult(
         input.projectId,
         result.id,
-        ProjectStatus.uploaded
+        ProjectStatus.queued
       );
     }
 

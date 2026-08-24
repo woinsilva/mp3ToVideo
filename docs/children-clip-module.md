@@ -106,6 +106,15 @@ licenciado sob OpenRAIL++. A instalacao local e reproduzivel por
 Descricoes em portugues sao convertidas em prompts SDXL estruturados pelo Ollama local. O modelo
 e descarregado da memoria ao finalizar a resposta para liberar a GPU antes do ComfyUI.
 
+### Analise musical
+
+O upload da faixa infantil inicia automaticamente `children-clip.audio.analyze` na fila dedicada.
+FFprobe valida codec, canais, sample rate e o limite real de 240 segundos. FFmpeg decodifica uma
+copia mono somente em memoria; o worker extrai BPM, confianca, grade de batidas, energia, loudness,
+pico e waveform. As secoes indicadas na letra sao refinadas pelas mudancas de energia e encaixadas
+na grade ritmica. Linhas e palavras recebem cues temporais persistentes para roteiro e lip sync.
+Falhas ficam registradas na analise e no `ProcessingJob`, e podem ser retomadas no estudio.
+
 RIFE fica disponivel apenas para tomadas generativas que realmente precisem de interpolacao. Animacao 2D sera renderizada diretamente no FPS final.
 
 ## Modelo de dados

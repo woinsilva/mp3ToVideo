@@ -25,6 +25,54 @@
         </article>
       </section>
 
+      <section class="surface-card studio-width audio-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="page-eyebrow">Etapa 1</p>
+            <h3>Analise da musica</h3>
+            <p>BPM, batidas, energia, secoes e sincronizacao inicial da letra.</p>
+          </div>
+          <span v-if="audioStatus?.analysis" class="version-status" :class="`version-status--${audioStatus.analysis.status}`">{{ audioStatusLabel }}</span>
+        </div>
+
+        <div v-if="audioStatus?.analysis?.status === 'queued' || audioStatus?.analysis?.status === 'analyzing'" class="audio-progress">
+          <v-progress-linear :model-value="audioStatus.job?.progress ?? 0" color="warning" height="9" rounded />
+          <div><strong>{{ audioStatus.job?.progress ?? 0 }}%</strong><span>{{ audioStatus.job?.detailMessage || 'Aguardando o worker...' }}</span></div>
+        </div>
+
+        <v-alert v-if="audioStatus?.analysis?.status === 'failed'" type="error" variant="tonal">
+          {{ audioStatus.analysis.errorMessage || audioStatus.job?.errorMessage || 'Falha ao analisar a musica.' }}
+          <template #append><button class="app-button app-button--secondary" type="button" @click="retryAudioAnalysis">Tentar novamente</button></template>
+        </v-alert>
+        <div v-if="audioStatus?.analysis?.status === 'failed'" class="replace-track">
+          <label class="auth-input-group"><span class="auth-input-label">Substituir musica com problema</span><input class="auth-input" type="file" accept="audio/mpeg,audio/wav,.mp3,.wav" @change="onReplacementTrackSelected" /></label>
+          <button class="app-button app-button--secondary" type="button" :disabled="!replacementTrack || replacingTrack" @click="replaceTrack">{{ replacingTrack ? 'Enviando...' : 'Enviar outra musica' }}</button>
+        </div>
+
+        <template v-if="audioStatus?.analysis?.status === 'completed'">
+          <div class="audio-metrics">
+            <div><span>Duracao</span><strong>{{ formatTime(audioStatus.analysis.durationSeconds || 0) }}</strong></div>
+            <div><span>Ritmo</span><strong>{{ audioStatus.analysis.bpm?.toFixed(1) }} BPM</strong></div>
+            <div><span>Compasso</span><strong>{{ audioStatus.analysis.timeSignature }}/4</strong></div>
+            <div><span>Batidas</span><strong>{{ audioStatus.analysis.beatGrid?.length || 0 }}</strong></div>
+          </div>
+          <div v-if="waveformPreview.length" class="waveform" aria-label="Forma de onda simplificada">
+            <i v-for="(point, index) in waveformPreview" :key="index" :style="{ height: `${Math.max(4, (point.max - point.min) * 44)}px` }" />
+          </div>
+          <div class="music-sections">
+            <div v-for="section in audioStatus.musicSections" :key="section.id">
+              <strong>{{ section.title }}</strong>
+              <span>{{ formatTime(section.startSeconds) }} - {{ formatTime(section.endSeconds) }}</span>
+              <em :style="{ width: `${Math.round((section.energy || 0) * 100)}%` }" />
+            </div>
+          </div>
+          <details class="lyric-cues">
+            <summary>{{ audioStatus.lyricCues.length }} linhas sincronizadas</summary>
+            <ol><li v-for="cue in audioStatus.lyricCues" :key="cue.id"><time>{{ formatTime(cue.startSeconds) }}</time><span>{{ cue.text }}</span></li></ol>
+          </details>
+        </template>
+      </section>
+
       <section class="surface-card studio-width character-panel">
         <div class="panel-heading">
           <div>
@@ -97,11 +145,12 @@ import AppLayout from '@/layouts/AppLayout.vue';
 import { projectsService } from '@/services/projects.service';
 import { useAuthStore } from '@/stores/auth.store';
 import { useProjectsStore } from '@/stores/projects.store';
-import type { CharacterAssetRole, ChildrenClipCharacter, ChildrenClipCharacterVersion } from '@/types/project.types';
+import type { CharacterAssetRole, ChildrenClipAudioStatus, ChildrenClipCharacter, ChildrenClipCharacterVersion } from '@/types/project.types';
 
 @Component({ components: { AppLayout } })
 export default class ChildrenClipStudioPage extends Vue {
   characters: ChildrenClipCharacter[] = [];
+  audioStatus: ChildrenClipAudioStatus | null = null;
   characterName = '';
   roleName = '';
   characterDescription = '';
@@ -116,20 +165,24 @@ export default class ChildrenClipStudioPage extends Vue {
   assetRoles: Record<string, CharacterAssetRole> = {};
   versionFiles: Record<string, File | null> = {};
   pollTimer: ReturnType<typeof setInterval> | null = null;
+  replacementTrack: File | null = null;
+  replacingTrack = false;
 
   get authStore(): any { return useAuthStore(); }
   get projectsStore(): any { return useProjectsStore(); }
   get project() { return this.projectsStore.currentProject; }
   get projectId() { return String(this.$route.params.id); }
-  get productionStatusLabel() { return this.project?.childrenClip?.productionStatus === 'setup' ? 'Preparacao' : this.project?.childrenClip?.productionStatus; }
+  get productionStatusLabel() { return ({ setup: 'Preparacao', analyzing_audio: 'Analisando musica', designing_characters: 'Personagens', failed: 'Requer atencao' } as Record<string, string>)[this.project?.childrenClip?.productionStatus || 'setup'] || this.project?.childrenClip?.productionStatus; }
   get invariants() { return this.invariantsText.split(/\r?\n/).map((item) => item.trim()).filter(Boolean); }
+  get audioStatusLabel() { return ({ queued: 'Enfileirada', analyzing: 'Analisando', completed: 'Concluida', failed: 'Falhou' } as Record<string, string>)[this.audioStatus?.analysis?.status || 'queued']; }
+  get waveformPreview() { return (this.audioStatus?.analysis?.waveform || []).filter((_, index) => index % 5 === 0); }
 
   async mounted() {
     if (!this.authStore.token) return;
     try {
       const project = await this.projectsStore.fetchProject(this.projectId, this.authStore.token);
       if (project.generationMode !== 'children_clip') { void this.$router.replace({ name: 'project-detail', params: { id: project.id } }); return; }
-      await this.loadCharacters();
+      await Promise.all([this.loadAudioAnalysis(), this.loadCharacters()]);
       this.pollTimer = setInterval(() => void this.pollIfNeeded(), 4000);
     } catch (error) { this.captureError(error, 'Falha ao carregar o estudio'); }
   }
@@ -145,7 +198,18 @@ export default class ChildrenClipStudioPage extends Vue {
     await this.loadAssetUrls();
   }
 
+  async loadAudioAnalysis() {
+    if (!this.authStore.token) return;
+    this.audioStatus = await projectsService.getChildrenClipAudioAnalysis(this.projectId, this.authStore.token);
+  }
+
   async pollIfNeeded() {
+    if (this.audioStatus?.analysis && ['queued', 'analyzing'].includes(this.audioStatus.analysis.status)) {
+      try {
+        await this.loadAudioAnalysis();
+        if (this.audioStatus?.analysis?.status === 'completed') await this.projectsStore.fetchProject(this.projectId, this.authStore.token);
+      } catch (error) { this.captureError(error, 'Falha ao atualizar analise da musica'); }
+    }
     if (this.characters.some((item) => item.versions.some((version) => ['queued', 'generating'].includes(version.status)))) {
       try { await this.loadCharacters(); } catch (error) { this.captureError(error, 'Falha ao atualizar personagens'); }
     }
@@ -161,6 +225,7 @@ export default class ChildrenClipStudioPage extends Vue {
   }
 
   onPrimaryFileSelected(event: Event) { this.primaryFile = (event.target as HTMLInputElement).files?.[0] ?? null; }
+  onReplacementTrackSelected(event: Event) { this.replacementTrack = (event.target as HTMLInputElement).files?.[0] ?? null; }
   onVersionFileSelected(versionId: string, event: Event) {
     this.versionFiles = { ...this.versionFiles, [versionId]: (event.target as HTMLInputElement).files?.[0] ?? null };
     if (!this.assetRoles[versionId]) this.assetRoles = { ...this.assetRoles, [versionId]: 'pose' };
@@ -208,6 +273,19 @@ export default class ChildrenClipStudioPage extends Vue {
     if (!this.authStore.token) return;
     try { await projectsService.retryChildrenClipCharacterGeneration(this.projectId, characterId, versionId, this.authStore.token); await this.loadCharacters(); } catch (error) { this.captureError(error, 'Falha ao reiniciar geracao'); }
   }
+  async retryAudioAnalysis() {
+    if (!this.authStore.token) return;
+    try { this.audioStatus = await projectsService.retryChildrenClipAudioAnalysis(this.projectId, this.authStore.token); } catch (error) { this.captureError(error, 'Falha ao reiniciar analise da musica'); }
+  }
+  async replaceTrack() {
+    if (!this.authStore.token || !this.replacementTrack) return;
+    this.replacingTrack = true;
+    try {
+      await this.projectsStore.uploadTrack(this.projectId, this.replacementTrack, null, null, null, this.project?.lyrics?.rawText || null, this.authStore.token);
+      this.replacementTrack = null;
+      await this.loadAudioAnalysis();
+    } catch (error) { this.captureError(error, 'Falha ao substituir musica'); } finally { this.replacingTrack = false; }
+  }
   async approveVersion(characterId: string, versionId: string) {
     if (!this.authStore.token) return;
     try { await projectsService.approveChildrenClipCharacterVersion(this.projectId, characterId, versionId, this.authStore.token); await this.loadCharacters(); } catch (error) { this.captureError(error, 'Falha ao aprovar versao'); }
@@ -224,6 +302,7 @@ export default class ChildrenClipStudioPage extends Vue {
   statusLabel(status: ChildrenClipCharacterVersion['status']) { return ({ draft: 'Rascunho', queued: 'Enfileirada', generating: 'Gerando', ready_for_review: 'Revisar', approved: 'Aprovada', rejected: 'Rejeitada', failed: 'Falhou' })[status]; }
   originLabel(origin: ChildrenClipCharacterVersion['origin']) { return ({ generated: 'Gerada', uploaded: 'Enviada', hybrid: 'Hibrida' })[origin]; }
   roleLabel(role: CharacterAssetRole) { return ({ primary_reference: 'Referencia principal', front_view: 'Vista frontal', side_view: 'Vista lateral', back_view: 'Vista traseira', portrait: 'Retrato', expression: 'Expressao', pose: 'Pose', mouth_shape: 'Forma de boca', eye_state: 'Olhos', source_reference: 'Referencia original' })[role]; }
+  formatTime(seconds: number) { const safe = Math.max(0, seconds); return `${Math.floor(safe / 60)}:${String(Math.floor(safe % 60)).padStart(2, '0')}`; }
   captureError(error: unknown, fallback: string) { this.errorMessage = error instanceof Error ? error.message : fallback; }
 }
 </script>
@@ -236,6 +315,24 @@ export default class ChildrenClipStudioPage extends Vue {
 .setup-card__icon { display: inline-flex; width: 42px; height: 42px; align-items: center; justify-content: center; border-radius: 12px; color: #9b5d0b; background: #fff0d4; }
 .setup-card p, .character-panel p { margin: 4px 0 0; color: #65676b; }
 .character-panel { padding: 24px; }
+.audio-panel { padding: 24px; }
+.audio-progress { display: grid; gap: 10px; margin-top: 18px; }
+.audio-progress > div { display: flex; justify-content: space-between; gap: 12px; color: #65676b; font-size: 0.84rem; }
+.replace-track { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 12px; margin-top: 14px; }
+.audio-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 18px; }
+.audio-metrics > div { display: grid; gap: 3px; padding: 12px; border-radius: 12px; background: #f6f7f8; }
+.audio-metrics span { color: #65676b; font-size: 0.75rem; }
+.waveform { display: flex; height: 56px; align-items: center; gap: 1px; margin: 18px 0; overflow: hidden; }
+.waveform i { flex: 1 1 1px; min-width: 1px; border-radius: 2px; background: #e98b17; }
+.music-sections { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+.music-sections > div { position: relative; display: grid; gap: 3px; overflow: hidden; padding: 10px; border: 1px solid #e4e6eb; border-radius: 10px; }
+.music-sections span { color: #65676b; font-size: 0.72rem; }
+.music-sections em { position: absolute; bottom: 0; left: 0; height: 3px; background: #e98b17; }
+.lyric-cues { margin-top: 16px; }
+.lyric-cues summary { cursor: pointer; font-weight: 700; }
+.lyric-cues ol { display: grid; gap: 6px; padding-left: 0; list-style: none; }
+.lyric-cues li { display: grid; grid-template-columns: 48px 1fr; gap: 8px; }
+.lyric-cues time { color: #9b5d0b; font-variant-numeric: tabular-nums; }
 .panel-heading, .list-heading, .character-card__heading, .character-card__heading > div, .version-card header, .version-card header > div { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .panel-heading { align-items: flex-start; }
 .panel-heading h3, .list-heading h3 { margin: 0; font-size: 1.35rem; }
@@ -269,5 +366,5 @@ export default class ChildrenClipStudioPage extends Vue {
 .supplementary-assets { margin-top: 14px; }
 .supplementary-assets summary { color: #4b648a; cursor: pointer; font-weight: 700; }
 .supplementary-assets__form { display: grid; grid-template-columns: 180px 1fr auto; gap: 10px; margin-top: 10px; }
-@media (max-width: 700px) { .setup-grid, .character-form { grid-template-columns: 1fr; } .character-form__wide { grid-column: auto; } .character-panel, .character-card { padding: 18px; } .supplementary-assets__form { grid-template-columns: 1fr; } }
+@media (max-width: 700px) { .setup-grid, .character-form, .audio-metrics, .replace-track { grid-template-columns: 1fr; } .character-form__wide { grid-column: auto; } .character-panel, .character-card, .audio-panel { padding: 18px; } .supplementary-assets__form { grid-template-columns: 1fr; } }
 </style>

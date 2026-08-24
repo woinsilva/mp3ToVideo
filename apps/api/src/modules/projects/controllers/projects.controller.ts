@@ -286,11 +286,11 @@ export class ProjectsController {
     }
 
     if (!this.trackUploadPolicyService.isAllowedMimeType(file.mimetype)) {
-      throw new BadRequestException('Only MP3 and WAV uploads are supported in the MVP');
+      throw new BadRequestException('Only MP3 and WAV audio files are supported');
     }
 
     if (!this.trackUploadPolicyService.isAllowedFileName(file.originalname)) {
-      throw new BadRequestException('Only .mp3 and .wav files are supported in the MVP');
+      throw new BadRequestException('Only .mp3 and .wav files are supported');
     }
 
     return this.projectsService.uploadTrack({

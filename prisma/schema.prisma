@@ -56,6 +56,13 @@ enum ChildrenClipProductionStatus {
   failed
 }
 
+enum ChildrenClipAudioAnalysisStatus {
+  queued
+  analyzing
+  completed
+  failed
+}
+
 enum CharacterScope {
   project
   organization
@@ -195,43 +202,45 @@ model OrganizationMember {
 }
 
 model Project {
-  id                     String                 @id @default(cuid())
-  organizationId         String
-  createdByUserId        String
-  title                  String
-  generationMode         ProjectGenerationMode  @default(music)
-  generationPrompt       String?
-  stabilityTest          Boolean                @default(false)
-  wanOnly                Boolean                @default(false)
-  generationSeed         Int?
-  generationCfg          Float?
-  generationSteps        Int?
-  generationFps          Int                    @default(16)
-  frameInterpolationMode FrameInterpolationMode @default(off)
-  sourceImageAssetId     String?                @unique
-  clipDurationSeconds    Float?
-  sceneDurationSeconds   Float?
-  visualCheckpointName   String?
-  status                 ProjectStatus          @default(draft)
-  errorMessage           String?
-  createdAt              DateTime               @default(now())
-  updatedAt              DateTime               @updatedAt
-  deletedAt              DateTime?
-  organization           Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  createdByUser          User                   @relation("ProjectCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  track                  Track?
-  lyrics                 Lyrics?
-  musicSections          MusicSection[]
-  storyboard             Storyboard?
-  scenes                 Scene[]
-  renders                Render[]
-  assets                 Asset[]
-  processingJobs         ProcessingJob[]
-  sceneRenderAttempts    SceneRenderAttempt[]
-  childrenClip           ChildrenClip?
-  characterLinks         ProjectCharacter[]
-  originatedCharacters   Character[]            @relation("CharacterOriginProject")
-  sourceImageAsset       Asset?                 @relation("ProjectSourceImageAsset", fields: [sourceImageAssetId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  id                        String                     @id @default(cuid())
+  organizationId            String
+  createdByUserId           String
+  title                     String
+  generationMode            ProjectGenerationMode      @default(music)
+  generationPrompt          String?
+  stabilityTest             Boolean                    @default(false)
+  wanOnly                   Boolean                    @default(false)
+  generationSeed            Int?
+  generationCfg             Float?
+  generationSteps           Int?
+  generationFps             Int                        @default(16)
+  frameInterpolationMode    FrameInterpolationMode     @default(off)
+  sourceImageAssetId        String?                    @unique
+  clipDurationSeconds       Float?
+  sceneDurationSeconds      Float?
+  visualCheckpointName      String?
+  status                    ProjectStatus              @default(draft)
+  errorMessage              String?
+  createdAt                 DateTime                   @default(now())
+  updatedAt                 DateTime                   @updatedAt
+  deletedAt                 DateTime?
+  organization              Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdByUser             User                       @relation("ProjectCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  track                     Track?
+  lyrics                    Lyrics?
+  musicSections             MusicSection[]
+  storyboard                Storyboard?
+  scenes                    Scene[]
+  renders                   Render[]
+  assets                    Asset[]
+  processingJobs            ProcessingJob[]
+  sceneRenderAttempts       SceneRenderAttempt[]
+  childrenClip              ChildrenClip?
+  childrenClipAudioAnalysis ChildrenClipAudioAnalysis?
+  childrenClipLyricCues     ChildrenClipLyricCue[]
+  characterLinks            ProjectCharacter[]
+  originatedCharacters      Character[]                @relation("CharacterOriginProject")
+  sourceImageAsset          Asset?                     @relation("ProjectSourceImageAsset", fields: [sourceImageAssetId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
 
 model Track {
@@ -419,6 +428,51 @@ model ChildrenClip {
   createdAt        DateTime                     @default(now())
   updatedAt        DateTime                     @updatedAt
   project          Project                      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model ChildrenClipAudioAnalysis {
+  id                  String                          @id @default(cuid())
+  projectId           String                          @unique
+  status              ChildrenClipAudioAnalysisStatus @default(queued)
+  bullJobId           String?
+  durationSeconds     Float?
+  sampleRate          Int?
+  channels            Int?
+  bitrate             Int?
+  bpm                 Float?
+  beatConfidence      Float?
+  timeSignature       Int                             @default(4)
+  loudnessDb          Float?
+  peakDb              Float?
+  beatGrid            Json?
+  energyCurve         Json?
+  waveform            Json?
+  errorMessage        String?
+  analysisStartedAt   DateTime?
+  analysisCompletedAt DateTime?
+  createdAt           DateTime                        @default(now())
+  updatedAt           DateTime                        @updatedAt
+  project             Project                         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([bullJobId])
+  @@index([status, updatedAt])
+}
+
+model ChildrenClipLyricCue {
+  id           String   @id @default(cuid())
+  projectId    String
+  lineIndex    Int
+  text         String
+  startSeconds Float
+  endSeconds   Float
+  confidence   Float
+  words        Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, lineIndex])
+  @@index([projectId, startSeconds])
 }
 
 model Character {

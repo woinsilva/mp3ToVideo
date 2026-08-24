@@ -192,7 +192,7 @@ describe('Projects integration', () => {
     });
   });
 
-  it('creates a children clip project and keeps its Suno track out of the legacy queue', async () => {
+  it('creates a children clip project and queues its dedicated audio analysis', async () => {
     const createResponse = await request(app.getHttpServer())
       .post('/projects')
       .set('Authorization', `Bearer ${authToken}`)
@@ -231,15 +231,25 @@ describe('Projects integration', () => {
       })
       .expect(201);
 
-    expect(uploadResponse.body.status).toBe('uploaded');
-    expect(await prisma.processingJob.count({ where: { projectId: createResponse.body.id } })).toBe(0);
+    expect(uploadResponse.body.status).toBe('queued');
+    const processingJob = await prisma.processingJob.findFirst({ where: { projectId: createResponse.body.id } });
+    expect(processingJob).toMatchObject({
+      queueName: 'children-clip-production',
+      jobName: 'children-clip.audio.analyze',
+      status: 'queued'
+    });
 
     const persisted = await prisma.project.findUnique({
       where: { id: createResponse.body.id },
       include: { childrenClip: true, track: true }
     });
-    expect(persisted?.childrenClip?.productionStatus).toBe('setup');
+    expect(persisted?.childrenClip?.productionStatus).toBe('analyzing_audio');
     expect(persisted?.track?.originalFileName).toBe('suno-final.mp3');
+    await request(app.getHttpServer())
+      .get(`/projects/${createResponse.body.id}/children-clip/audio-analysis`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .expect(200)
+      .expect(({ body }) => expect(body.analysis.status).toBe('queued'));
     uploadedFilePath = resolve(persisted?.track?.storagePath ?? '');
   });
 

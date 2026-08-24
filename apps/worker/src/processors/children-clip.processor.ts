@@ -3,13 +3,16 @@ import { stat, writeFile } from 'node:fs/promises';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AssetType, CharacterAssetRole, CharacterVersionStatus, Prisma, ProcessingJobStatus } from '@prisma/client';
-import type { ChildrenClipCharacterGenerationJobPayload } from '@video/shared';
+import type { ChildrenClipAudioAnalysisJobPayload, ChildrenClipCharacterGenerationJobPayload } from '@video/shared';
 import type { Job } from 'bullmq';
 
 import { PrismaService } from '../database/prisma.service';
 import { ComfyUiClientService } from '../services/comfyui-client.service';
 import { RenderStorageService } from '../services/render-storage.service';
 import { OllamaClientService } from '../services/ollama-client.service';
+import { ChildrenClipAudioAnalysisService, type AudioEnergyPoint } from '../services/children-clip-audio-analysis.service';
+import { ChildrenClipLyricsAlignmentService } from '../services/children-clip-lyrics-alignment.service';
+import { MusicStructureService } from '../services/music-structure.service';
 
 interface OptimizedCharacterPrompt {
   positivePrompt: string;
@@ -25,8 +28,131 @@ export class ChildrenClipProcessor {
     @Inject(ConfigService) private readonly config: ConfigService,
     @Inject(ComfyUiClientService) private readonly comfyUi: ComfyUiClientService,
     @Inject(RenderStorageService) private readonly storage: RenderStorageService,
-    @Inject(OllamaClientService) private readonly ollama: OllamaClientService
+    @Inject(OllamaClientService) private readonly ollama: OllamaClientService,
+    @Inject(ChildrenClipAudioAnalysisService)
+    private readonly audioAnalysis: ChildrenClipAudioAnalysisService,
+    @Inject(ChildrenClipLyricsAlignmentService)
+    private readonly lyricsAlignment: ChildrenClipLyricsAlignmentService,
+    @Inject(MusicStructureService) private readonly musicStructure: MusicStructureService
   ) {}
+
+  async processAudioAnalysis(job: Job<ChildrenClipAudioAnalysisJobPayload>) {
+    const { projectId, organizationId } = job.data;
+    const bullJobId = String(job.id);
+    const project = await this.prisma.project.findFirst({
+      where: { id: projectId, organizationId, generationMode: 'children_clip', deletedAt: null },
+      include: { track: true, lyrics: true, childrenClip: true }
+    });
+    if (!project?.track || !project.childrenClip) throw new Error(`Children clip ${projectId} has no audio track`);
+
+    await this.prisma.childrenClipAudioAnalysis.upsert({
+      where: { projectId },
+      create: { projectId, status: 'analyzing', bullJobId, analysisStartedAt: new Date() },
+      update: {
+        status: 'analyzing', bullJobId, errorMessage: null,
+        analysisStartedAt: new Date(), analysisCompletedAt: null
+      }
+    });
+
+    try {
+      await this.audioProgress(job, 5, 'STARTING', 'Worker iniciou a analise da musica.');
+      await this.audioProgress(job, 12, 'PROBING_AUDIO', 'Validando codec, duracao e metadados com FFprobe.');
+      await this.audioProgress(job, 22, 'DECODING_AUDIO', 'Decodificando o sinal para analise ritmica com FFmpeg.');
+      const result = await this.audioAnalysis.analyze(project.track.storagePath);
+      await this.audioProgress(job, 58, 'DETECTING_BEATS', `Grade ritmica detectada em ${result.bpm.toFixed(1)} BPM.`);
+
+      const plannedSections = this.musicStructure.build(
+        result.durationSeconds,
+        project.lyrics?.rawText ?? '',
+        project.lyrics?.normalizedText ?? ''
+      );
+      const sections = this.refineSectionBoundaries(
+        plannedSections,
+        result.energyCurve,
+        result.beats,
+        result.durationSeconds
+      ).map((section) => ({
+        ...section,
+        energy: this.averageEnergy(result.energyCurve, section.startSeconds, section.endSeconds)
+      }));
+      const cues = this.lyricsAlignment.align(
+        project.lyrics?.rawText ?? '', result.durationSeconds, result.beats
+      );
+      await this.audioProgress(job, 76, 'ALIGNING_LYRICS', `Alinhando ${cues.length} linhas da letra a grade musical.`);
+
+      await this.prisma.$transaction(async (tx) => {
+        await tx.musicSection.deleteMany({ where: { projectId } });
+        await tx.childrenClipLyricCue.deleteMany({ where: { projectId } });
+        if (sections.length) {
+          await tx.musicSection.createMany({
+            data: sections.map((section) => ({ projectId, ...section }))
+          });
+        }
+        if (cues.length) {
+          await tx.childrenClipLyricCue.createMany({
+            data: cues.map((cue) => ({
+              projectId,
+              lineIndex: cue.lineIndex,
+              text: cue.text,
+              startSeconds: cue.startSeconds,
+              endSeconds: cue.endSeconds,
+              confidence: cue.confidence,
+              words: cue.words as Prisma.InputJsonValue
+            }))
+          });
+        }
+        await tx.track.update({ where: { projectId }, data: { durationSeconds: result.durationSeconds } });
+        await tx.project.update({
+          where: { id: projectId },
+          data: { clipDurationSeconds: result.durationSeconds, status: 'uploaded', errorMessage: null }
+        });
+        await tx.childrenClipAudioAnalysis.update({
+          where: { projectId },
+          data: {
+            status: 'completed',
+            durationSeconds: result.durationSeconds,
+            sampleRate: result.sampleRate,
+            channels: result.channels,
+            bitrate: result.bitrate,
+            bpm: result.bpm,
+            beatConfidence: result.beatConfidence,
+            timeSignature: result.timeSignature,
+            loudnessDb: result.loudnessDb,
+            peakDb: result.peakDb,
+            beatGrid: result.beats,
+            energyCurve: result.energyCurve as unknown as Prisma.InputJsonValue,
+            waveform: result.waveform as unknown as Prisma.InputJsonValue,
+            errorMessage: null,
+            analysisCompletedAt: new Date()
+          }
+        });
+        await tx.childrenClip.update({
+          where: { projectId },
+          data: { productionStatus: 'designing_characters' }
+        });
+      });
+      await this.audioProgress(job, 92, 'PERSISTING_TIMELINE', `${sections.length} secoes e ${cues.length} cues persistidos.`);
+      await this.audioProgress(job, 100, 'COMPLETED', 'Analise da musica concluida.', ProcessingJobStatus.completed);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const willRetry = job.attemptsMade + 1 < (job.opts.attempts ?? 1);
+      await this.prisma.childrenClipAudioAnalysis.upsert({
+        where: { projectId },
+        create: { projectId, status: willRetry ? 'queued' : 'failed', bullJobId, errorMessage: message, analysisCompletedAt: willRetry ? null : new Date() },
+        update: { status: willRetry ? 'queued' : 'failed', errorMessage: message, analysisCompletedAt: willRetry ? null : new Date() }
+      });
+      await this.prisma.childrenClip.update({ where: { projectId }, data: { productionStatus: willRetry ? 'analyzing_audio' : 'failed' } });
+      await this.audioProgress(
+        job,
+        0,
+        willRetry ? 'RETRYING' : 'FAILED',
+        willRetry ? `Tentativa falhou; o BullMQ tentara novamente: ${message}` : `Falha ao analisar musica: ${message}`,
+        willRetry ? ProcessingJobStatus.retrying : ProcessingJobStatus.failed,
+        message
+      );
+      throw error;
+    }
+  }
 
   async processCharacterGeneration(job: Job<ChildrenClipCharacterGenerationJobPayload>) {
     const { projectId, organizationId, characterId, characterVersionId } = job.data;
@@ -68,10 +194,10 @@ export class ChildrenClipProcessor {
         generationCompletedAt: null
       }
     });
-    await this.progress(bullJobId, 10, 'STARTING', 'Worker iniciou a geracao da ficha do personagem.');
+    await this.characterProgress(job, 10, 'STARTING', 'Worker iniciou a geracao da ficha do personagem.');
 
     try {
-      await this.progress(bullJobId, 15, 'OPTIMIZING_PROMPT', 'Traduzindo e estruturando a descricao visual.');
+      await this.characterProgress(job, 15, 'OPTIMIZING_PROMPT', 'Traduzindo e estruturando a descricao visual.');
       const optimizedPrompt = await this.ollama.generateJson<OptimizedCharacterPrompt>([
         {
           role: 'system',
@@ -94,7 +220,7 @@ export class ChildrenClipProcessor {
       const negativePrompt = [optimizedPrompt?.negativePrompt?.trim(), safetyNegativePrompt]
         .filter(Boolean)
         .join(', ');
-      await this.progress(bullJobId, 20, 'LOADING_MODEL', `Carregando checkpoint ${checkpointName}.`);
+      await this.characterProgress(job, 20, 'LOADING_MODEL', `Carregando checkpoint ${checkpointName}.`);
       const result = await this.comfyUi.generateStillImage({
         positivePrompt,
         negativePrompt,
@@ -110,7 +236,7 @@ export class ChildrenClipProcessor {
         loraName: loraName || null,
         loraStrength
       });
-      await this.progress(bullJobId, 75, 'SAVING_ASSET', 'Imagem gerada. Salvando ficha versionada.');
+      await this.characterProgress(job, 75, 'SAVING_ASSET', 'Imagem gerada. Salvando ficha versionada.');
 
       const storagePath = this.storage.buildCharacterAssetPath(
         organizationId,
@@ -184,19 +310,27 @@ export class ChildrenClipProcessor {
           }
         });
       });
-      await this.progress(bullJobId, 100, 'READY_FOR_REVIEW', 'Ficha do personagem pronta para revisao.', ProcessingJobStatus.completed);
+      await this.characterProgress(job, 100, 'READY_FOR_REVIEW', 'Ficha do personagem pronta para revisao.', ProcessingJobStatus.completed);
       this.logger.log(`Character generated project=${projectId} character=${characterId} version=${characterVersionId}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const willRetry = job.attemptsMade + 1 < (job.opts.attempts ?? 1);
       await this.prisma.characterVersion.update({
         where: { id: characterVersionId },
         data: {
-          status: CharacterVersionStatus.failed,
+          status: willRetry ? CharacterVersionStatus.queued : CharacterVersionStatus.failed,
           errorMessage: message,
-          generationCompletedAt: new Date()
+          generationCompletedAt: willRetry ? null : new Date()
         }
       });
-      await this.progress(bullJobId, 0, 'FAILED', `Falha ao gerar personagem: ${message}`, ProcessingJobStatus.failed, message);
+      await this.characterProgress(
+        job,
+        0,
+        willRetry ? 'RETRYING' : 'FAILED',
+        willRetry ? `Tentativa falhou; o BullMQ tentara novamente: ${message}` : `Falha ao gerar personagem: ${message}`,
+        willRetry ? ProcessingJobStatus.retrying : ProcessingJobStatus.failed,
+        message
+      );
       throw error;
     }
   }
@@ -223,5 +357,70 @@ export class ChildrenClipProcessor {
         activityLog: entries.slice(-200) as Prisma.InputJsonValue
       }
     });
+  }
+
+  private async audioProgress(
+    job: Job<ChildrenClipAudioAnalysisJobPayload>,
+    progress: number,
+    stage: string,
+    message: string,
+    status: ProcessingJobStatus = ProcessingJobStatus.active,
+    errorMessage: string | null = null
+  ) {
+    await job.updateProgress({ progress, stage, message });
+    await this.progress(String(job.id), progress, stage, message, status, errorMessage);
+    this.logger.log(`[${String(job.id)}] ${stage} ${progress}%: ${message}`);
+  }
+
+  private async characterProgress(
+    job: Job<ChildrenClipCharacterGenerationJobPayload>,
+    progress: number,
+    stage: string,
+    message: string,
+    status: ProcessingJobStatus = ProcessingJobStatus.active,
+    errorMessage: string | null = null
+  ) {
+    await job.updateProgress({ progress, stage, message });
+    await this.progress(String(job.id), progress, stage, message, status, errorMessage);
+    this.logger.log(`[${String(job.id)}] ${stage} ${progress}%: ${message}`);
+  }
+
+  private averageEnergy(points: AudioEnergyPoint[], start: number, end: number) {
+    const selected = points.filter((point) => point.time >= start && point.time < end);
+    if (!selected.length) return 0.5;
+    return Number((selected.reduce((sum, point) => sum + point.energy, 0) / selected.length).toFixed(3));
+  }
+
+  private refineSectionBoundaries<T extends { startSeconds: number; endSeconds: number }>(
+    sections: T[],
+    energy: AudioEnergyPoint[],
+    beats: number[],
+    duration: number
+  ): T[] {
+    if (sections.length < 2 || energy.length < 8) return sections;
+    const boundaries = [0];
+    for (let index = 1; index < sections.length; index += 1) {
+      const expected = sections[index].startSeconds;
+      const candidates = energy.filter((point) => Math.abs(point.time - expected) <= 4);
+      let selected = expected;
+      let selectedScore = -Infinity;
+      for (const candidate of candidates) {
+        const before = this.averageEnergy(energy, Math.max(0, candidate.time - 1.5), candidate.time);
+        const after = this.averageEnergy(energy, candidate.time, Math.min(duration, candidate.time + 1.5));
+        const score = Math.abs(after - before) + (1 - candidate.energy) * 0.12;
+        if (score > selectedScore) { selectedScore = score; selected = candidate.time; }
+      }
+      const nearestBeat = beats.reduce((nearest, beat) =>
+        Math.abs(beat - selected) < Math.abs(nearest - selected) ? beat : nearest, selected);
+      const minimum = boundaries[index - 1] + 2;
+      const maximum = duration - (sections.length - index) * 2;
+      boundaries.push(Number(Math.min(maximum, Math.max(minimum, nearestBeat)).toFixed(3)));
+    }
+    boundaries.push(duration);
+    return sections.map((section, index) => ({
+      ...section,
+      startSeconds: boundaries[index],
+      endSeconds: boundaries[index + 1]
+    }));
   }
 }
