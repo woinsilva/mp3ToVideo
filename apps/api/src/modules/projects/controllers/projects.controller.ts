@@ -58,7 +58,12 @@ export class ProjectsController {
       clipDurationSeconds: input.clipDurationSeconds,
       sceneDurationSeconds: input.sceneDurationSeconds,
       visualCheckpointName: input.visualCheckpointName,
-      manualLyricsText: input.manualLyricsText
+      manualLyricsText: input.manualLyricsText,
+      childrenClipConcept: input.childrenClipConcept,
+      childrenClipVisualStyle: input.childrenClipVisualStyle,
+      audienceAgeMin: input.audienceAgeMin,
+      audienceAgeMax: input.audienceAgeMax,
+      childrenClipAspectRatio: input.childrenClipAspectRatio
     });
   }
 

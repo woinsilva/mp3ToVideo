@@ -33,6 +33,62 @@ enum ProjectGenerationMode {
   music
   prompt
   image
+  children_clip
+}
+
+enum ChildrenClipAspectRatio {
+  landscape_16_9
+  portrait_9_16
+  square_1_1
+}
+
+enum ChildrenClipProductionStatus {
+  setup
+  analyzing_audio
+  planning_narrative
+  designing_characters
+  storyboarding
+  generating_assets
+  animating
+  generating_hero_shots
+  compositing
+  encoding
+  validating
+  completed
+  failed
+}
+
+enum CharacterScope {
+  project
+  organization
+}
+
+enum CharacterVersionOrigin {
+  generated
+  uploaded
+  hybrid
+}
+
+enum CharacterVersionStatus {
+  draft
+  generating
+  ready_for_review
+  approved
+  rejected
+  failed
+}
+
+enum CharacterAssetRole {
+  primary_reference
+  front_view
+  side_view
+  back_view
+  portrait
+  expression
+  pose
+  mouth_shape
+  eye_state
+  source_reference
 }
 
 enum FrameInterpolationMode {
@@ -109,19 +165,21 @@ model User {
   updatedAt           DateTime             @updatedAt
   deletedAt           DateTime?
   createdProjects     Project[]            @relation("ProjectCreatedBy")
+  createdCharacters   Character[]          @relation("CharacterCreatedBy")
   organizationMembers OrganizationMember[]
 }
 
 model Organization {
-  id        String               @id @default(cuid())
-  name      String
-  slug      String               @unique
-  createdAt DateTime             @default(now())
-  updatedAt DateTime             @updatedAt
-  deletedAt DateTime?
-  members   OrganizationMember[]
-  projects  Project[]
-  assets    Asset[]
+  id         String               @id @default(cuid())
+  name       String
+  slug       String               @unique
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
+  deletedAt  DateTime?
+  members    OrganizationMember[]
+  projects   Project[]
+  assets     Asset[]
+  characters Character[]
 }
 
 model OrganizationMember {
@@ -138,40 +196,43 @@ model OrganizationMember {
 }
 
 model Project {
-  id                   String                @id @default(cuid())
-  organizationId       String
-  createdByUserId      String
-  title                String
-  generationMode       ProjectGenerationMode @default(music)
-  generationPrompt     String?
-  stabilityTest        Boolean               @default(false)
-  wanOnly              Boolean               @default(false)
-  generationSeed       Int?
-  generationCfg        Float?
-  generationSteps      Int?
-  generationFps        Int                   @default(16)
+  id                     String                 @id @default(cuid())
+  organizationId         String
+  createdByUserId        String
+  title                  String
+  generationMode         ProjectGenerationMode  @default(music)
+  generationPrompt       String?
+  stabilityTest          Boolean                @default(false)
+  wanOnly                Boolean                @default(false)
+  generationSeed         Int?
+  generationCfg          Float?
+  generationSteps        Int?
+  generationFps          Int                    @default(16)
   frameInterpolationMode FrameInterpolationMode @default(off)
-  sourceImageAssetId   String?               @unique
-  clipDurationSeconds  Float?
-  sceneDurationSeconds Float?
-  visualCheckpointName String?
-  status               ProjectStatus         @default(draft)
-  errorMessage         String?
-  createdAt            DateTime              @default(now())
-  updatedAt            DateTime              @updatedAt
-  deletedAt            DateTime?
-  organization         Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  createdByUser        User                  @relation("ProjectCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  track                Track?
-  lyrics               Lyrics?
-  musicSections        MusicSection[]
-  storyboard           Storyboard?
-  scenes               Scene[]
-  renders              Render[]
-  assets               Asset[]
-  processingJobs       ProcessingJob[]
-  sceneRenderAttempts  SceneRenderAttempt[]
-  sourceImageAsset     Asset?                @relation("ProjectSourceImageAsset", fields: [sourceImageAssetId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  sourceImageAssetId     String?                @unique
+  clipDurationSeconds    Float?
+  sceneDurationSeconds   Float?
+  visualCheckpointName   String?
+  status                 ProjectStatus          @default(draft)
+  errorMessage           String?
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+  deletedAt              DateTime?
+  organization           Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdByUser          User                   @relation("ProjectCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  track                  Track?
+  lyrics                 Lyrics?
+  musicSections          MusicSection[]
+  storyboard             Storyboard?
+  scenes                 Scene[]
+  renders                Render[]
+  assets                 Asset[]
+  processingJobs         ProcessingJob[]
+  sceneRenderAttempts    SceneRenderAttempt[]
+  childrenClip           ChildrenClip?
+  characterLinks         ProjectCharacter[]
+  originatedCharacters   Character[]            @relation("CharacterOriginProject")
+  sourceImageAsset       Asset?                 @relation("ProjectSourceImageAsset", fields: [sourceImageAssetId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 }
 
 model Track {
@@ -323,7 +384,7 @@ model ScenePrompt {
 }
 
 model Asset {
-  id                     String       @id @default(cuid())
+  id                     String           @id @default(cuid())
   organizationId         String
   projectId              String
   type                   AssetType
@@ -333,17 +394,112 @@ model Asset {
   width                  Int?
   height                 Int?
   metadata               Json?
-  createdAt              DateTime     @default(now())
-  updatedAt              DateTime     @updatedAt
-  organization           Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  project                Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+  organization           Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project                Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
   render                 Render?
-  storyboardVisualFor    Storyboard[] @relation("StoryboardVisualAsset")
-  sceneVideoFor          Scene[]      @relation("SceneVideoAsset")
-  sceneReferenceImageFor Scene[]      @relation("SceneReferenceImageAsset")
-  sourceImageFor         Project?     @relation("ProjectSourceImageAsset")
+  storyboardVisualFor    Storyboard[]     @relation("StoryboardVisualAsset")
+  sceneVideoFor          Scene[]          @relation("SceneVideoAsset")
+  sceneReferenceImageFor Scene[]          @relation("SceneReferenceImageAsset")
+  sourceImageFor         Project?         @relation("ProjectSourceImageAsset")
+  characterAssets        CharacterAsset[]
 
   @@index([organizationId, projectId, type])
+}
+
+model ChildrenClip {
+  id               String                       @id @default(cuid())
+  projectId        String                       @unique
+  concept          String
+  audienceAgeMin   Int
+  audienceAgeMax   Int
+  aspectRatio      ChildrenClipAspectRatio      @default(landscape_16_9)
+  visualStyle      String
+  productionStatus ChildrenClipProductionStatus @default(setup)
+  createdAt        DateTime                     @default(now())
+  updatedAt        DateTime                     @updatedAt
+  project          Project                      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model Character {
+  id                String             @id @default(cuid())
+  organizationId    String
+  createdByUserId   String
+  originProjectId   String?
+  name              String
+  description       String
+  scope             CharacterScope     @default(project)
+  approvedVersionId String?            @unique
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  deletedAt         DateTime?
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdByUser     User               @relation("CharacterCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  originProject     Project?           @relation("CharacterOriginProject", fields: [originProjectId], references: [id], onDelete: SetNull)
+  approvedVersion   CharacterVersion?  @relation("CharacterApprovedVersion", fields: [approvedVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  versions          CharacterVersion[] @relation("CharacterVersions")
+  projectLinks      ProjectCharacter[]
+
+  @@index([organizationId, scope, deletedAt])
+  @@index([createdByUserId])
+  @@index([originProjectId])
+}
+
+model CharacterVersion {
+  id                    String                 @id @default(cuid())
+  characterId           String
+  versionNumber         Int
+  origin                CharacterVersionOrigin
+  status                CharacterVersionStatus @default(draft)
+  description           String
+  generationPrompt      String?
+  invariants            Json?
+  generationMetadata    Json?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  character             Character              @relation("CharacterVersions", fields: [characterId], references: [id], onDelete: Cascade)
+  approvedForCharacters Character[]            @relation("CharacterApprovedVersion")
+  assets                CharacterAsset[]
+  projectSelections     ProjectCharacter[]     @relation("ProjectSelectedCharacterVersion")
+
+  @@unique([characterId, versionNumber])
+  @@index([characterId, status])
+}
+
+model CharacterAsset {
+  id                 String             @id @default(cuid())
+  characterVersionId String
+  assetId            String
+  role               CharacterAssetRole
+  label              String?
+  sortOrder          Int                @default(0)
+  createdAt          DateTime           @default(now())
+  characterVersion   CharacterVersion   @relation(fields: [characterVersionId], references: [id], onDelete: Cascade)
+  asset              Asset              @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([characterVersionId, assetId])
+  @@index([characterVersionId, role])
+  @@index([assetId])
+}
+
+model ProjectCharacter {
+  id                String            @id @default(cuid())
+  projectId         String
+  characterId       String
+  selectedVersionId String?
+  roleName          String?
+  sortOrder         Int               @default(0)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  project           Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  character         Character         @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  selectedVersion   CharacterVersion? @relation("ProjectSelectedCharacterVersion", fields: [selectedVersionId], references: [id], onDelete: SetNull)
+
+  @@unique([projectId, characterId])
+  @@index([projectId, sortOrder])
+  @@index([characterId])
+  @@index([selectedVersionId])
 }
 
 model Render {

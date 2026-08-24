@@ -33,7 +33,7 @@ interface CreateProjectInput {
   organizationId: string;
   createdByUserId: string;
   title: string;
-  generationMode?: 'music' | 'prompt' | 'image';
+  generationMode?: 'music' | 'prompt' | 'image' | 'children_clip';
   generationPrompt?: string;
   stabilityTest?: boolean;
   wanOnly?: boolean;
@@ -46,6 +46,11 @@ interface CreateProjectInput {
   sceneDurationSeconds?: number;
   visualCheckpointName?: string;
   manualLyricsText?: string;
+  childrenClipConcept?: string;
+  childrenClipVisualStyle?: string;
+  audienceAgeMin?: number;
+  audienceAgeMax?: number;
+  childrenClipAspectRatio?: 'landscape_16_9' | 'portrait_9_16' | 'square_1_1';
 }
 
 interface UploadTrackInput {
@@ -104,6 +109,7 @@ export class ProjectsService {
     const visualCheckpointName = this.normalizeVisualCheckpointName(input.visualCheckpointName);
     const manualLyrics = this.normalizeManualLyricsText(input.manualLyricsText);
     const isDirectVideoMode = generationMode === 'prompt' || generationMode === 'image';
+    const isChildrenClipMode = generationMode === 'children_clip';
     const generationFps = input.generationFps ?? 16;
 
     if (generationFps !== 16 && generationFps !== 24) {
@@ -116,6 +122,26 @@ export class ProjectsService {
 
     if (isDirectVideoMode && clipDurationSeconds === null) {
       throw new BadRequestException('Video duration is required for direct video generation');
+    }
+
+    const childrenClipConcept = input.childrenClipConcept?.trim();
+    const childrenClipVisualStyle = input.childrenClipVisualStyle?.trim();
+    const audienceAgeMin = input.audienceAgeMin;
+    const audienceAgeMax = input.audienceAgeMax;
+
+    if (isChildrenClipMode) {
+      if (!childrenClipConcept || childrenClipConcept.length < 10) {
+        throw new BadRequestException('Children clip concept must have at least 10 characters');
+      }
+      if (!childrenClipVisualStyle || childrenClipVisualStyle.length < 3) {
+        throw new BadRequestException('Children clip visual style is required');
+      }
+      if (!audienceAgeMin || !audienceAgeMax || audienceAgeMin > audienceAgeMax) {
+        throw new BadRequestException('Children clip audience age range is invalid');
+      }
+      if (clipDurationSeconds !== null && clipDurationSeconds > 240) {
+        throw new BadRequestException('Children clips cannot exceed 240 seconds');
+      }
     }
 
     const project = await this.prismaService.project.create({
@@ -136,7 +162,7 @@ export class ProjectsService {
         sceneDurationSeconds,
         visualCheckpointName,
         status: ProjectStatus.draft,
-        ...(generationMode === 'music' && manualLyrics
+        ...((generationMode === 'music' || isChildrenClipMode) && manualLyrics
           ? {
               lyrics: {
                 create: {
@@ -145,10 +171,24 @@ export class ProjectsService {
                 }
               }
             }
+          : {}),
+        ...(isChildrenClipMode
+          ? {
+              childrenClip: {
+                create: {
+                  concept: childrenClipConcept!,
+                  audienceAgeMin: audienceAgeMin!,
+                  audienceAgeMax: audienceAgeMax!,
+                  aspectRatio: input.childrenClipAspectRatio ?? 'landscape_16_9',
+                  visualStyle: childrenClipVisualStyle!
+                }
+              }
+            }
           : {})
       },
       include: {
-        lyrics: true
+        lyrics: true,
+        childrenClip: true
       }
     });
 
@@ -274,6 +314,9 @@ export class ProjectsService {
       where: {
         organizationId,
         deletedAt: null
+      },
+      include: {
+        childrenClip: true
       },
       orderBy: {
         createdAt: 'desc'
@@ -862,7 +905,7 @@ export class ProjectsService {
       throw new ForbiddenException('Project does not belong to the authenticated organization');
     }
 
-    if (project.generationMode !== 'music') {
+    if (project.generationMode !== 'music' && project.generationMode !== 'children_clip') {
       throw new BadRequestException('Only music-based projects accept an audio track');
     }
 
@@ -974,6 +1017,14 @@ export class ProjectsService {
           ...manualLyrics
         }
       });
+    }
+
+    if (project.generationMode === 'children_clip') {
+      return this.projectPresenter.uploadResult(
+        input.projectId,
+        result.id,
+        ProjectStatus.uploaded
+      );
     }
 
     await this.queueProjectProcessing({
@@ -1645,7 +1696,8 @@ export class ProjectsService {
       },
       include: {
         lyrics: true,
-        sourceImageAsset: true
+        sourceImageAsset: true,
+        childrenClip: true
       }
     });
 

@@ -1,6 +1,8 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
 
 import CreateProjectPage from '@/pages/CreateProjectPage.vue';
+import CreateChildrenClipPage from '@/pages/CreateChildrenClipPage.vue';
+import ChildrenClipStudioPage from '@/pages/ChildrenClipStudioPage.vue';
 import DashboardPage from '@/pages/DashboardPage.vue';
 import LoginPage from '@/pages/LoginPage.vue';
 import ProcessingPage from '@/pages/ProcessingPage.vue';
@@ -32,6 +34,18 @@ const routes: RouteRecordRaw[] = [
     path: '/projects/new',
     name: 'create-project',
     component: CreateProjectPage,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/projects/new/children-clip',
+    name: 'create-children-clip',
+    component: CreateChildrenClipPage,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/projects/:id/children-clip',
+    name: 'children-clip-studio',
+    component: ChildrenClipStudioPage,
     meta: { requiresAuth: true }
   },
   {

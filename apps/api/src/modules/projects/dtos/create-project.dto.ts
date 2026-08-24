@@ -7,8 +7,8 @@ export class CreateProjectDto {
   title!: string;
 
   @IsOptional()
-  @IsIn(['music', 'prompt', 'image'])
-  generationMode?: 'music' | 'prompt' | 'image';
+  @IsIn(['music', 'prompt', 'image', 'children_clip'])
+  generationMode?: 'music' | 'prompt' | 'image' | 'children_clip';
 
   @ValidateIf((input: CreateProjectDto) =>
     input.generationMode === 'prompt' || input.generationMode === 'image'
@@ -78,4 +78,34 @@ export class CreateProjectDto {
   @IsOptional()
   @IsString()
   manualLyricsText?: string;
+
+  @ValidateIf((input: CreateProjectDto) => input.generationMode === 'children_clip')
+  @IsString()
+  @MinLength(10)
+  @MaxLength(4000)
+  childrenClipConcept?: string;
+
+  @ValidateIf((input: CreateProjectDto) => input.generationMode === 'children_clip')
+  @IsString()
+  @MinLength(3)
+  @MaxLength(1000)
+  childrenClipVisualStyle?: string;
+
+  @ValidateIf((input: CreateProjectDto) => input.generationMode === 'children_clip')
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(17)
+  audienceAgeMin?: number;
+
+  @ValidateIf((input: CreateProjectDto) => input.generationMode === 'children_clip')
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(17)
+  audienceAgeMax?: number;
+
+  @ValidateIf((input: CreateProjectDto) => input.generationMode === 'children_clip')
+  @IsIn(['landscape_16_9', 'portrait_9_16', 'square_1_1'])
+  childrenClipAspectRatio?: 'landscape_16_9' | 'portrait_9_16' | 'square_1_1';
 }

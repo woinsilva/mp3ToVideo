@@ -27,6 +27,11 @@
             <strong>Usar uma música</strong>
             <span>Envie um MP3 ou WAV e crie o videoclipe a partir da faixa.</span>
           </button>
+          <button type="button" class="generation-mode-card generation-mode-card--children" @click="openChildrenClipCreator">
+            <v-icon icon="mdi-teddy-bear" size="28" />
+            <strong>Gerar clipe infantil</strong>
+            <span>Crie um clipe completo a partir da musica do Suno, com personagens consistentes e animacao 2D.</span>
+          </button>
         </div>
 
         <div class="form-section-heading">
@@ -288,6 +293,7 @@ export default class CreateProjectPage extends Vue {
   }
 
   cancel() { void this.$router.push({ name: 'dashboard' }); }
+  openChildrenClipCreator() { void this.$router.push({ name: 'create-children-clip' }); }
 }
 </script>
 
@@ -296,10 +302,12 @@ export default class CreateProjectPage extends Vue {
 .step-indicator { color: #65676b; font-size: 0.84rem; white-space: nowrap; }
 .step-indicator strong { color: #0866ff; }
 .create-form { overflow: hidden; padding: 24px; }
-.generation-mode-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.generation-mode-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .generation-mode-card { display: flex; min-height: 142px; flex-direction: column; align-items: flex-start; gap: 7px; padding: 18px; border: 2px solid #dfe3e8; border-radius: 14px; color: #25282d; background: #fff; text-align: left; cursor: pointer; transition: border-color 0.15s, background 0.15s, transform 0.15s; }
 .generation-mode-card:hover { transform: translateY(-1px); border-color: #9fbff8; }
 .generation-mode-card--active { border-color: #0866ff; background: #f2f7ff; box-shadow: 0 0 0 1px #0866ff; }
+.generation-mode-card--children { border-color: #f1b75b; background: linear-gradient(145deg, #fffaf0, #fff4dc); }
+.generation-mode-card--children:hover { border-color: #e59a25; }
 .generation-mode-card strong { font-size: 1rem; }
 .generation-mode-card span { color: #65676b; font-size: 0.82rem; line-height: 1.45; }
 .form-section-heading { display: flex; align-items: flex-start; gap: 12px; padding-bottom: 18px; border-bottom: 1px solid #e4e6eb; }
