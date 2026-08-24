@@ -135,6 +135,71 @@
           </div>
         </article>
       </section>
+
+      <section class="surface-card studio-width plan-panel">
+        <div class="panel-heading">
+          <div><p class="page-eyebrow">Etapa 3</p><h3>Biblia visual, roteiro e storyboard</h3><p>Planeje todas as tomadas antes de gerar cenarios e animacao.</p></div>
+          <span v-if="planStatus?.plan" class="version-status" :class="`version-status--${planStatus.plan.status}`">{{ planStatusLabel }}</span>
+        </div>
+
+        <div v-if="planStatus?.blockers.length && !planStatus.plan" class="plan-blockers">
+          <strong>Para liberar o planejamento:</strong><ul><li v-for="blocker in planStatus.blockers" :key="blocker">{{ blocker }}</li></ul>
+        </div>
+
+        <div v-if="!planStatus?.plan" class="plan-start">
+          <button class="app-button" type="button" :disabled="!planStatus?.readyToGenerate" @click="generatePlan">Gerar roteiro e storyboard</button>
+        </div>
+
+        <div v-if="planStatus?.plan && ['queued', 'generating'].includes(planStatus.plan.status)" class="audio-progress">
+          <v-progress-linear :model-value="planStatus.job?.progress || 0" color="warning" height="9" rounded />
+          <div><strong>{{ planStatus.job?.progress || 0 }}%</strong><span>{{ planStatus.job?.detailMessage || 'Preparando planejamento...' }}</span></div>
+        </div>
+
+        <v-alert v-if="planStatus?.plan?.status === 'failed'" type="error" variant="tonal">
+          {{ planStatus.plan.errorMessage || planStatus.job?.errorMessage }}
+          <template #append><button class="app-button app-button--secondary" type="button" @click="generatePlan">Tentar novamente</button></template>
+        </v-alert>
+
+        <template v-if="planStatus?.plan && ['ready_for_review', 'approved'].includes(planStatus.plan.status)">
+          <div class="plan-json-grid">
+            <label class="auth-input-group"><span class="auth-input-label">Biblia visual (JSON editavel)</span><textarea v-model="visualBibleJson" class="auth-input auth-input--textarea code-textarea" rows="12" :disabled="planStatus.plan.status === 'approved'" /></label>
+            <label class="auth-input-group"><span class="auth-input-label">Narrativa (JSON editavel)</span><textarea v-model="narrativeJson" class="auth-input auth-input--textarea code-textarea" rows="12" :disabled="planStatus.plan.status === 'approved'" /></label>
+          </div>
+          <button v-if="planStatus.plan.status !== 'approved'" class="app-button app-button--secondary" type="button" @click="savePlanText">Salvar biblia e narrativa</button>
+
+          <div class="timeline-strip">
+            <div v-for="shot in planStatus.shots" :key="shot.id" :style="{ width: `${(shot.durationSeconds / Math.max(1, audioStatus?.analysis?.durationSeconds || 1)) * 100}%` }" :title="`${shot.index + 1}. ${shot.title}`"><span>{{ shot.index + 1 }}</span></div>
+          </div>
+
+          <div class="shot-list">
+            <details v-for="shot in planStatus.shots" :key="shot.id" class="shot-card">
+              <summary><span><strong>{{ shot.index + 1 }}. {{ shot.title }}</strong><small>{{ formatTimePrecise(shot.startSeconds) }} - {{ formatTimePrecise(shot.endSeconds) }} · {{ shot.renderMode === 'animation_2d' ? '2D' : shot.renderMode }}</small></span><span>{{ shot.lyricText || 'Instrumental' }}</span></summary>
+              <div class="shot-form">
+                <label class="auth-input-group"><span class="auth-input-label">Titulo</span><input v-model="shot.title" class="auth-input" :disabled="planStatus.plan.status === 'approved'" /></label>
+                <label class="auth-input-group"><span class="auth-input-label">Modo</span><select v-model="shot.renderMode" class="auth-input" :disabled="planStatus.plan.status === 'approved'"><option value="animation_2d">Animacao 2D</option><option value="wan">Tomada Wan</option><option value="hybrid">Hibrida</option></select></label>
+                <label class="auth-input-group"><span class="auth-input-label">Inicio (s)</span><input v-model.number="shot.startSeconds" class="auth-input" type="number" min="0" step="0.001" :disabled="planStatus.plan.status === 'approved'" /></label>
+                <label class="auth-input-group"><span class="auth-input-label">Fim (s)</span><input v-model.number="shot.endSeconds" class="auth-input" type="number" min="0.1" step="0.001" :disabled="planStatus.plan.status === 'approved'" /></label>
+                <label class="auth-input-group"><span class="auth-input-label">Enquadramento</span><input v-model="shot.framing" class="auth-input" :disabled="planStatus.plan.status === 'approved'" /></label>
+                <label class="auth-input-group"><span class="auth-input-label">Camera</span><input v-model="shot.cameraMovement" class="auth-input" :disabled="planStatus.plan.status === 'approved'" /></label>
+                <label class="auth-input-group shot-form__wide"><span class="auth-input-label">Acao</span><textarea v-model="shot.characterAction" class="auth-input auth-input--textarea" rows="3" :disabled="planStatus.plan.status === 'approved'" /></label>
+                <label class="auth-input-group shot-form__wide"><span class="auth-input-label">Cenario</span><textarea v-model="shot.environment" class="auth-input auth-input--textarea" rows="2" :disabled="planStatus.plan.status === 'approved'" /></label>
+                <label class="auth-input-group shot-form__wide"><span class="auth-input-label">Prompt do fundo</span><textarea v-model="shot.backgroundPrompt" class="auth-input auth-input--textarea" rows="3" :disabled="planStatus.plan.status === 'approved'" /></label>
+                <button v-if="planStatus.plan.status !== 'approved'" class="app-button app-button--secondary" type="button" @click="saveShot(shot)">Salvar tomada</button>
+              </div>
+            </details>
+          </div>
+
+          <div v-if="planStatus.plan.status !== 'approved'" class="plan-final-actions">
+            <label class="auth-input-group"><span class="auth-input-label">Instrucao para regenerar o plano inteiro</span><textarea v-model="planRevision" class="auth-input auth-input--textarea" rows="3" placeholder="Ex.: Mais cenas no jardim e menos close-ups." /></label>
+            <div><button class="app-button app-button--secondary" type="button" @click="generatePlan">Gerar nova revisao</button><button class="app-button" type="button" @click="approvePlan">Aprovar plano de producao</button></div>
+          </div>
+          <div v-else class="approved-plan-actions">
+            <p class="approved-copy"><v-icon icon="mdi-lock-check" /> Plano aprovado e bloqueado para producao de assets.</p>
+            <label class="auth-input-group"><span class="auth-input-label">Criar uma nova revisao</span><textarea v-model="planRevision" class="auth-input auth-input--textarea" rows="2" placeholder="Descreva o que deve mudar no plano aprovado." /></label>
+            <button class="app-button app-button--secondary" type="button" :disabled="!planRevision.trim()" @click="generatePlan">Gerar nova revisao</button>
+          </div>
+        </template>
+      </section>
     </template>
   </AppLayout>
 </template>
@@ -145,12 +210,16 @@ import AppLayout from '@/layouts/AppLayout.vue';
 import { projectsService } from '@/services/projects.service';
 import { useAuthStore } from '@/stores/auth.store';
 import { useProjectsStore } from '@/stores/projects.store';
-import type { CharacterAssetRole, ChildrenClipAudioStatus, ChildrenClipCharacter, ChildrenClipCharacterVersion } from '@/types/project.types';
+import type { CharacterAssetRole, ChildrenClipAudioStatus, ChildrenClipCharacter, ChildrenClipCharacterVersion, ChildrenClipPlanStatus, ChildrenClipShot } from '@/types/project.types';
 
 @Component({ components: { AppLayout } })
 export default class ChildrenClipStudioPage extends Vue {
   characters: ChildrenClipCharacter[] = [];
   audioStatus: ChildrenClipAudioStatus | null = null;
+  planStatus: ChildrenClipPlanStatus | null = null;
+  visualBibleJson = '';
+  narrativeJson = '';
+  planRevision = '';
   characterName = '';
   roleName = '';
   characterDescription = '';
@@ -176,13 +245,14 @@ export default class ChildrenClipStudioPage extends Vue {
   get invariants() { return this.invariantsText.split(/\r?\n/).map((item) => item.trim()).filter(Boolean); }
   get audioStatusLabel() { return ({ queued: 'Enfileirada', analyzing: 'Analisando', completed: 'Concluida', failed: 'Falhou' } as Record<string, string>)[this.audioStatus?.analysis?.status || 'queued']; }
   get waveformPreview() { return (this.audioStatus?.analysis?.waveform || []).filter((_, index) => index % 5 === 0); }
+  get planStatusLabel() { return ({ draft: 'Rascunho', queued: 'Enfileirado', generating: 'Gerando', ready_for_review: 'Revisar', approved: 'Aprovado', failed: 'Falhou' } as Record<string, string>)[this.planStatus?.plan?.status || 'draft']; }
 
   async mounted() {
     if (!this.authStore.token) return;
     try {
       const project = await this.projectsStore.fetchProject(this.projectId, this.authStore.token);
       if (project.generationMode !== 'children_clip') { void this.$router.replace({ name: 'project-detail', params: { id: project.id } }); return; }
-      await Promise.all([this.loadAudioAnalysis(), this.loadCharacters()]);
+      await Promise.all([this.loadAudioAnalysis(), this.loadCharacters(), this.loadPlan()]);
       this.pollTimer = setInterval(() => void this.pollIfNeeded(), 4000);
     } catch (error) { this.captureError(error, 'Falha ao carregar o estudio'); }
   }
@@ -203,15 +273,32 @@ export default class ChildrenClipStudioPage extends Vue {
     this.audioStatus = await projectsService.getChildrenClipAudioAnalysis(this.projectId, this.authStore.token);
   }
 
+  async loadPlan() {
+    if (!this.authStore.token) return;
+    this.planStatus = await projectsService.getChildrenClipProductionPlan(this.projectId, this.authStore.token);
+    if (this.planStatus.plan && !this.visualBibleJson) this.visualBibleJson = JSON.stringify(this.planStatus.plan.visualBible || {}, null, 2);
+    if (this.planStatus.plan && !this.narrativeJson) this.narrativeJson = JSON.stringify(this.planStatus.plan.narrative || {}, null, 2);
+  }
+
   async pollIfNeeded() {
     if (this.audioStatus?.analysis && ['queued', 'analyzing'].includes(this.audioStatus.analysis.status)) {
       try {
         await this.loadAudioAnalysis();
-        if (this.audioStatus?.analysis?.status === 'completed') await this.projectsStore.fetchProject(this.projectId, this.authStore.token);
+        if (this.audioStatus?.analysis?.status === 'completed') await Promise.all([this.projectsStore.fetchProject(this.projectId, this.authStore.token), this.loadPlan()]);
       } catch (error) { this.captureError(error, 'Falha ao atualizar analise da musica'); }
     }
     if (this.characters.some((item) => item.versions.some((version) => ['queued', 'generating'].includes(version.status)))) {
       try { await this.loadCharacters(); } catch (error) { this.captureError(error, 'Falha ao atualizar personagens'); }
+    }
+    if (this.planStatus?.plan && ['queued', 'generating'].includes(this.planStatus.plan.status)) {
+      try {
+        const previousStatus = this.planStatus.plan.status;
+        await this.loadPlan();
+        if (previousStatus !== this.planStatus?.plan?.status && this.planStatus?.plan?.status === 'ready_for_review') {
+          this.visualBibleJson = JSON.stringify(this.planStatus.plan.visualBible || {}, null, 2);
+          this.narrativeJson = JSON.stringify(this.planStatus.plan.narrative || {}, null, 2);
+        }
+      } catch (error) { this.captureError(error, 'Falha ao atualizar planejamento'); }
     }
   }
 
@@ -253,7 +340,7 @@ export default class ChildrenClipStudioPage extends Vue {
       }
       if (this.sourceMode === 'uploaded' && this.primaryFile) await projectsService.uploadChildrenClipCharacterAsset(this.projectId, characterId, versionId, this.primaryFile, 'primary_reference', 'Imagem principal', this.authStore.token);
       this.resetForm();
-      await this.loadCharacters();
+      await Promise.all([this.loadCharacters(), this.loadPlan()]);
     } catch (error) { this.captureError(error, 'Falha ao salvar personagem'); } finally { this.savingCharacter = false; }
   }
 
@@ -288,7 +375,7 @@ export default class ChildrenClipStudioPage extends Vue {
   }
   async approveVersion(characterId: string, versionId: string) {
     if (!this.authStore.token) return;
-    try { await projectsService.approveChildrenClipCharacterVersion(this.projectId, characterId, versionId, this.authStore.token); await this.loadCharacters(); } catch (error) { this.captureError(error, 'Falha ao aprovar versao'); }
+    try { await projectsService.approveChildrenClipCharacterVersion(this.projectId, characterId, versionId, this.authStore.token); await Promise.all([this.loadCharacters(), this.loadPlan()]); } catch (error) { this.captureError(error, 'Falha ao aprovar versao'); }
   }
   async uploadSupplementary(characterId: string, versionId: string) {
     if (!this.authStore.token || !this.versionFiles[versionId]) return;
@@ -302,7 +389,35 @@ export default class ChildrenClipStudioPage extends Vue {
   statusLabel(status: ChildrenClipCharacterVersion['status']) { return ({ draft: 'Rascunho', queued: 'Enfileirada', generating: 'Gerando', ready_for_review: 'Revisar', approved: 'Aprovada', rejected: 'Rejeitada', failed: 'Falhou' })[status]; }
   originLabel(origin: ChildrenClipCharacterVersion['origin']) { return ({ generated: 'Gerada', uploaded: 'Enviada', hybrid: 'Hibrida' })[origin]; }
   roleLabel(role: CharacterAssetRole) { return ({ primary_reference: 'Referencia principal', front_view: 'Vista frontal', side_view: 'Vista lateral', back_view: 'Vista traseira', portrait: 'Retrato', expression: 'Expressao', pose: 'Pose', mouth_shape: 'Forma de boca', eye_state: 'Olhos', source_reference: 'Referencia original' })[role]; }
+  async generatePlan() {
+    if (!this.authStore.token) return;
+    try { this.planStatus = await projectsService.generateChildrenClipProductionPlan(this.projectId, this.planRevision.trim() || null, this.authStore.token); this.planRevision = ''; } catch (error) { this.captureError(error, 'Falha ao iniciar planejamento'); }
+  }
+  async savePlanText() {
+    if (!this.authStore.token) return;
+    try {
+      const visualBible = JSON.parse(this.visualBibleJson) as Record<string, unknown>;
+      const narrative = JSON.parse(this.narrativeJson) as Record<string, unknown>;
+      this.planStatus = await projectsService.updateChildrenClipProductionPlan(this.projectId, { visualBible, narrative }, this.authStore.token);
+    } catch (error) { this.captureError(error, 'JSON invalido ou falha ao salvar o plano'); }
+  }
+  async saveShot(shot: ChildrenClipShot) {
+    if (!this.authStore.token) return;
+    try {
+      this.planStatus = await projectsService.updateChildrenClipShot(this.projectId, shot.id, {
+        title: shot.title, description: shot.description, startSeconds: shot.startSeconds, endSeconds: shot.endSeconds,
+        renderMode: shot.renderMode, framing: shot.framing, cameraMovement: shot.cameraMovement,
+        characterAction: shot.characterAction, environment: shot.environment, backgroundPrompt: shot.backgroundPrompt,
+        transitionIn: shot.transitionIn, transitionOut: shot.transitionOut, motionPreset: shot.motionPreset
+      }, this.authStore.token);
+    } catch (error) { this.captureError(error, 'Falha ao salvar tomada'); }
+  }
+  async approvePlan() {
+    if (!this.authStore.token) return;
+    try { this.planStatus = await projectsService.approveChildrenClipProductionPlan(this.projectId, this.authStore.token); await this.projectsStore.fetchProject(this.projectId, this.authStore.token); } catch (error) { this.captureError(error, 'Falha ao aprovar plano'); }
+  }
   formatTime(seconds: number) { const safe = Math.max(0, seconds); return `${Math.floor(safe / 60)}:${String(Math.floor(safe % 60)).padStart(2, '0')}`; }
+  formatTimePrecise(seconds: number) { const safe = Math.max(0, seconds); return `${this.formatTime(safe)}.${Math.floor((safe % 1) * 10)}`; }
   captureError(error: unknown, fallback: string) { this.errorMessage = error instanceof Error ? error.message : fallback; }
 }
 </script>
@@ -333,6 +448,25 @@ export default class ChildrenClipStudioPage extends Vue {
 .lyric-cues ol { display: grid; gap: 6px; padding-left: 0; list-style: none; }
 .lyric-cues li { display: grid; grid-template-columns: 48px 1fr; gap: 8px; }
 .lyric-cues time { color: #9b5d0b; font-variant-numeric: tabular-nums; }
+.plan-panel { padding: 24px; }
+.plan-blockers { margin-top: 18px; padding: 14px; border-radius: 12px; background: #fff7e7; color: #7b5314; }
+.plan-blockers ul { margin-bottom: 0; }
+.plan-start { margin-top: 18px; }
+.plan-json-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 18px 0 12px; }
+.code-textarea { font-family: Consolas, monospace; font-size: 0.78rem; }
+.timeline-strip { display: flex; height: 44px; margin: 22px 0; overflow: hidden; border-radius: 10px; background: #f0f2f5; }
+.timeline-strip > div { display: flex; min-width: 3px; align-items: center; justify-content: center; border-right: 1px solid #fff; color: #fff; background: #e98b17; font-size: 0.68rem; }
+.timeline-strip > div:nth-child(even) { background: #5b8def; }
+.shot-list { display: grid; gap: 10px; }
+.shot-card { border: 1px solid #dfe3e8; border-radius: 12px; background: #fafbfc; }
+.shot-card summary { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px; cursor: pointer; }
+.shot-card summary > span { display: grid; gap: 3px; }
+.shot-card summary small, .shot-card summary > span:last-child { color: #65676b; font-size: 0.76rem; }
+.shot-form { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; padding: 0 14px 16px; }
+.shot-form__wide { grid-column: 1 / -1; }
+.plan-final-actions { display: grid; gap: 12px; margin-top: 20px; padding-top: 18px; border-top: 1px solid #e4e6eb; }
+.plan-final-actions > div { display: flex; justify-content: flex-end; gap: 10px; }
+.approved-plan-actions { display: grid; gap: 12px; margin-top: 18px; padding-top: 16px; border-top: 1px solid #e4e6eb; }
 .panel-heading, .list-heading, .character-card__heading, .character-card__heading > div, .version-card header, .version-card header > div { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .panel-heading { align-items: flex-start; }
 .panel-heading h3, .list-heading h3 { margin: 0; font-size: 1.35rem; }
@@ -366,5 +500,5 @@ export default class ChildrenClipStudioPage extends Vue {
 .supplementary-assets { margin-top: 14px; }
 .supplementary-assets summary { color: #4b648a; cursor: pointer; font-weight: 700; }
 .supplementary-assets__form { display: grid; grid-template-columns: 180px 1fr auto; gap: 10px; margin-top: 10px; }
-@media (max-width: 700px) { .setup-grid, .character-form, .audio-metrics, .replace-track { grid-template-columns: 1fr; } .character-form__wide { grid-column: auto; } .character-panel, .character-card, .audio-panel { padding: 18px; } .supplementary-assets__form { grid-template-columns: 1fr; } }
+@media (max-width: 700px) { .setup-grid, .character-form, .audio-metrics, .replace-track, .plan-json-grid, .shot-form { grid-template-columns: 1fr; } .character-form__wide, .shot-form__wide { grid-column: auto; } .character-panel, .character-card, .audio-panel, .plan-panel { padding: 18px; } .supplementary-assets__form { grid-template-columns: 1fr; } .shot-card summary { align-items: flex-start; flex-direction: column; } }
 </style>

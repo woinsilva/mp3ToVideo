@@ -3,7 +3,7 @@ import { stat, writeFile } from 'node:fs/promises';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AssetType, CharacterAssetRole, CharacterVersionStatus, Prisma, ProcessingJobStatus } from '@prisma/client';
-import type { ChildrenClipAudioAnalysisJobPayload, ChildrenClipCharacterGenerationJobPayload } from '@video/shared';
+import type { ChildrenClipAudioAnalysisJobPayload, ChildrenClipCharacterGenerationJobPayload, ChildrenClipPlanGenerationJobPayload } from '@video/shared';
 import type { Job } from 'bullmq';
 
 import { PrismaService } from '../database/prisma.service';
@@ -13,6 +13,7 @@ import { OllamaClientService } from '../services/ollama-client.service';
 import { ChildrenClipAudioAnalysisService, type AudioEnergyPoint } from '../services/children-clip-audio-analysis.service';
 import { ChildrenClipLyricsAlignmentService } from '../services/children-clip-lyrics-alignment.service';
 import { MusicStructureService } from '../services/music-structure.service';
+import { ChildrenClipPlanningService, type CreativePlanResponse } from '../services/children-clip-planning.service';
 
 interface OptimizedCharacterPrompt {
   positivePrompt: string;
@@ -33,8 +34,145 @@ export class ChildrenClipProcessor {
     private readonly audioAnalysis: ChildrenClipAudioAnalysisService,
     @Inject(ChildrenClipLyricsAlignmentService)
     private readonly lyricsAlignment: ChildrenClipLyricsAlignmentService,
-    @Inject(MusicStructureService) private readonly musicStructure: MusicStructureService
+    @Inject(MusicStructureService) private readonly musicStructure: MusicStructureService,
+    @Inject(ChildrenClipPlanningService) private readonly planning: ChildrenClipPlanningService
   ) {}
+
+  async processPlanGeneration(job: Job<ChildrenClipPlanGenerationJobPayload>) {
+    const { projectId, organizationId, revisionInstruction } = job.data;
+    const bullJobId = String(job.id);
+    const project = await this.prisma.project.findFirst({
+      where: { id: projectId, organizationId, generationMode: 'children_clip', deletedAt: null },
+      include: {
+        childrenClip: true,
+        childrenClipAudioAnalysis: true,
+        childrenClipPlan: true,
+        musicSections: { orderBy: { startSeconds: 'asc' } },
+        childrenClipLyricCues: { orderBy: { lineIndex: 'asc' } },
+        characterLinks: {
+          orderBy: { sortOrder: 'asc' },
+          include: { character: true, selectedVersion: true }
+        }
+      }
+    });
+    if (!project?.childrenClip || project.childrenClipAudioAnalysis?.status !== 'completed') {
+      throw new Error('A analise da musica precisa estar concluida antes do planejamento');
+    }
+    if (!project.characterLinks.length || project.characterLinks.some((link) => link.selectedVersion?.status !== 'approved')) {
+      throw new Error('Todos os personagens precisam de uma versao aprovada');
+    }
+    await this.prisma.childrenClipPlan.update({
+      where: { projectId },
+      data: { status: 'generating', bullJobId, errorMessage: null, generationStartedAt: new Date(), generationEndedAt: null }
+    });
+
+    try {
+      await this.planProgress(job, 5, 'STARTING', 'Worker iniciou o planejamento criativo.');
+      await this.planProgress(job, 18, 'BUILDING_VISUAL_BIBLE', 'Definindo regras de arte, narrativa e seguranca infantil.');
+      const creative = await this.withPlanHeartbeat(job, this.ollama.generateJson<CreativePlanResponse>([
+        {
+          role: 'system',
+          content: 'You are a production designer and director for original 2D children music videos. Return JSON only with visualBible, narrative and sectionPlans. Keep actions safe, simple, joyful and feasible with layered 2D animation. sectionPlans must use the supplied section titles exactly.'
+        },
+        {
+          role: 'user',
+          content: JSON.stringify({
+            title: project.title,
+            concept: project.childrenClip.concept,
+            visualStyle: project.childrenClip.visualStyle,
+            audience: [project.childrenClip.audienceAgeMin, project.childrenClip.audienceAgeMax],
+            sections: project.musicSections.map((section) => ({ title: section.title, type: section.type, lyrics: section.lyricsExcerpt, energy: section.energy })),
+            characters: project.characterLinks.map((link) => ({ name: link.character.name, role: link.roleName, description: link.selectedVersion!.description })),
+            revisionInstruction: revisionInstruction || null
+          })
+        }
+      ]));
+      await this.planProgress(job, 48, 'PLANNING_SECTIONS', `Direcao narrativa definida para ${project.musicSections.length} secoes.`);
+      const result = this.planning.build({
+        title: project.title,
+        concept: project.childrenClip.concept,
+        visualStyle: project.childrenClip.visualStyle,
+        audienceAgeMin: project.childrenClip.audienceAgeMin,
+        audienceAgeMax: project.childrenClip.audienceAgeMax,
+        durationSeconds: project.childrenClipAudioAnalysis.durationSeconds!,
+        beatGrid: this.numberArray(project.childrenClipAudioAnalysis.beatGrid),
+        sections: project.musicSections,
+        cues: project.childrenClipLyricCues,
+        characters: project.characterLinks.map((link) => ({
+          name: link.character.name,
+          roleName: link.roleName,
+          versionId: link.selectedVersion!.id,
+          description: link.selectedVersion!.description
+        })),
+        creative
+      });
+      await this.planProgress(job, 72, 'BUILDING_TIMELINE', `Montando ${result.shots.length} tomadas na grade musical.`);
+      this.validateTimeline(result.shots, project.childrenClipAudioAnalysis.durationSeconds!);
+      await this.planProgress(job, 88, 'VALIDATING', 'Validando cobertura, continuidade e identidades aprovadas.');
+
+      await this.prisma.$transaction(async (tx) => {
+        await tx.childrenClipShot.deleteMany({ where: { projectId } });
+        await tx.childrenClipShot.createMany({
+          data: result.shots.map((shot) => ({
+            projectId,
+            musicSectionId: shot.musicSectionId,
+            index: shot.index,
+            title: shot.title,
+            description: shot.description,
+            startSeconds: shot.startSeconds,
+            endSeconds: shot.endSeconds,
+            durationSeconds: shot.durationSeconds,
+            framing: shot.framing,
+            cameraMovement: shot.cameraMovement,
+            characterAction: shot.characterAction,
+            environment: shot.environment,
+            backgroundPrompt: shot.backgroundPrompt,
+            transitionIn: shot.transitionIn,
+            transitionOut: shot.transitionOut,
+            lyricText: shot.lyricText,
+            characterVersionIds: shot.characterVersionIds,
+            layers: shot.layers as Prisma.InputJsonValue,
+            motionPreset: shot.motionPreset
+          }))
+        });
+        await tx.childrenClipPlan.update({
+          where: { projectId },
+          data: {
+            status: 'ready_for_review',
+            versionNumber: project.childrenClipPlan?.visualBible ? { increment: 1 } : 1,
+            visualBible: result.visualBible as Prisma.InputJsonValue,
+            narrative: result.narrative as Prisma.InputJsonValue,
+            generationMetadata: {
+              provider: creative ? 'ollama+deterministic-timeline' : 'deterministic-fallback',
+              shotCount: result.shots.length,
+              characterVersionIds: project.characterLinks.map((link) => link.selectedVersion!.id),
+              generatedAt: new Date().toISOString()
+            },
+            revisionInstruction: revisionInstruction || null,
+            generationEndedAt: new Date(),
+            errorMessage: null,
+            approvedAt: null
+          }
+        });
+        await tx.childrenClip.update({ where: { projectId }, data: { productionStatus: 'storyboarding' } });
+      });
+      await this.planProgress(job, 100, 'READY_FOR_REVIEW', 'Biblia visual, roteiro e storyboard prontos para revisao.', ProcessingJobStatus.completed);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const willRetry = job.attemptsMade + 1 < (job.opts.attempts ?? 1);
+      await this.prisma.childrenClipPlan.update({
+        where: { projectId },
+        data: { status: willRetry ? 'queued' : 'failed', errorMessage: message, generationEndedAt: willRetry ? null : new Date() }
+      });
+      await this.prisma.childrenClip.update({ where: { projectId }, data: { productionStatus: willRetry ? 'planning_narrative' : 'failed' } });
+      await this.planProgress(
+        job, 0, willRetry ? 'RETRYING' : 'FAILED',
+        willRetry ? `Tentativa falhou; o BullMQ tentara novamente: ${message}` : `Falha no planejamento: ${message}`,
+        willRetry ? ProcessingJobStatus.retrying : ProcessingJobStatus.failed, message
+      );
+      throw error;
+    }
+  }
 
   async processAudioAnalysis(job: Job<ChildrenClipAudioAnalysisJobPayload>) {
     const { projectId, organizationId } = job.data;
@@ -383,6 +521,50 @@ export class ChildrenClipProcessor {
     await job.updateProgress({ progress, stage, message });
     await this.progress(String(job.id), progress, stage, message, status, errorMessage);
     this.logger.log(`[${String(job.id)}] ${stage} ${progress}%: ${message}`);
+  }
+
+  private async planProgress(
+    job: Job<ChildrenClipPlanGenerationJobPayload>,
+    progress: number,
+    stage: string,
+    message: string,
+    status: ProcessingJobStatus = ProcessingJobStatus.active,
+    errorMessage: string | null = null
+  ) {
+    await job.updateProgress({ progress, stage, message });
+    await this.progress(String(job.id), progress, stage, message, status, errorMessage);
+    this.logger.log(`[${String(job.id)}] ${stage} ${progress}%: ${message}`);
+  }
+
+  private async withPlanHeartbeat<T>(job: Job<ChildrenClipPlanGenerationJobPayload>, operation: Promise<T>) {
+    let progress = 18;
+    const timer = setInterval(() => {
+      progress = Math.min(42, progress + 3);
+      void this.planProgress(job, progress, 'WAITING_OLLAMA', 'O Ollama continua estruturando a direcao criativa.')
+        .catch((error) => this.logger.warn(`Could not persist planning heartbeat: ${String(error)}`));
+    }, 15_000);
+    try {
+      return await operation;
+    } finally {
+      clearInterval(timer);
+    }
+  }
+
+  private numberArray(value: Prisma.JsonValue | null): number[] {
+    return Array.isArray(value) ? value.filter((item): item is number => typeof item === 'number') : [];
+  }
+
+  private validateTimeline(shots: Array<{ startSeconds: number; endSeconds: number }>, duration: number) {
+    if (!shots.length) throw new Error('O planejamento nao produziu nenhuma tomada');
+    if (Math.abs(shots[0].startSeconds) > 0.01 || Math.abs(shots[shots.length - 1].endSeconds - duration) > 0.01) {
+      throw new Error('A timeline gerada nao cobre toda a musica');
+    }
+    for (let index = 0; index < shots.length; index += 1) {
+      if (shots[index].endSeconds <= shots[index].startSeconds) throw new Error(`Tomada ${index + 1} possui duracao invalida`);
+      if (index > 0 && Math.abs(shots[index].startSeconds - shots[index - 1].endSeconds) > 0.01) {
+        throw new Error(`Timeline descontinua entre tomadas ${index} e ${index + 1}`);
+      }
+    }
   }
 
   private averageEnergy(points: AudioEnergyPoint[], start: number, end: number) {

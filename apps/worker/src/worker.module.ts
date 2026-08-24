@@ -10,6 +10,7 @@ import { FrameInterpolationProcessor } from './processors/frame-interpolation.pr
 import { AudioMetadataService } from './services/audio-metadata.service';
 import { ChildrenClipAudioAnalysisService } from './services/children-clip-audio-analysis.service';
 import { ChildrenClipLyricsAlignmentService } from './services/children-clip-lyrics-alignment.service';
+import { ChildrenClipPlanningService } from './services/children-clip-planning.service';
 import { AudioExcerptService } from './services/audio-excerpt.service';
 import { ComfyUiClientService } from './services/comfyui-client.service';
 import { ComfyUiWorkflowLoaderService } from './services/comfyui-workflow-loader.service';
@@ -60,6 +61,7 @@ import { ChildrenClipWorkerService } from './workers/children-clip-worker.servic
     AudioMetadataService,
     ChildrenClipAudioAnalysisService,
     ChildrenClipLyricsAlignmentService,
+    ChildrenClipPlanningService,
     AudioExcerptService,
     ComfyUiWorkflowLoaderService,
     ComfyUiClientService,

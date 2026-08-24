@@ -63,6 +63,27 @@ enum ChildrenClipAudioAnalysisStatus {
   failed
 }
 
+enum ChildrenClipPlanStatus {
+  draft
+  queued
+  generating
+  ready_for_review
+  approved
+  failed
+}
+
+enum ChildrenClipShotStatus {
+  draft
+  approved
+  needs_revision
+}
+
+enum ChildrenClipRenderMode {
+  animation_2d
+  wan
+  hybrid
+}
+
 enum CharacterScope {
   project
   organization
@@ -238,6 +259,8 @@ model Project {
   childrenClip              ChildrenClip?
   childrenClipAudioAnalysis ChildrenClipAudioAnalysis?
   childrenClipLyricCues     ChildrenClipLyricCue[]
+  childrenClipPlan          ChildrenClipPlan?
+  childrenClipShots         ChildrenClipShot[]
   characterLinks            ProjectCharacter[]
   originatedCharacters      Character[]                @relation("CharacterOriginProject")
   sourceImageAsset          Asset?                     @relation("ProjectSourceImageAsset", fields: [sourceImageAssetId], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -268,18 +291,19 @@ model Lyrics {
 }
 
 model MusicSection {
-  id            String           @id @default(cuid())
-  projectId     String
-  type          MusicSectionType
-  title         String
-  startSeconds  Float
-  endSeconds    Float
-  lyricsExcerpt String?
-  energy        Float?
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
-  project       Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  scenes        Scene[]
+  id                String             @id @default(cuid())
+  projectId         String
+  type              MusicSectionType
+  title             String
+  startSeconds      Float
+  endSeconds        Float
+  lyricsExcerpt     String?
+  energy            Float?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  project           Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  scenes            Scene[]
+  childrenClipShots ChildrenClipShot[]
 
   @@index([projectId, startSeconds])
 }
@@ -473,6 +497,62 @@ model ChildrenClipLyricCue {
 
   @@unique([projectId, lineIndex])
   @@index([projectId, startSeconds])
+}
+
+model ChildrenClipPlan {
+  id                  String                 @id @default(cuid())
+  projectId           String                 @unique
+  versionNumber       Int                    @default(1)
+  status              ChildrenClipPlanStatus @default(draft)
+  bullJobId           String?
+  visualBible         Json?
+  narrative           Json?
+  generationMetadata  Json?
+  revisionInstruction String?
+  errorMessage        String?
+  generationStartedAt DateTime?
+  generationEndedAt   DateTime?
+  approvedAt          DateTime?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  project             Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([bullJobId])
+  @@index([status, updatedAt])
+}
+
+model ChildrenClipShot {
+  id                  String                 @id @default(cuid())
+  projectId           String
+  musicSectionId      String?
+  index               Int
+  title               String
+  description         String
+  startSeconds        Float
+  endSeconds          Float
+  durationSeconds     Float
+  status              ChildrenClipShotStatus @default(draft)
+  renderMode          ChildrenClipRenderMode @default(animation_2d)
+  framing             String
+  cameraMovement      String
+  characterAction     String
+  environment         String
+  backgroundPrompt    String
+  transitionIn        String?
+  transitionOut       String?
+  lyricText           String?
+  characterVersionIds Json?
+  layers              Json?
+  motionPreset        String?
+  revisionInstruction String?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  project             Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  musicSection        MusicSection?          @relation(fields: [musicSectionId], references: [id], onDelete: SetNull)
+
+  @@unique([projectId, index])
+  @@index([projectId, startSeconds])
+  @@index([musicSectionId])
 }
 
 model Character {

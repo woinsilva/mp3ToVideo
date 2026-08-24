@@ -232,6 +232,17 @@ export class ChildrenClipCharactersService {
       throw new BadRequestException('Wait for character generation to finish before approval');
     }
 
+    const currentLink = await this.prisma.projectCharacter.findUnique({
+      where: { projectId_characterId: { projectId, characterId } }
+    });
+    const previousVersionId = currentLink?.selectedVersionId;
+    const affectedShots = previousVersionId && previousVersionId !== versionId
+      ? (await this.prisma.childrenClipShot.findMany({
+          where: { projectId },
+          select: { id: true, characterVersionIds: true }
+        })).filter((shot) => Array.isArray(shot.characterVersionIds) && shot.characterVersionIds.includes(previousVersionId))
+      : [];
+
     await this.prisma.$transaction([
       this.prisma.characterVersion.updateMany({
         where: { characterId, status: CharacterVersionStatus.approved },
@@ -248,7 +259,21 @@ export class ChildrenClipCharactersService {
       this.prisma.projectCharacter.update({
         where: { projectId_characterId: { projectId, characterId } },
         data: { selectedVersionId: versionId }
-      })
+      }),
+      ...(affectedShots.length ? [
+        this.prisma.childrenClipShot.updateMany({
+          where: { id: { in: affectedShots.map((shot) => shot.id) } },
+          data: { status: 'needs_revision', revisionInstruction: 'A versao aprovada do personagem foi alterada.' }
+        }),
+        this.prisma.childrenClipPlan.updateMany({
+          where: { projectId },
+          data: { status: 'ready_for_review', approvedAt: null }
+        }),
+        this.prisma.childrenClip.update({
+          where: { projectId },
+          data: { productionStatus: 'storyboarding' }
+        })
+      ] : [])
     ]);
 
     return this.getVersion(projectId, characterId, versionId, organizationId);

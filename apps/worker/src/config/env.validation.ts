@@ -29,6 +29,7 @@ export const envValidationSchema = Joi.object({
   OLLAMA_MODEL: Joi.string().default('qwen3:8b'),
   OLLAMA_TIMEOUT_MS: Joi.number().integer().positive().default(180000),
   OLLAMA_KEEP_ALIVE: Joi.string().default('0s'),
+  OLLAMA_THINK: Joi.boolean().truthy('true').falsy('false').default(false),
   SCENE_VISUAL_PROVIDER: Joi.string().valid('procedural', 'comfyui').default('procedural'),
   COMFYUI_BASE_URL: Joi.string()
     .uri({ scheme: ['http', 'https'] })

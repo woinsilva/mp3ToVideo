@@ -325,6 +325,51 @@ describe('Projects integration', () => {
       selectedVersionId: versionId
     });
 
+    await prisma.childrenClipAudioAnalysis.create({
+      data: {
+        projectId: projectResponse.body.id,
+        status: 'completed',
+        durationSeconds: 12,
+        bpm: 120,
+        beatGrid: [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10, 10.5, 11, 11.5, 12]
+      }
+    });
+    await prisma.musicSection.create({
+      data: { projectId: projectResponse.body.id, type: 'chorus', title: 'Chorus', startSeconds: 0, endSeconds: 12, energy: 0.8 }
+    });
+    await request(app.getHttpServer())
+      .get(`/projects/${projectResponse.body.id}/children-clip/production-plan`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .expect(200)
+      .expect(({ body }) => expect(body.readyToGenerate).toBe(true));
+    await request(app.getHttpServer())
+      .post(`/projects/${projectResponse.body.id}/children-clip/production-plan/generate`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({})
+      .expect(201)
+      .expect(({ body }) => expect(body.plan.status).toBe('queued'));
+
+    await prisma.childrenClipPlan.update({
+      where: { projectId: projectResponse.body.id },
+      data: { status: 'ready_for_review', visualBible: { style: '2D' }, narrative: { summary: 'Horta feliz' } }
+    });
+    await prisma.childrenClipShot.createMany({ data: [
+      { projectId: projectResponse.body.id, index: 0, title: 'Inicio', description: 'Inicio', startSeconds: 0, endSeconds: 6, durationSeconds: 6, framing: 'geral', cameraMovement: 'pan', characterAction: 'plantar', environment: 'horta', backgroundPrompt: 'horta 2D' },
+      { projectId: projectResponse.body.id, index: 1, title: 'Final', description: 'Final', startSeconds: 6, endSeconds: 12, durationSeconds: 6, framing: 'medio', cameraMovement: 'fixa', characterAction: 'cantar', environment: 'horta', backgroundPrompt: 'horta 2D' }
+    ] });
+    const shots = await prisma.childrenClipShot.findMany({ where: { projectId: projectResponse.body.id }, orderBy: { index: 'asc' } });
+    await request(app.getHttpServer())
+      .patch(`/projects/${projectResponse.body.id}/children-clip/production-plan/shots/${shots[0].id}`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ title: 'Abertura na horta', renderMode: 'animation_2d' })
+      .expect(200)
+      .expect(({ body }) => expect(body.shots[0].title).toBe('Abertura na horta'));
+    await request(app.getHttpServer())
+      .post(`/projects/${projectResponse.body.id}/children-clip/production-plan/approve`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .expect(201)
+      .expect(({ body }) => expect(body.plan.status).toBe('approved'));
+
     const assetId = listResponse.body[0].versions[0].assets[0].id;
     await request(app.getHttpServer())
       .get(`/projects/${projectResponse.body.id}/children-clip/characters/${characterId}/versions/${versionId}/assets/${assetId}`)

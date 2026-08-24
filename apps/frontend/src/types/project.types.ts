@@ -189,6 +189,58 @@ export interface ChildrenClipAudioStatus {
   } | null;
 }
 
+export interface ChildrenClipProductionPlan {
+  id: string;
+  versionNumber: number;
+  status: 'draft' | 'queued' | 'generating' | 'ready_for_review' | 'approved' | 'failed';
+  bullJobId: string | null;
+  visualBible: Record<string, unknown> | null;
+  narrative: Record<string, unknown> | null;
+  generationMetadata: Record<string, unknown> | null;
+  revisionInstruction: string | null;
+  errorMessage: string | null;
+  approvedAt: string | null;
+}
+
+export interface ChildrenClipShot {
+  id: string;
+  musicSectionId: string | null;
+  index: number;
+  title: string;
+  description: string;
+  startSeconds: number;
+  endSeconds: number;
+  durationSeconds: number;
+  status: 'draft' | 'approved' | 'needs_revision';
+  renderMode: 'animation_2d' | 'wan' | 'hybrid';
+  framing: string;
+  cameraMovement: string;
+  characterAction: string;
+  environment: string;
+  backgroundPrompt: string;
+  transitionIn: string | null;
+  transitionOut: string | null;
+  lyricText: string | null;
+  characterVersionIds: string[] | null;
+  layers: Array<Record<string, unknown>> | null;
+  motionPreset: string | null;
+  revisionInstruction: string | null;
+}
+
+export interface ChildrenClipPlanStatus {
+  plan: ChildrenClipProductionPlan | null;
+  shots: ChildrenClipShot[];
+  readyToGenerate: boolean;
+  blockers: string[];
+  job: {
+    status: 'queued' | 'active' | 'completed' | 'failed' | 'retrying';
+    progress: number;
+    detailMessage: string | null;
+    errorMessage: string | null;
+    activityLog: Array<{ stage: string; message: string; progress: number; timestamp: string }> | null;
+  } | null;
+}
+
 export interface TrackUploadResult {
   projectId: string;
   trackId: string;

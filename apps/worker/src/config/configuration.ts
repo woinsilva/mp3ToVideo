@@ -41,7 +41,8 @@ export const configuration = () => ({
     ollamaBaseUrl: process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434',
     ollamaModel: process.env.OLLAMA_MODEL ?? 'qwen3:8b',
     ollamaTimeoutMs: Number(process.env.OLLAMA_TIMEOUT_MS ?? 180000),
-    ollamaKeepAlive: process.env.OLLAMA_KEEP_ALIVE ?? '0s'
+    ollamaKeepAlive: process.env.OLLAMA_KEEP_ALIVE ?? '0s',
+    ollamaThink: process.env.OLLAMA_THINK === 'true'
   },
   visual: {
     provider: process.env.SCENE_VISUAL_PROVIDER ?? 'procedural',

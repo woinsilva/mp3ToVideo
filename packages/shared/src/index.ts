@@ -7,6 +7,7 @@ export const FRAME_INTERPOLATION_JOB_NAME = 'render.interpolate';
 export const CHILDREN_CLIP_QUEUE_NAME = 'children-clip-production';
 export const CHILDREN_CLIP_CHARACTER_GENERATE_JOB_NAME = 'children-clip.character.generate';
 export const CHILDREN_CLIP_AUDIO_ANALYZE_JOB_NAME = 'children-clip.audio.analyze';
+export const CHILDREN_CLIP_PLAN_GENERATE_JOB_NAME = 'children-clip.plan.generate';
 
 export interface ProjectProcessingJobPayload {
   projectId: string;
@@ -32,4 +33,11 @@ export interface ChildrenClipAudioAnalysisJobPayload {
   projectId: string;
   organizationId: string;
   requestedByUserId: string;
+}
+
+export interface ChildrenClipPlanGenerationJobPayload {
+  projectId: string;
+  organizationId: string;
+  requestedByUserId: string;
+  revisionInstruction?: string | null;
 }

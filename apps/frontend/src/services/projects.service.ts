@@ -4,6 +4,8 @@ import type {
   ChildrenClipCharacter,
   ChildrenClipCharacterVersion,
   ChildrenClipAudioStatus,
+  ChildrenClipPlanStatus,
+  ChildrenClipShot,
   CreateChildrenClipCharacterInput,
   CreateProjectInput,
   FrameInterpolationStatus,
@@ -248,6 +250,32 @@ class ProjectsService {
 
   retryChildrenClipAudioAnalysis(projectId: string, token: string) {
     return apiService.request<ChildrenClipAudioStatus>(`/projects/${projectId}/children-clip/audio-analysis`, { method: 'POST' }, token);
+  }
+
+  getChildrenClipProductionPlan(projectId: string, token: string) {
+    return apiService.request<ChildrenClipPlanStatus>(`/projects/${projectId}/children-clip/production-plan`, {}, token);
+  }
+
+  generateChildrenClipProductionPlan(projectId: string, revisionInstruction: string | null, token: string) {
+    return apiService.request<ChildrenClipPlanStatus>(`/projects/${projectId}/children-clip/production-plan/generate`, {
+      method: 'POST', body: JSON.stringify({ revisionInstruction })
+    }, token);
+  }
+
+  updateChildrenClipProductionPlan(projectId: string, input: { visualBible: Record<string, unknown>; narrative: Record<string, unknown> }, token: string) {
+    return apiService.request<ChildrenClipPlanStatus>(`/projects/${projectId}/children-clip/production-plan`, {
+      method: 'PUT', body: JSON.stringify(input)
+    }, token);
+  }
+
+  updateChildrenClipShot(projectId: string, shotId: string, input: Partial<ChildrenClipShot>, token: string) {
+    return apiService.request<ChildrenClipPlanStatus>(`/projects/${projectId}/children-clip/production-plan/shots/${shotId}`, {
+      method: 'PATCH', body: JSON.stringify(input)
+    }, token);
+  }
+
+  approveChildrenClipProductionPlan(projectId: string, token: string) {
+    return apiService.request<ChildrenClipPlanStatus>(`/projects/${projectId}/children-clip/production-plan/approve`, { method: 'POST' }, token);
   }
 }
 

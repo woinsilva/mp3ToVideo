@@ -115,6 +115,20 @@ pico e waveform. As secoes indicadas na letra sao refinadas pelas mudancas de en
 na grade ritmica. Linhas e palavras recebem cues temporais persistentes para roteiro e lip sync.
 Falhas ficam registradas na analise e no `ProcessingJob`, e podem ser retomadas no estudio.
 
+### Planejamento e timeline
+
+Depois da analise e da aprovacao de todo o elenco, `children-clip.plan.generate` cria uma biblia
+visual versionada, narrativa por secao e tomadas contiguas encaixadas nas batidas. A timeline cobre
+exatamente a duracao da faixa e cada tomada fixa versoes de personagens, letra, enquadramento,
+camera, acao, cenario, camadas, movimento e modo `animation_2d`, `wan` ou `hybrid`.
+
+Biblia, narrativa e tomadas podem ser editadas antes da aprovacao. Alterar uma identidade aprovada
+marca somente as tomadas que dependiam da versao anterior e reabre a revisao do plano. A geracao
+aceita respostas incompletas ou malformadas do Ollama e completa o contrato com regras
+deterministicas, evitando que uma variacao de JSON interrompa o pipeline.
+O modo de raciocinio do Qwen/Ollama fica desativado para estas respostas estruturadas; isso reduz a
+latencia sem remover validacao, fallback ou os heartbeats exibidos durante a espera.
+
 RIFE fica disponivel apenas para tomadas generativas que realmente precisem de interpolacao. Animacao 2D sera renderizada diretamente no FPS final.
 
 ## Modelo de dados
