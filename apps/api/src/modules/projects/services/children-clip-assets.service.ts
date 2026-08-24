@@ -14,6 +14,7 @@ import type { GenerateChildrenClipShotAssetDto } from '../dtos/generate-children
 import type { UploadChildrenClipShotAssetDto } from '../dtos/upload-children-clip-shot-asset.dto';
 import { LocalStorageService } from './local-storage.service';
 import { ChildrenClipStyleProfileService } from './children-clip-style-profile.service';
+import { locationWorkflowPhase, selectLocationGenerationTargets } from './children-clip-location-workflow';
 
 @Injectable()
 export class ChildrenClipAssetsService {
@@ -32,6 +33,7 @@ export class ChildrenClipAssetsService {
     });
     const jobByBullId = new Map(jobs.map((job) => [job.bullJobId, job]));
     const styleLock = project.childrenClipStyleProfile;
+    const locations = this.buildLocationWorkflow(project);
     const shots = project.childrenClipShots.map((shot) => ({
       ...shot,
       assets: shot.assets.map((shotAsset) => {
@@ -61,6 +63,7 @@ export class ChildrenClipAssetsService {
     ).length;
     return {
       styleLock: project.childrenClipStyleProfile,
+      locations,
       shots,
       summary: {
         totalShots: shots.length,
@@ -74,17 +77,20 @@ export class ChildrenClipAssetsService {
     const project = await this.getOwnedProject(projectId, organizationId);
     this.assertApprovedPlan(project.childrenClipPlan?.status);
     await this.assertLockedStyle(projectId);
-    for (const shot of project.childrenClipShots) {
-      const hasUsable = shot.assets.some((asset) =>
-        asset.role === 'background' && ['queued', 'generating'].includes(asset.status)
-        || asset.role === 'background' && ['ready_for_review', 'approved'].includes(asset.status) && this.isStyleCompatible(asset, project.childrenClipStyleProfile)
-      );
-      if (!hasUsable) {
-        await this.createAndEnqueue(projectId, organizationId, userId, shot.id, {
-          role: 'background', prompt: shot.backgroundPrompt, label: `Cenario da tomada ${shot.index + 1}`
-        });
-      }
+    const locations = this.buildLocationWorkflow(project);
+    for (const location of locations) {
+      await this.enqueueLocationTargets(project, location, projectId, organizationId, userId);
     }
+    return this.get(projectId, organizationId);
+  }
+
+  async generateLocationBackgrounds(projectId: string, locationId: string, organizationId: string, userId: string) {
+    const project = await this.getOwnedProject(projectId, organizationId);
+    this.assertApprovedPlan(project.childrenClipPlan?.status);
+    await this.assertLockedStyle(projectId);
+    const location = this.buildLocationWorkflow(project).find((item) => item.id === locationId);
+    if (!location) throw new NotFoundException('Location nao encontrada');
+    await this.enqueueLocationTargets(project, location, projectId, organizationId, userId);
     return this.get(projectId, organizationId);
   }
 
@@ -99,6 +105,7 @@ export class ChildrenClipAssetsService {
     this.assertApprovedPlan(project.childrenClipPlan?.status);
     await this.assertLockedStyle(projectId);
     if (!project.childrenClipShots.some((shot) => shot.id === shotId)) throw new NotFoundException('Tomada nao encontrada');
+    if (input.role === 'background') this.assertLocationBackgroundCanProceed(project, shotId);
     await this.createAndEnqueue(projectId, organizationId, userId, shotId, input);
     return this.get(projectId, organizationId);
   }
@@ -111,6 +118,7 @@ export class ChildrenClipAssetsService {
     if (shotAsset.status === 'queued' || shotAsset.status === 'generating') {
       throw new BadRequestException('A geracao deste asset ja esta em andamento');
     }
+    if (shotAsset.role === 'background') this.assertLocationBackgroundCanProceed(project, shotAsset.shotId);
     await this.enqueueExisting(projectId, organizationId, userId, shotAsset.id);
     return this.get(projectId, organizationId);
   }
@@ -130,6 +138,7 @@ export class ChildrenClipAssetsService {
     catch { throw new BadRequestException('O arquivo enviado nao e uma imagem valida'); }
     if (!dimensions.width || !dimensions.height) throw new BadRequestException('Nao foi possivel determinar as dimensoes da imagem');
     const role = input.role as ChildrenClipShotAssetRole;
+    if (role === 'background') this.assertLocationBackgroundCanProceed(project, shotId);
     const characterVersionId = role === 'character_pose' ? input.characterVersionId?.trim() || null : null;
     if (role === 'character_pose') {
       if (!characterVersionId) throw new BadRequestException('Selecione o personagem desta pose');
@@ -161,16 +170,20 @@ export class ChildrenClipAssetsService {
   }
 
   async approve(projectId: string, shotAssetId: string, organizationId: string) {
-    const { shotAsset } = await this.getOwnedAsset(projectId, shotAssetId, organizationId);
+    const { project, shotAsset } = await this.getOwnedAsset(projectId, shotAssetId, organizationId);
     if (!shotAsset.assetId || !['ready_for_review', 'approved'].includes(shotAsset.status)) {
       throw new BadRequestException('O asset precisa estar pronto para revisao antes da aprovacao');
     }
     const shot = await this.prisma.childrenClipShot.findUnique({
       where: { id: shotAsset.shotId },
-      select: { locationId: true, location: { select: { masterBackgroundAssetId: true, masterBackgroundAsset: { select: { childrenClipShotAsset: { select: { shotId: true } } } } } } }
+      select: { locationId: true, location: { select: { masterBackgroundAssetId: true, masterBackgroundAsset: { select: { childrenClipShotAsset: true } } } } }
     });
+    const currentMasterLink = shot?.location?.masterBackgroundAsset?.childrenClipShotAsset;
     const shouldSetLocationMaster = shotAsset.role === 'background' && Boolean(shot?.locationId) && (
-      !shot?.location?.masterBackgroundAssetId || shot.location.masterBackgroundAsset?.childrenClipShotAsset?.shotId === shotAsset.shotId
+      !shot?.location?.masterBackgroundAssetId
+      || !currentMasterLink
+      || !this.isStyleCompatible(currentMasterLink, project.childrenClipStyleProfile)
+      || currentMasterLink.shotId === shotAsset.shotId
     );
     await this.prisma.$transaction([
       this.prisma.childrenClipShotAsset.updateMany({
@@ -304,7 +317,7 @@ export class ChildrenClipAssetsService {
         childrenClipShots: {
           orderBy: { index: 'asc' },
           include: {
-            location: true,
+            location: { include: { masterBackgroundAsset: { include: { childrenClipShotAsset: true } } } },
             musicSection: true,
             assets: { orderBy: [{ role: 'asc' }, { versionNumber: 'desc' }], include: { asset: true } }
           }
@@ -319,6 +332,90 @@ export class ChildrenClipAssetsService {
     const style = await this.styles.lock(projectId);
     if (style.status !== 'locked') {
       throw new BadRequestException(style.staleReason || 'O Style Lock esta desatualizado. Revise e atualize antes de gerar cenarios.');
+    }
+  }
+
+  private buildLocationWorkflow(project: Awaited<ReturnType<ChildrenClipAssetsService['getOwnedProject']>>) {
+    const groups = new Map<string, typeof project.childrenClipShots>();
+    for (const shot of project.childrenClipShots) {
+      const key = shot.locationId || `shot:${shot.id}`;
+      groups.set(key, [...(groups.get(key) ?? []), shot]);
+    }
+    return [...groups.entries()].map(([key, shots]) => {
+      const ordered = [...shots].sort((left, right) => left.index - right.index);
+      const location = ordered[0].location;
+      const masterLink = location?.masterBackgroundAsset?.childrenClipShotAsset ?? null;
+      const master = masterLink?.status === 'approved' && this.isStyleCompatible(masterLink, project.childrenClipStyleProfile)
+        ? {
+            shotAssetId: masterLink.id,
+            assetId: location!.masterBackgroundAsset!.id,
+            shotId: masterLink.shotId,
+            versionNumber: masterLink.versionNumber,
+            status: masterLink.status,
+            approvedAt: masterLink.approvedAt
+          }
+        : null;
+      const workflowShots = ordered.map((shot) => {
+        const backgrounds = shot.assets.filter((asset) => asset.role === 'background');
+        const hasUsableBackground = backgrounds.some((asset) => this.hasUsableBackground(asset, project.childrenClipStyleProfile));
+        const approvedBackground = backgrounds.find((asset) => asset.status === 'approved' && this.isStyleCompatible(asset, project.childrenClipStyleProfile));
+        return { id: shot.id, index: shot.index, title: shot.title, description: shot.description, framing: shot.framing, cameraMovement: shot.cameraMovement, hasUsableBackground, hasApprovedBackground: Boolean(approvedBackground), approvedBackgroundVersion: approvedBackground?.versionNumber ?? null };
+      });
+      const anchor = workflowShots[0];
+      const masterPendingReview = !master && ordered[0].assets.some((asset) => asset.role === 'background' && asset.status === 'ready_for_review' && this.isStyleCompatible(asset, project.childrenClipStyleProfile));
+      const masterGenerating = !master && ordered[0].assets.some((asset) => asset.role === 'background' && ['queued', 'generating'].includes(asset.status));
+      return {
+        id: location?.id ?? key,
+        key: location?.key ?? key,
+        name: location?.name ?? ordered[0].environment,
+        description: location?.description ?? ordered[0].environment,
+        anchorShotId: anchor.id,
+        master,
+        phase: locationWorkflowPhase(workflowShots, Boolean(master), masterPendingReview, masterGenerating),
+        approvedShots: workflowShots.filter((shot) => shot.approvedBackgroundVersion !== null).length,
+        shots: workflowShots
+      };
+    });
+  }
+
+  private async enqueueLocationTargets(
+    project: Awaited<ReturnType<ChildrenClipAssetsService['getOwnedProject']>>,
+    location: ReturnType<ChildrenClipAssetsService['buildLocationWorkflow']>[number],
+    projectId: string,
+    organizationId: string,
+    userId: string
+  ) {
+    const targets = selectLocationGenerationTargets(
+      location.shots.map((shot) => ({ id: shot.id, index: shot.index, hasUsableBackground: shot.hasUsableBackground })),
+      Boolean(location.master)
+    );
+    for (const shotId of targets) {
+      const shot = project.childrenClipShots.find((item) => item.id === shotId)!;
+      await this.createAndEnqueue(projectId, organizationId, userId, shot.id, {
+        role: 'background', prompt: shot.backgroundPrompt,
+        label: location.master ? `${location.name} - vista da tomada ${shot.index + 1}` : `${location.name} - master`
+      });
+    }
+  }
+
+  private hasUsableBackground(
+    asset: { role: string; status: string; origin: string; approvedAt: Date | null; generationMetadata: unknown },
+    styleLock: { status: string; versionNumber: number; lockedAt: Date } | null
+  ) {
+    return asset.role === 'background' && (
+      ['queued', 'generating'].includes(asset.status)
+      || ['ready_for_review', 'approved'].includes(asset.status) && this.isStyleCompatible(asset, styleLock)
+    );
+  }
+
+  private assertLocationBackgroundCanProceed(
+    project: Awaited<ReturnType<ChildrenClipAssetsService['getOwnedProject']>>,
+    shotId: string
+  ) {
+    const location = this.buildLocationWorkflow(project).find((item) => item.shots.some((shot) => shot.id === shotId));
+    if (!location) throw new NotFoundException('Location da tomada nao encontrada');
+    if (!location.master && location.anchorShotId !== shotId) {
+      throw new BadRequestException(`Aprove primeiro o background master de ${location.name} antes de criar as outras vistas.`);
     }
   }
 

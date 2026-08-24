@@ -297,8 +297,21 @@ export interface ChildrenClipProductionAssetsStatus {
     staleReason: string | null;
     lockedAt: string;
   } | null;
+  locations: ChildrenClipProductionLocation[];
   shots: Array<ChildrenClipShot & { assets: ChildrenClipShotAsset[] }>;
   summary: { totalShots: number; approvedBackgrounds: number; readyForAnimation: boolean };
+}
+
+export interface ChildrenClipProductionLocation {
+  id: string;
+  key: string;
+  name: string;
+  description: string;
+  anchorShotId: string;
+  phase: 'needs_master' | 'master_generating' | 'master_in_review' | 'ready_for_variants' | 'variants_in_review' | 'complete';
+  approvedShots: number;
+  master: { shotAssetId: string; assetId: string; shotId: string; versionNumber: number; status: 'approved'; approvedAt: string } | null;
+  shots: Array<{ id: string; index: number; title: string; description: string; framing: string; cameraMovement: string; hasUsableBackground: boolean; hasApprovedBackground: boolean; approvedBackgroundVersion: number | null }>;
 }
 
 export interface ChildrenClipShotRenderAttempt {

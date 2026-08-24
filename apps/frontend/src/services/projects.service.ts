@@ -333,6 +333,10 @@ class ProjectsService {
     return apiService.request<ChildrenClipProductionAssetsStatus>(`/projects/${projectId}/children-clip/production-assets/generate-missing-backgrounds`, { method: 'POST' }, token);
   }
 
+  generateChildrenClipLocationBackgrounds(projectId: string, locationId: string, token: string) {
+    return apiService.request<ChildrenClipProductionAssetsStatus>(`/projects/${projectId}/children-clip/production-assets/locations/${locationId}/generate-backgrounds`, { method: 'POST' }, token);
+  }
+
   generateChildrenClipShotAsset(projectId: string, shotId: string, role: Exclude<ChildrenClipShotAssetRole, 'character_pose'>, prompt: string | null, token: string) {
     return apiService.request<ChildrenClipProductionAssetsStatus>(`/projects/${projectId}/children-clip/production-assets/shots/${shotId}/generate`, {
       method: 'POST', body: JSON.stringify({ role, prompt: prompt?.trim() || undefined })
