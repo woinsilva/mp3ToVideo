@@ -65,14 +65,15 @@ export class ChildrenClipProcessor {
     const { projectId, organizationId, heroAttemptId } = job.data;
     const attempt = await this.prisma.childrenClipHeroShotAttempt.findFirst({
       where: { id: heroAttemptId, shot: { projectId, project: { organizationId, deletedAt: null } } },
-      include: { shot: { include: { assets: { where: { status: 'approved' }, include: { asset: true } }, project: { include: { childrenClip: true, childrenClipPlan: true } } } } }
+      include: { shot: { include: { assets: { where: { status: 'approved' }, include: { asset: true } }, project: { include: { childrenClip: true, childrenClipPlan: true, childrenClipStyleProfile: true } } } } }
     });
     if (!attempt) throw new Error(`Hero shot attempt ${heroAttemptId} not found`);
     const reference = attempt.shot.assets.find((item) => item.role === 'storyboard_frame' && item.asset)?.asset ?? attempt.shot.assets.find((item) => item.role === 'background' && item.asset)?.asset;
     if (!reference) throw new Error('A tomada Wan precisa de um fundo ou storyboard aprovado como referencia');
+    const lockedStyle = this.styleLockPrompt(attempt.shot.project.childrenClipStyleProfile);
     const prompt = {
-      positivePrompt: [attempt.shot.description, attempt.shot.characterAction, attempt.shot.environment, 'original safe children animation, preserve the supplied visual identity and composition, smooth subtle motion'].filter(Boolean).join('. '),
-      negativePrompt: 'photorealistic, scary, violence, text, watermark, morphing, identity change, extra limbs, deformed anatomy, scene transition, camera shake'
+      positivePrompt: [lockedStyle.positive, attempt.shot.description, attempt.shot.characterAction, attempt.shot.environment, 'original safe children animation, preserve the supplied visual identity and composition, smooth subtle motion'].filter(Boolean).join('. '),
+      negativePrompt: [...lockedStyle.negative, 'photorealistic, scary, violence, text, watermark, morphing, identity change, extra limbs, deformed anatomy, scene transition, camera shake'].join(', ')
     } as ScenePrompt;
     const settings = this.videoSettings.resolve(prompt, attempt.shot.durationSeconds, {
       seed: attempt.seed, fps: attempt.fps, width: attempt.width, height: attempt.height,
@@ -327,11 +328,12 @@ export class ChildrenClipProcessor {
       include: {
         shot: {
           include: {
-            location: true,
+            location: { include: { masterBackgroundAsset: { include: { childrenClipShotAsset: true } } } },
             project: {
               include: {
                 childrenClip: true,
                 childrenClipPlan: true,
+                childrenClipStyleProfile: true,
                 characterLinks: {
                   orderBy: { sortOrder: 'asc' },
                   include: {
@@ -388,11 +390,28 @@ export class ChildrenClipProcessor {
         referenceAsset: reference?.asset ? { id: reference.asset.id, storagePath: reference.asset.storagePath } : null
       }];
     });
+    const styleProfile = shotAsset.shot.project.childrenClipStyleProfile;
+    const masterAsset = shotAsset.shot.location?.masterBackgroundAsset;
+    const masterLink = masterAsset?.childrenClipShotAsset;
+    const masterMetadata = masterLink?.generationMetadata && typeof masterLink.generationMetadata === 'object' && !Array.isArray(masterLink.generationMetadata)
+      ? masterLink.generationMetadata as Record<string, unknown> : {};
+    const masterCompatible = Boolean(styleProfile && masterLink?.status === 'approved' && (
+      masterLink.origin === 'uploaded'
+        ? masterLink.approvedAt && masterLink.approvedAt >= styleProfile.lockedAt
+        : masterMetadata.styleProfileVersion === styleProfile.versionNumber
+    ));
     const builtPrompt = this.shotPrompts.build({
       role: shotAsset.role,
       customPrompt: shotAsset.generationPrompt,
-      shot: shotAsset.shot,
+      shot: {
+        ...shotAsset.shot,
+        location: shotAsset.shot.location ? {
+          ...shotAsset.shot.location,
+          masterBackgroundAsset: masterCompatible && masterAsset ? { id: masterAsset.id, storagePath: masterAsset.storagePath } : null
+        } : null
+      },
       visualBible,
+      styleProfile,
       narrative: shotAsset.shot.project.childrenClipPlan?.narrative,
       entities
     });
@@ -416,7 +435,7 @@ export class ChildrenClipProcessor {
         filenamePrefix: `children-clips/shot-${shotAsset.shot.index + 1}-${shotAsset.role}-v${shotAsset.versionNumber}`,
         loraName: loraName || null, loraStrength,
         referenceImagePath: usedReference ? this.storage.getAbsolutePath(usedReference.storagePath) : null,
-        denoise: usedReference ? 0.68 : undefined,
+        denoise: usedReference ? (usedReference.purpose === 'location-content' ? 0.48 : 0.68) : undefined,
         onGpuWaiting: (owner) => this.assetProgress(
           job,
           22,
@@ -436,7 +455,7 @@ export class ChildrenClipProcessor {
           data: {
             organizationId, projectId, type: AssetType.image, mimeType: 'image/png', storagePath, sizeBytes,
             width: dimensions.width, height: dimensions.height,
-            metadata: { source: 'comfyui', shotAssetId, shotId: shotAsset.shotId, role: shotAsset.role, promptId: result.promptId, checkpointName, seed, steps, cfg, sampler, scheduler, loraName: loraName || null, loraStrength, positivePrompt, negativePrompt, referenceAssetIds: usedReference ? [usedReference.id] : [], allowedEntityVersionIds: builtPrompt.allowedEntityVersionIds, forbiddenEntityVersionIds: builtPrompt.forbiddenEntityVersionIds }
+            metadata: { source: 'comfyui', shotAssetId, shotId: shotAsset.shotId, role: shotAsset.role, promptId: result.promptId, checkpointName, seed, steps, cfg, sampler, scheduler, loraName: loraName || null, loraStrength, positivePrompt, negativePrompt, contentReferenceAssetIds: usedReference ? [usedReference.id] : [], contentReferencePurpose: usedReference?.purpose ?? null, styleReferenceAssetIds: builtPrompt.styleReferenceAssetIds, styleProfileVersion: builtPrompt.styleProfileVersion, allowedEntityVersionIds: builtPrompt.allowedEntityVersionIds, forbiddenEntityVersionIds: builtPrompt.forbiddenEntityVersionIds }
           }
         });
         await tx.childrenClipShotAsset.update({
@@ -444,7 +463,7 @@ export class ChildrenClipProcessor {
           data: {
             assetId: asset.id, status: ChildrenClipShotAssetStatus.ready_for_review,
             generationEndedAt: new Date(), errorMessage: null,
-            generationMetadata: { provider: result.provider, promptId: result.promptId, checkpointName, ...dimensions, seed, steps, cfg, sampler, scheduler, loraName: loraName || null, loraStrength, positivePrompt, negativePrompt, referenceAssetIds: usedReference ? [usedReference.id] : [], allowedEntityVersionIds: builtPrompt.allowedEntityVersionIds, forbiddenEntityVersionIds: builtPrompt.forbiddenEntityVersionIds },
+            generationMetadata: { provider: result.provider, promptId: result.promptId, checkpointName, ...dimensions, seed, steps, cfg, sampler, scheduler, loraName: loraName || null, loraStrength, positivePrompt, negativePrompt, contentReferenceAssetIds: usedReference ? [usedReference.id] : [], contentReferencePurpose: usedReference?.purpose ?? null, styleReferenceAssetIds: builtPrompt.styleReferenceAssetIds, styleProfileVersion: builtPrompt.styleProfileVersion, allowedEntityVersionIds: builtPrompt.allowedEntityVersionIds, forbiddenEntityVersionIds: builtPrompt.forbiddenEntityVersionIds },
             reviewReason: null
           }
         });
@@ -585,7 +604,8 @@ export class ChildrenClipProcessor {
             content: [
               'Return concise JSON only with locations and shotPlans.',
               'Create exactly one shotPlan for each supplied shotIndex.',
-              'Every shotPlan must use: shotIndex, purpose, locationKey, locationName, locationDescription, timeOfDay, primaryFocus, allowedEntities, forbiddenEntities, objects, action, composition, camera, emotion, motionIntent, continuityFromPreviousShot.',
+              'Every shotPlan must use: shotIndex, purpose, locationKey, locationName, locationDescription, timeOfDay, primaryFocus, allowedEntities, forbiddenEntities, objects, action, composition, camera, emotion, motionIntent, continuityFromPreviousShot, characterPlacement, backgroundSafeZones, grounding.',
+              'characterPlacement assigns each allowed entity to a 0-100 percent x/y zone and scale. backgroundSafeZones reserve clean space. grounding defines groundLinePercent, horizonPercent, perspective and movementDirection.',
               'Use exact entity names. Respect introduction order. A future entity must be forbidden, never allowed.',
               'Each action and composition must visualize only that shot lyrics and differ from adjacent shots.',
               'Reuse a locationKey when the place is unchanged. Location descriptions contain environment only, never entities.',
@@ -632,7 +652,7 @@ export class ChildrenClipProcessor {
             content: [
               'Return concise JSON only with locations and shotPlans.',
               'Create exactly one complete shotPlan for every supplied shotIndex; do not return any other index.',
-              'Every shotPlan must use: shotIndex, purpose, locationKey, locationName, locationDescription, timeOfDay, primaryFocus, allowedEntities, forbiddenEntities, objects, action, composition, camera, emotion, motionIntent, continuityFromPreviousShot.',
+              'Every shotPlan must use: shotIndex, purpose, locationKey, locationName, locationDescription, timeOfDay, primaryFocus, allowedEntities, forbiddenEntities, objects, action, composition, camera, emotion, motionIntent, continuityFromPreviousShot, characterPlacement, backgroundSafeZones, grounding.',
               'Use exact entity names, respect introduction order, describe only the synchronized lyric moment, and keep location fields environment-only.'
             ].join(' ')
           },
@@ -724,6 +744,9 @@ export class ChildrenClipProcessor {
             forbiddenEntityVersionIds: shot.forbiddenEntityVersionIds,
             objects: shot.objects,
             layers: shot.layers as Prisma.InputJsonValue,
+            characterPlacement: shot.characterPlacement as Prisma.InputJsonValue,
+            backgroundSafeZones: shot.backgroundSafeZones as Prisma.InputJsonValue,
+            groundingRules: shot.groundingRules as Prisma.InputJsonValue,
             motionPreset: shot.motionPreset,
             status: 'needs_revision' as const
         });
@@ -923,6 +946,9 @@ export class ChildrenClipProcessor {
     if (!version?.generationPrompt) {
       throw new Error(`Character version ${characterVersionId} is not ready for generation`);
     }
+    const styleLock = await this.prisma.childrenClipStyleProfile.findUnique({ where: { projectId } });
+    if (styleLock?.status === 'stale') throw new Error(styleLock.staleReason || 'O Project Style Lock esta desatualizado');
+    const lockedStyle = this.styleLockPrompt(styleLock);
 
     const seed = version.seed ?? Math.floor(Math.random() * 2_147_483_646);
     const checkpointName = this.config.get<string>('visual.characterCheckpointName', '').trim();
@@ -964,12 +990,13 @@ export class ChildrenClipProcessor {
         }
       ]);
       const positivePrompt = [
+        lockedStyle.positive,
         'flat 2D vector cartoon, simple cel shading, clean bold outlines, colorful original children animation design',
         optimizedPrompt?.positivePrompt?.trim() || version.generationPrompt
       ].join(', ');
       const safetyNegativePrompt =
         'photorealistic, realistic skin, 3d render, realistic fur, realistic feathers, text, letters, logo, watermark, signature, human when animal is requested, multiple different characters, inconsistent outfit, cropped body, extra arms, extra legs, malformed hands, duplicate body';
-      const negativePrompt = [optimizedPrompt?.negativePrompt?.trim(), safetyNegativePrompt]
+      const negativePrompt = [...lockedStyle.negative, optimizedPrompt?.negativePrompt?.trim(), safetyNegativePrompt]
         .filter(Boolean)
         .join(', ');
       await this.characterProgress(job, 20, 'LOADING_MODEL', `Carregando checkpoint ${checkpointName}.`);
@@ -1031,7 +1058,9 @@ export class ChildrenClipProcessor {
               loraName: loraName || null,
               loraStrength,
               positivePrompt,
-              negativePrompt
+              negativePrompt,
+              styleProfileVersion: lockedStyle.version,
+              styleReferenceAssetIds: lockedStyle.referenceAssetIds
             }
           }
         });
@@ -1064,7 +1093,10 @@ export class ChildrenClipProcessor {
               scheduler,
               loraName: loraName || null,
               loraStrength,
-              positivePrompt
+              positivePrompt,
+              negativePrompt,
+              styleProfileVersion: lockedStyle.version,
+              styleReferenceAssetIds: lockedStyle.referenceAssetIds
             },
             errorMessage: null
           }
@@ -1113,6 +1145,9 @@ export class ChildrenClipProcessor {
       }
     });
     if (!record?.generationPrompt || !characterAssetId) throw new Error('Asset complementar de personagem nao esta pronto para geracao');
+    const styleLock = await this.prisma.childrenClipStyleProfile.findUnique({ where: { projectId } });
+    if (styleLock?.status === 'stale') throw new Error(styleLock.staleReason || 'O Project Style Lock esta desatualizado');
+    const lockedStyle = this.styleLockPrompt(styleLock);
     const referenceLink = record.characterVersion.assets.find((item) => item.role === 'primary_reference' && item.asset)
       ?? record.characterVersion.assets.find((item) => item.asset);
     if (!referenceLink?.asset) throw new Error('A geracao complementar precisa de uma referencia de personagem aprovada');
@@ -1129,12 +1164,14 @@ export class ChildrenClipProcessor {
       eye_state: `clean face detail with eyes ${record.label}`
     };
     const positivePrompt = [
+      lockedStyle.positive,
       'preserve exactly the same original children animation character identity, species, face, colors, outfit and proportions from the reference image',
       roleDirection[record.role] ?? record.role,
       record.generationPrompt,
       record.characterVersion.description
     ].filter(Boolean).join(', ');
     const negativePrompt = [
+      ...lockedStyle.negative,
       record.negativePrompt,
       'different character, changed species, changed clothes, changed colors, photorealistic, 3d, text, watermark, duplicate body, extra limbs, malformed'
     ].filter(Boolean).join(', ');
@@ -1165,14 +1202,14 @@ export class ChildrenClipProcessor {
         const asset = await tx.asset.create({
           data: {
             organizationId, projectId, type: AssetType.image, mimeType: 'image/png', storagePath, sizeBytes, width, height,
-            metadata: { source: 'comfyui-reference-img2img', characterId, characterVersionId, characterAssetId, role: record.role, label: record.label, promptId: result.promptId, seed, positivePrompt, negativePrompt }
+            metadata: { source: 'comfyui-reference-img2img', characterId, characterVersionId, characterAssetId, role: record.role, label: record.label, promptId: result.promptId, seed, positivePrompt, negativePrompt, styleProfileVersion: lockedStyle.version, styleReferenceAssetIds: lockedStyle.referenceAssetIds }
           }
         });
         await tx.characterAsset.update({
           where: { id: characterAssetId },
           data: {
             assetId: asset.id, status: CharacterAssetStatus.ready_for_review, generationEndedAt: new Date(), errorMessage: null,
-            generationMetadata: { provider: result.provider, promptId: result.promptId, seed, denoise: record.role === 'mouth_shape' || record.role === 'eye_state' ? 0.3 : 0.48, referenceAssetId: referenceLink.asset!.id, positivePrompt, negativePrompt }
+            generationMetadata: { provider: result.provider, promptId: result.promptId, seed, denoise: record.role === 'mouth_shape' || record.role === 'eye_state' ? 0.3 : 0.48, referenceAssetId: referenceLink.asset!.id, positivePrompt, negativePrompt, styleProfileVersion: lockedStyle.version, styleReferenceAssetIds: lockedStyle.referenceAssetIds }
           }
         });
       });
@@ -1391,6 +1428,24 @@ export class ChildrenClipProcessor {
 
   private jsonRecord(value: unknown): Record<string, unknown> {
     return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  }
+
+  private styleLockPrompt(value: { status: string; versionNumber: number; profile: Prisma.JsonValue; negativeConstraints: Prisma.JsonValue; styleReferenceAssetIds: Prisma.JsonValue } | null) {
+    if (!value || value.status !== 'locked') return { positive: '', negative: [] as string[], version: null as number | null, referenceAssetIds: [] as string[] };
+    const profile = this.jsonRecord(value.profile);
+    const metrics = this.jsonRecord(profile.colorMetrics);
+    return {
+      positive: [
+        profile.medium, profile.lineStyle, profile.shading, profile.texture, profile.lighting,
+        Array.isArray(profile.palette) ? `approved project palette: ${profile.palette.join(', ')}` : null,
+        metrics.averageSaturation !== undefined ? `match approved saturation ${metrics.averageSaturation} and contrast ${metrics.contrast}` : null,
+        profile.maxBackgroundDetail ? `match project detail level ${profile.maxBackgroundDetail}` : null,
+        `Project Style Lock version ${value.versionNumber}; exact same animated series visual language`
+      ].filter((item): item is string => typeof item === 'string' && Boolean(item.trim())).join(', '),
+      negative: this.stringArray(value.negativeConstraints),
+      version: value.versionNumber,
+      referenceAssetIds: this.stringArray(value.styleReferenceAssetIds)
+    };
   }
 
   private limitText(value: unknown, maximumLength: number): string | null {

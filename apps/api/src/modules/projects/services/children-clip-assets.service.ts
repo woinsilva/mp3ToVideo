@@ -13,13 +13,15 @@ import { ChildrenClipQueueService } from '../../jobs/services/children-clip-queu
 import type { GenerateChildrenClipShotAssetDto } from '../dtos/generate-children-clip-shot-asset.dto';
 import type { UploadChildrenClipShotAssetDto } from '../dtos/upload-children-clip-shot-asset.dto';
 import { LocalStorageService } from './local-storage.service';
+import { ChildrenClipStyleProfileService } from './children-clip-style-profile.service';
 
 @Injectable()
 export class ChildrenClipAssetsService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(ChildrenClipQueueService) private readonly queue: ChildrenClipQueueService,
-    @Inject(LocalStorageService) private readonly storage: LocalStorageService
+    @Inject(LocalStorageService) private readonly storage: LocalStorageService,
+    @Inject(ChildrenClipStyleProfileService) private readonly styles: ChildrenClipStyleProfileService
   ) {}
 
   async get(projectId: string, organizationId: string) {
@@ -29,6 +31,7 @@ export class ChildrenClipAssetsService {
       orderBy: { createdAt: 'desc' }
     });
     const jobByBullId = new Map(jobs.map((job) => [job.bullJobId, job]));
+    const styleLock = project.childrenClipStyleProfile;
     const shots = project.childrenClipShots.map((shot) => ({
       ...shot,
       assets: shot.assets.map((shotAsset) => {
@@ -48,14 +51,16 @@ export class ChildrenClipAssetsService {
             detailMessage: job.detailMessage,
             errorMessage: job.errorMessage,
             activityLog: job.activityLog
-          } : null
+          } : null,
+          styleCompatible: this.isStyleCompatible(shotAsset, styleLock)
         };
       })
     }));
     const approvedBackgrounds = shots.filter((shot) =>
-      shot.assets.some((asset) => asset.role === 'background' && asset.status === 'approved')
+      shot.assets.some((asset) => asset.role === 'background' && asset.status === 'approved' && asset.styleCompatible)
     ).length;
     return {
+      styleLock: project.childrenClipStyleProfile,
       shots,
       summary: {
         totalShots: shots.length,
@@ -68,9 +73,11 @@ export class ChildrenClipAssetsService {
   async generateMissingBackgrounds(projectId: string, organizationId: string, userId: string) {
     const project = await this.getOwnedProject(projectId, organizationId);
     this.assertApprovedPlan(project.childrenClipPlan?.status);
+    await this.assertLockedStyle(projectId);
     for (const shot of project.childrenClipShots) {
       const hasUsable = shot.assets.some((asset) =>
-        asset.role === 'background' && ['queued', 'generating', 'ready_for_review', 'approved'].includes(asset.status)
+        asset.role === 'background' && ['queued', 'generating'].includes(asset.status)
+        || asset.role === 'background' && ['ready_for_review', 'approved'].includes(asset.status) && this.isStyleCompatible(asset, project.childrenClipStyleProfile)
       );
       if (!hasUsable) {
         await this.createAndEnqueue(projectId, organizationId, userId, shot.id, {
@@ -90,6 +97,7 @@ export class ChildrenClipAssetsService {
   ) {
     const project = await this.getOwnedProject(projectId, organizationId);
     this.assertApprovedPlan(project.childrenClipPlan?.status);
+    await this.assertLockedStyle(projectId);
     if (!project.childrenClipShots.some((shot) => shot.id === shotId)) throw new NotFoundException('Tomada nao encontrada');
     await this.createAndEnqueue(projectId, organizationId, userId, shotId, input);
     return this.get(projectId, organizationId);
@@ -98,6 +106,7 @@ export class ChildrenClipAssetsService {
   async retry(projectId: string, shotAssetId: string, organizationId: string, userId: string) {
     const { project, shotAsset } = await this.getOwnedAsset(projectId, shotAssetId, organizationId);
     this.assertApprovedPlan(project.childrenClipPlan?.status);
+    await this.assertLockedStyle(projectId);
     if (shotAsset.origin !== 'generated') throw new BadRequestException('Somente assets gerados podem ser reenfileirados');
     if (shotAsset.status === 'queued' || shotAsset.status === 'generating') {
       throw new BadRequestException('A geracao deste asset ja esta em andamento');
@@ -156,6 +165,13 @@ export class ChildrenClipAssetsService {
     if (!shotAsset.assetId || !['ready_for_review', 'approved'].includes(shotAsset.status)) {
       throw new BadRequestException('O asset precisa estar pronto para revisao antes da aprovacao');
     }
+    const shot = await this.prisma.childrenClipShot.findUnique({
+      where: { id: shotAsset.shotId },
+      select: { locationId: true, location: { select: { masterBackgroundAssetId: true, masterBackgroundAsset: { select: { childrenClipShotAsset: { select: { shotId: true } } } } } } }
+    });
+    const shouldSetLocationMaster = shotAsset.role === 'background' && Boolean(shot?.locationId) && (
+      !shot?.location?.masterBackgroundAssetId || shot.location.masterBackgroundAsset?.childrenClipShotAsset?.shotId === shotAsset.shotId
+    );
     await this.prisma.$transaction([
       this.prisma.childrenClipShotAsset.updateMany({
         where: {
@@ -169,7 +185,11 @@ export class ChildrenClipAssetsService {
       }),
       this.prisma.childrenClipShotAsset.update({
         where: { id: shotAsset.id }, data: { status: 'approved', approvedAt: new Date(), errorMessage: null }
-      })
+      }),
+      ...(shouldSetLocationMaster && shot?.locationId ? [this.prisma.childrenClipLocation.updateMany({
+        where: { id: shot.locationId },
+        data: { masterBackgroundAssetId: shotAsset.assetId }
+      })] : [])
     ]);
     return this.get(projectId, organizationId);
   }
@@ -193,6 +213,12 @@ export class ChildrenClipAssetsService {
       mimeType: shotAsset.asset.mimeType,
       fileName: `${shotAsset.role}-v${shotAsset.versionNumber}.${shotAsset.asset.mimeType.split('/')[1] ?? 'png'}`
     };
+  }
+
+  async refreshStyleLock(projectId: string, organizationId: string) {
+    await this.getOwnedProject(projectId, organizationId);
+    await this.styles.lock(projectId, true);
+    return this.get(projectId, organizationId);
   }
 
   private async createAndEnqueue(
@@ -273,6 +299,7 @@ export class ChildrenClipAssetsService {
       where: { id: projectId, organizationId, generationMode: 'children_clip', deletedAt: null },
       include: {
         childrenClip: true, childrenClipPlan: true,
+        childrenClipStyleProfile: true,
         characterLinks: { include: { character: true } },
         childrenClipShots: {
           orderBy: { index: 'asc' },
@@ -286,6 +313,25 @@ export class ChildrenClipAssetsService {
     });
     if (!project?.childrenClip) throw new NotFoundException('Projeto de clipe infantil nao encontrado');
     return project;
+  }
+
+  private async assertLockedStyle(projectId: string) {
+    const style = await this.styles.lock(projectId);
+    if (style.status !== 'locked') {
+      throw new BadRequestException(style.staleReason || 'O Style Lock esta desatualizado. Revise e atualize antes de gerar cenarios.');
+    }
+  }
+
+  private isStyleCompatible(
+    asset: { role: string; origin: string; approvedAt: Date | null; generationMetadata: unknown },
+    styleLock: { status: string; versionNumber: number; lockedAt: Date } | null
+  ) {
+    if (asset.role !== 'background') return true;
+    if (!styleLock || styleLock.status !== 'locked') return false;
+    if (asset.origin === 'uploaded') return Boolean(asset.approvedAt && asset.approvedAt >= styleLock.lockedAt);
+    const metadata = asset.generationMetadata && typeof asset.generationMetadata === 'object' && !Array.isArray(asset.generationMetadata)
+      ? asset.generationMetadata as Record<string, unknown> : {};
+    return metadata.styleProfileVersion === styleLock.versionNumber;
   }
 
   private assertSafeGeneration(

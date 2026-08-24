@@ -10,6 +10,9 @@ export interface CreativeShotPlan {
   characters?: string[]; allowedEntities?: string[]; forbiddenEntities?: string[];
   objects?: string[]; action?: string; composition?: string; camera?: string;
   emotion?: string; motionIntent?: string; continuityFromPreviousShot?: string | null;
+  characterPlacement?: Array<{ entity?: string; zone?: string; xPercent?: number; yPercent?: number; scalePercent?: number; facing?: string }>;
+  backgroundSafeZones?: Array<{ name?: string; xPercent?: number; yPercent?: number; widthPercent?: number; heightPercent?: number; purpose?: string }>;
+  grounding?: { groundLinePercent?: number; horizonPercent?: number; perspective?: string; movementDirection?: string };
 }
 
 export interface CreativePlanResponse {
@@ -33,6 +36,8 @@ export interface PlannedChildrenClipShot {
   characterAction: string; environment: string; backgroundPrompt: string; transitionIn: string | null;
   transitionOut: string | null; lyricText: string | null; characterVersionIds: string[];
   forbiddenEntityVersionIds: string[]; objects: string[]; layers: Array<Record<string, unknown>>;
+  characterPlacement: Record<string, unknown>; backgroundSafeZones: Array<Record<string, unknown>>;
+  groundingRules: Record<string, unknown>;
   motionPreset: string;
 }
 
@@ -203,11 +208,14 @@ export class ChildrenClipPlanningService {
         forbiddenNames.length ? `Nao aparecem: ${forbiddenNames.join(', ')}.` : null
       ].filter(Boolean).join(' ');
       const location = locations.get(locationKey)!;
+      const compositionPlan = this.compositionPlan(allowed, generated, framing, index);
       const backgroundContinuity = this.environmentOnlyText(continuity, entities, null, '');
       const backgroundFraming = this.environmentOnlyText(framing, entities, null, 'plano geral do ambiente');
       const backgroundCamera = this.environmentOnlyText(camera, entities, null, 'camera ambiental fixa com parallax suave');
       const backgroundPrompt = [style, backgroundStyle, lighting, `background plate vazio de ${location.name}: ${location.visualPrompt}`,
-        `enquadramento ambiental: ${backgroundFraming}; camera: ${backgroundCamera}`, backgroundContinuity,
+        `enquadramento ambiental: ${backgroundFraming}; camera: ${backgroundCamera}`,
+        `reservar areas vazias para composicao: ${compositionPlan.backgroundSafeZones.map((zone) => `${zone.name} em x ${zone.xPercent}%, y ${zone.yPercent}%, largura ${zone.widthPercent}%, altura ${zone.heightPercent}%`).join('; ')}`,
+        `plano de chao claro em ${compositionPlan.groundingRules.groundLinePercent}% da altura, horizonte em ${compositionPlan.groundingRules.horizonPercent}%, perspectiva ${compositionPlan.groundingRules.perspective}, escala coerente e espaco de movimento`, backgroundContinuity,
         'somente ambiente, sem pessoas, personagens, animais, criaturas, mascotes ou veiculos cadastrados; sem texto'].filter(Boolean).join('. ');
       return {
         musicSectionId: skeleton.sectionId, locationKey, index, title: `${skeleton.sectionTitle} - tomada ${skeleton.localIndex + 1}`,
@@ -219,6 +227,9 @@ export class ChildrenClipPlanningService {
         lyricText: skeleton.lyricText, characterVersionIds: allowed.map((item) => item.versionId),
         forbiddenEntityVersionIds: forbidden.map((item) => item.versionId), objects,
         layers: [{ type: 'background', depth: 0, locationKey }, ...allowed.map((entity, entityIndex) => ({ type: ['vehicle', 'object'].includes(entity.type) ? 'entity' : 'character', depth: entityIndex + 1, versionId: entity.versionId, name: entity.name })), { type: 'foreground', depth: 10, optional: true }],
+        characterPlacement: compositionPlan.characterPlacement,
+        backgroundSafeZones: compositionPlan.backgroundSafeZones,
+        groundingRules: compositionPlan.groundingRules,
         motionPreset: motions[index % motions.length]
       };
     });
@@ -231,6 +242,40 @@ export class ChildrenClipPlanningService {
       const rule = rules.find((item) => this.sameText(item.name, character.name));
       return { ...character, type: this.clean(rule?.type) || 'character', identity: this.clean(rule?.identity) || character.description };
     });
+  }
+
+  private compositionPlan(allowed: EntityDescriptor[], generated: CreativeShotPlan, framing: string, index: number) {
+    const defaultXs = allowed.length <= 1 ? [50] : allowed.length === 2 ? [35, 65] : allowed.map((_, itemIndex) => Math.round(20 + (60 * itemIndex) / Math.max(1, allowed.length - 1)));
+    const requested = Array.isArray(generated.characterPlacement) ? generated.characterPlacement : [];
+    const subjects = allowed.map((entity, entityIndex) => {
+      const explicit = requested.find((item) => this.sameText(item.entity, entity.name));
+      return {
+        versionId: entity.versionId,
+        name: entity.name,
+        zone: this.clean(explicit?.zone) || (defaultXs[entityIndex] < 42 ? 'left' : defaultXs[entityIndex] > 58 ? 'right' : 'center'),
+        xPercent: this.percent(explicit?.xPercent, defaultXs[entityIndex]),
+        yPercent: this.percent(explicit?.yPercent, 76),
+        scalePercent: this.percent(explicit?.scalePercent, this.normalize(framing).includes('close') ? 72 : 48),
+        facing: this.clean(explicit?.facing) || (defaultXs[entityIndex] <= 50 ? 'right' : 'left')
+      };
+    });
+    const safeZones = subjects.length ? subjects.map((subject, subjectIndex) => ({
+      name: `character-${subjectIndex + 1}`,
+      xPercent: Math.max(0, subject.xPercent - 14), yPercent: 28,
+      widthPercent: 28, heightPercent: 58,
+      purpose: `espaco limpo para ${subject.name} e seu movimento`
+    })) : [{ name: 'action-center', xPercent: 25, yPercent: 30, widthPercent: 50, heightPercent: 55, purpose: 'area limpa para composicao posterior' }];
+    const grounding = generated.grounding && typeof generated.grounding === 'object' ? generated.grounding : {};
+    return {
+      characterPlacement: { strategy: 'safe-zone-layout', subjects, movementDirection: this.clean(grounding.movementDirection) || (index % 2 === 0 ? 'left-to-right' : 'right-to-left') },
+      backgroundSafeZones: safeZones,
+      groundingRules: {
+        groundLinePercent: this.percent(grounding.groundLinePercent, 78),
+        horizonPercent: this.percent(grounding.horizonPercent, 42),
+        perspective: this.clean(grounding.perspective) || 'gentle eye-level perspective suitable for 2D character compositing',
+        requireContactShadows: true, preserveScaleAcrossLocation: true
+      }
+    };
   }
 
   private introductionShotIndexes(skeletons: ChildrenClipShotSkeleton[], entities: EntityDescriptor[], narrative: Record<string, unknown>) {
@@ -287,4 +332,5 @@ export class ChildrenClipPlanningService {
   private sameText(left: unknown, right: unknown) { const a = this.normalize(left); const b = this.normalize(right); return Boolean(a && b && a === b); }
   private slug(value: string) { return this.normalize(value).replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'location'; }
   private capitalize(value: string) { return value ? `${value.charAt(0).toUpperCase()}${value.slice(1)}` : value; }
+  private percent(value: unknown, fallback: number) { const number = Number(value); return Number.isFinite(number) ? Math.max(0, Math.min(100, Math.round(number))) : fallback; }
 }

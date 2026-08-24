@@ -30,6 +30,11 @@ export class ChildrenClipAssetsController {
     return this.assets.generateMissingBackgrounds(projectId, user.organizationId, user.userId);
   }
 
+  @Post('style-lock/refresh')
+  refreshStyleLock(@CurrentUser() user: AuthenticatedUser, @Param('projectId') projectId: string) {
+    return this.assets.refreshStyleLock(projectId, user.organizationId);
+  }
+
   @Post('shots/:shotId/generate')
   generate(@CurrentUser() user: AuthenticatedUser, @Param('projectId') projectId: string, @Param('shotId') shotId: string, @Body() input: GenerateChildrenClipShotAssetDto) {
     return this.assets.generate(projectId, shotId, user.organizationId, user.userId, input);

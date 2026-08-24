@@ -19,8 +19,16 @@ const context = (role: ShotPromptContext['role']): ShotPromptContext => ({
     characterVersionIds: ['alba-v1'],
     forbiddenEntityVersionIds: ['futuro-v1'],
     objects: []
+    ,backgroundSafeZones: [{ name: 'character-1', xPercent: 30, yPercent: 25, widthPercent: 35, heightPercent: 60 }]
+    ,groundingRules: { groundLinePercent: 78, horizonPercent: 42, perspective: 'eye-level' }
   },
   visualBible: { style: '2D colorido', characterRules: [{ name: 'Futuro', identity: 'nao enviar' }] },
+  styleProfile: {
+    status: 'locked', versionNumber: 2,
+    profile: { medium: 'flat 2D cel animation', palette: ['#FFCC00', '#55AAEE'], maxBackgroundDetail: 'simple', characterDetail: { edgeDensity: 0.06 } },
+    negativeConstraints: ['busy texture', 'style drift'],
+    styleReferenceAssetIds: ['asset-a', 'asset-b']
+  },
   narrative: { summary: 'Resumo global da aventura inteira.' },
   entities: [
     { versionId: 'alba-v1', name: 'Alba', type: 'character', identity: 'Guia de roupa amarela', referenceAsset: { id: 'asset-a', storagePath: 'a.png' } },
@@ -43,6 +51,22 @@ describe('ChildrenClipShotPromptService', () => {
     expect(result.positivePrompt).not.toContain('Alba');
     expect(result.positivePrompt).not.toContain('Futuro');
     expect(result.positivePrompt).toContain('background plate');
+    expect(result.positivePrompt).toContain('project style lock version 2');
+    expect(result.positivePrompt).toContain('safe zones');
+    expect(result.negativePrompt).toContain('busy texture');
+    expect(result.styleReferenceAssetIds).toEqual(['asset-a', 'asset-b']);
+  });
+
+  it('uses only an approved location master as background content reference', () => {
+    const input = context('background');
+    input.shot.location = { masterBackgroundAsset: { id: 'master-bg', storagePath: 'master.png' } };
+    const result = new ChildrenClipShotPromptService().build(input);
+    expect(result.referenceAssets).toEqual([{ id: 'master-bg', storagePath: 'master.png', purpose: 'location-content' }]);
+    expect(result.referenceAssets.some((item) => item.id === 'asset-a')).toBe(false);
+  });
+
+  it('refuses background generation without an active style lock', () => {
+    expect(() => new ChildrenClipShotPromptService().build({ ...context('background'), styleProfile: null })).toThrow(/Style Lock/);
   });
 
   it('rejects an entity baked into a background and a copied global summary', () => {

@@ -7,12 +7,14 @@ import { ChildrenClipQueueService } from '../../jobs/services/children-clip-queu
 import type { GenerateChildrenClipPlanDto } from '../dtos/generate-children-clip-plan.dto';
 import type { UpdateChildrenClipPlanDto } from '../dtos/update-children-clip-plan.dto';
 import type { UpdateChildrenClipShotDto } from '../dtos/update-children-clip-shot.dto';
+import { ChildrenClipStyleProfileService } from './children-clip-style-profile.service';
 
 @Injectable()
 export class ChildrenClipPlanService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(ChildrenClipQueueService) private readonly queue: ChildrenClipQueueService
+    @Inject(ChildrenClipQueueService) private readonly queue: ChildrenClipQueueService,
+    @Inject(ChildrenClipStyleProfileService) private readonly styles: ChildrenClipStyleProfileService
   ) {}
 
   async get(projectId: string, organizationId: string) {
@@ -100,6 +102,7 @@ export class ChildrenClipPlanService {
         }
       })
     ]);
+    await this.styles.lock(projectId);
     return this.get(projectId, organizationId);
   }
 

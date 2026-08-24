@@ -24,6 +24,9 @@ describe('ChildrenClipPlanningService', () => {
     result.shots.slice(1).forEach((shot, index) => expect(shot.startSeconds).toBe(result.shots[index].endSeconds));
     expect(result.shots.some((shot) => shot.lyricText === 'Vamos plantar')).toBe(true);
     expect(result.visualBible.characterRules).toEqual(expect.arrayContaining([expect.objectContaining({ approvedVersionId: 'v1' })]));
+    expect(result.shots.every((shot) => shot.backgroundSafeZones.length > 0)).toBe(true);
+    expect(result.shots.every((shot) => Number(shot.groundingRules.groundLinePercent) > Number(shot.groundingRules.horizonPercent))).toBe(true);
+    expect(result.shots.every((shot) => shot.backgroundPrompt.includes('reservar areas vazias'))).toBe(true);
   });
 
   it('falls back safely when the model returns sectionPlans with the wrong shape', () => {

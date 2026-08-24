@@ -16,6 +16,7 @@ import { ChildrenClipPlanService } from './services/children-clip-plan.service';
 import { ChildrenClipAssetsService } from './services/children-clip-assets.service';
 import { ChildrenClipAnimationService } from './services/children-clip-animation.service';
 import { ChildrenClipOutputService } from './services/children-clip-output.service';
+import { ChildrenClipStyleProfileService } from './services/children-clip-style-profile.service';
 import { ImageUploadPolicyService } from './services/image-upload-policy.service';
 import { LocalStorageService } from './services/local-storage.service';
 import { ProjectPresenter } from './services/project.presenter';
@@ -32,6 +33,7 @@ import { TrackUploadPolicyService } from './services/track-upload-policy.service
     ChildrenClipAssetsService,
     ChildrenClipAnimationService,
     ChildrenClipOutputService,
+    ChildrenClipStyleProfileService,
     ProjectsService,
     LocalStorageService,
     ImageUploadPolicyService,

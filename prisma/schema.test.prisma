@@ -109,6 +109,11 @@ enum ChildrenClipShotAssetStatus {
   failed
 }
 
+enum ChildrenClipStyleLockStatus {
+  locked
+  stale
+}
+
 enum ChildrenClipShotRenderStatus {
   queued
   rendering
@@ -326,6 +331,7 @@ model Project {
   childrenClipAudioAnalysis ChildrenClipAudioAnalysis?
   childrenClipLyricCues     ChildrenClipLyricCue[]
   childrenClipPlan          ChildrenClipPlan?
+  childrenClipStyleProfile  ChildrenClipStyleProfile?
   childrenClipShots         ChildrenClipShot[]
   childrenClipLocations     ChildrenClipLocation[]
   characterLinks            ProjectCharacter[]
@@ -484,30 +490,31 @@ model ScenePrompt {
 }
 
 model Asset {
-  id                      String                         @id @default(cuid())
-  organizationId          String
-  projectId               String
-  type                    AssetType
-  mimeType                String
-  storagePath             String
-  sizeBytes               Int
-  width                   Int?
-  height                  Int?
-  metadata                Json?
-  createdAt               DateTime                       @default(now())
-  updatedAt               DateTime                       @updatedAt
-  organization            Organization                   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  project                 Project                        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  render                  Render?
-  storyboardVisualFor     Storyboard[]                   @relation("StoryboardVisualAsset")
-  sceneVideoFor           Scene[]                        @relation("SceneVideoAsset")
-  sceneReferenceImageFor  Scene[]                        @relation("SceneReferenceImageAsset")
-  sourceImageFor          Project?                       @relation("ProjectSourceImageAsset")
-  characterAssets         CharacterAsset[]
-  childrenClipShotAsset   ChildrenClipShotAsset?
-  childrenClipShotRender  ChildrenClipShotRenderAttempt?
-  childrenClipHeroShot    ChildrenClipHeroShotAttempt?
-  childrenClipFinalRender ChildrenClipFinalRender?
+  id                          String                         @id @default(cuid())
+  organizationId              String
+  projectId                   String
+  type                        AssetType
+  mimeType                    String
+  storagePath                 String
+  sizeBytes                   Int
+  width                       Int?
+  height                      Int?
+  metadata                    Json?
+  createdAt                   DateTime                       @default(now())
+  updatedAt                   DateTime                       @updatedAt
+  organization                Organization                   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project                     Project                        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  render                      Render?
+  storyboardVisualFor         Storyboard[]                   @relation("StoryboardVisualAsset")
+  sceneVideoFor               Scene[]                        @relation("SceneVideoAsset")
+  sceneReferenceImageFor      Scene[]                        @relation("SceneReferenceImageAsset")
+  sourceImageFor              Project?                       @relation("ProjectSourceImageAsset")
+  characterAssets             CharacterAsset[]
+  childrenClipShotAsset       ChildrenClipShotAsset?
+  childrenClipShotRender      ChildrenClipShotRenderAttempt?
+  childrenClipHeroShot        ChildrenClipHeroShotAttempt?
+  childrenClipFinalRender     ChildrenClipFinalRender?
+  childrenClipLocationMasters ChildrenClipLocation[]         @relation("ChildrenClipLocationMasterAsset")
 
   @@index([organizationId, projectId, type])
 }
@@ -593,65 +600,91 @@ model ChildrenClipPlan {
   @@index([status, updatedAt])
 }
 
+model ChildrenClipStyleProfile {
+  id                        String                      @id @default(cuid())
+  projectId                 String                      @unique
+  versionNumber             Int                         @default(1)
+  status                    ChildrenClipStyleLockStatus @default(locked)
+  profile                   Json
+  negativeConstraints       Json
+  styleReferenceAssetIds    Json
+  sourceCharacterVersionIds Json
+  sourceFingerprint         String
+  lockedAt                  DateTime                    @default(now())
+  staleAt                   DateTime?
+  staleReason               String?
+  createdAt                 DateTime                    @default(now())
+  updatedAt                 DateTime                    @updatedAt
+  project                   Project                     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([status, updatedAt])
+}
+
 model ChildrenClipLocation {
-  id              String             @id @default(cuid())
-  projectId       String
-  key             String
-  name            String
-  description     String
-  timeOfDay       String?
-  visualPrompt    String
-  continuityRules Json?
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
-  project         Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  shots           ChildrenClipShot[]
+  id                      String             @id @default(cuid())
+  projectId               String
+  key                     String
+  name                    String
+  description             String
+  timeOfDay               String?
+  visualPrompt            String
+  continuityRules         Json?
+  masterBackgroundAssetId String?
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+  project                 Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  masterBackgroundAsset   Asset?             @relation("ChildrenClipLocationMasterAsset", fields: [masterBackgroundAssetId], references: [id], onDelete: SetNull)
+  shots                   ChildrenClipShot[]
 
   @@unique([projectId, key])
   @@index([projectId])
+  @@index([masterBackgroundAssetId])
 }
 
 model ChildrenClipShot {
-  id                  String                          @id @default(cuid())
-  projectId           String
-  musicSectionId      String?
-  locationId          String?
-  index               Int
-  title               String
-  description         String
-  purpose             String                  @default("")
-  primaryFocus        String?
-  timeOfDay           String?
-  emotion             String?
-  motionIntent        String?
+  id                         String                          @id @default(cuid())
+  projectId                  String
+  musicSectionId             String?
+  locationId                 String?
+  index                      Int
+  title                      String
+  description                String
+  purpose                    String                          @default("")
+  primaryFocus               String?
+  timeOfDay                  String?
+  emotion                    String?
+  motionIntent               String?
   continuityFromPreviousShot String?
-  startSeconds        Float
-  endSeconds          Float
-  durationSeconds     Float
-  status              ChildrenClipShotStatus          @default(draft)
-  renderMode          ChildrenClipRenderMode          @default(animation_2d)
-  framing             String
-  cameraMovement      String
-  characterAction     String
-  environment         String
-  backgroundPrompt    String
-  transitionIn        String?
-  transitionOut       String?
-  lyricText           String?
-  characterVersionIds Json?
-  forbiddenEntityVersionIds Json?
-  objects             Json?
-  layers              Json?
-  motionPreset        String?
-  revisionInstruction String?
-  createdAt           DateTime                        @default(now())
-  updatedAt           DateTime                        @updatedAt
-  project             Project                         @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  musicSection        MusicSection?                   @relation(fields: [musicSectionId], references: [id], onDelete: SetNull)
-  location            ChildrenClipLocation?           @relation(fields: [locationId], references: [id], onDelete: SetNull)
-  assets              ChildrenClipShotAsset[]
-  renderAttempts      ChildrenClipShotRenderAttempt[]
-  heroShotAttempts    ChildrenClipHeroShotAttempt[]
+  startSeconds               Float
+  endSeconds                 Float
+  durationSeconds            Float
+  status                     ChildrenClipShotStatus          @default(draft)
+  renderMode                 ChildrenClipRenderMode          @default(animation_2d)
+  framing                    String
+  cameraMovement             String
+  characterAction            String
+  environment                String
+  backgroundPrompt           String
+  transitionIn               String?
+  transitionOut              String?
+  lyricText                  String?
+  characterVersionIds        Json?
+  forbiddenEntityVersionIds  Json?
+  objects                    Json?
+  layers                     Json?
+  characterPlacement         Json?
+  backgroundSafeZones        Json?
+  groundingRules             Json?
+  motionPreset               String?
+  revisionInstruction        String?
+  createdAt                  DateTime                        @default(now())
+  updatedAt                  DateTime                        @updatedAt
+  project                    Project                         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  musicSection               MusicSection?                   @relation(fields: [musicSectionId], references: [id], onDelete: SetNull)
+  location                   ChildrenClipLocation?           @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  assets                     ChildrenClipShotAsset[]
+  renderAttempts             ChildrenClipShotRenderAttempt[]
+  heroShotAttempts           ChildrenClipHeroShotAttempt[]
 
   @@unique([projectId, index])
   @@index([projectId, startSeconds])
@@ -796,11 +829,11 @@ model Character {
 }
 
 model CharacterVersion {
-  id                    String                 @id @default(cuid())
+  id                    String                  @id @default(cuid())
   characterId           String
   versionNumber         Int
   origin                CharacterVersionOrigin
-  status                CharacterVersionStatus @default(draft)
+  status                CharacterVersionStatus  @default(draft)
   description           String
   generationPrompt      String?
   seed                  Int?
@@ -810,12 +843,12 @@ model CharacterVersion {
   generationMetadata    Json?
   generationStartedAt   DateTime?
   generationCompletedAt DateTime?
-  createdAt             DateTime               @default(now())
-  updatedAt             DateTime               @updatedAt
-  character             Character              @relation("CharacterVersions", fields: [characterId], references: [id], onDelete: Cascade)
-  approvedForCharacters Character[]            @relation("CharacterApprovedVersion")
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  character             Character               @relation("CharacterVersions", fields: [characterId], references: [id], onDelete: Cascade)
+  approvedForCharacters Character[]             @relation("CharacterApprovedVersion")
   assets                CharacterAsset[]
-  projectSelections     ProjectCharacter[]     @relation("ProjectSelectedCharacterVersion")
+  projectSelections     ProjectCharacter[]      @relation("ProjectSelectedCharacterVersion")
   shotAssets            ChildrenClipShotAsset[] @relation("ShotAssetCharacterVersion")
 
   @@unique([characterId, versionNumber])
@@ -824,26 +857,26 @@ model CharacterVersion {
 }
 
 model CharacterAsset {
-  id                 String             @id @default(cuid())
-  characterVersionId String
-  assetId            String?
-  role               CharacterAssetRole
-  origin             CharacterAssetOrigin @default(uploaded)
-  status             CharacterAssetStatus @default(approved)
-  label              String?
-  sortOrder          Int                @default(0)
-  generationPrompt   String?
-  negativePrompt     String?
-  seed               Int?
-  bullJobId          String?
-  generationMetadata Json?
-  errorMessage       String?
+  id                  String               @id @default(cuid())
+  characterVersionId  String
+  assetId             String?
+  role                CharacterAssetRole
+  origin              CharacterAssetOrigin @default(uploaded)
+  status              CharacterAssetStatus @default(approved)
+  label               String?
+  sortOrder           Int                  @default(0)
+  generationPrompt    String?
+  negativePrompt      String?
+  seed                Int?
+  bullJobId           String?
+  generationMetadata  Json?
+  errorMessage        String?
   generationStartedAt DateTime?
-  generationEndedAt  DateTime?
-  approvedAt         DateTime?
-  createdAt          DateTime           @default(now())
-  characterVersion   CharacterVersion   @relation(fields: [characterVersionId], references: [id], onDelete: Cascade)
-  asset              Asset?             @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  generationEndedAt   DateTime?
+  approvedAt          DateTime?
+  createdAt           DateTime             @default(now())
+  characterVersion    CharacterVersion     @relation(fields: [characterVersionId], references: [id], onDelete: Cascade)
+  asset               Asset?               @relation(fields: [assetId], references: [id], onDelete: Cascade)
 
   @@unique([characterVersionId, assetId])
   @@index([characterVersionId, role])

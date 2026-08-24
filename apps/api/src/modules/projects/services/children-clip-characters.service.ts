@@ -14,13 +14,15 @@ import type { UploadCharacterAssetDto } from '../dtos/upload-character-asset.dto
 import type { AttachLibraryCharacterDto } from '../dtos/attach-library-character.dto';
 import type { GenerateCharacterAssetDto } from '../dtos/generate-character-asset.dto';
 import { LocalStorageService } from './local-storage.service';
+import { ChildrenClipStyleProfileService } from './children-clip-style-profile.service';
 
 @Injectable()
 export class ChildrenClipCharactersService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(LocalStorageService) private readonly storage: LocalStorageService,
-    @Inject(ChildrenClipQueueService) private readonly queue: ChildrenClipQueueService
+    @Inject(ChildrenClipQueueService) private readonly queue: ChildrenClipQueueService,
+    @Inject(ChildrenClipStyleProfileService) private readonly styles: ChildrenClipStyleProfileService
   ) {}
 
   async list(projectId: string, organizationId: string) {
@@ -341,6 +343,9 @@ export class ChildrenClipCharactersService {
     if (!record.assetId || (record.status !== CharacterAssetStatus.ready_for_review && record.status !== CharacterAssetStatus.approved)) {
       throw new BadRequestException('O asset precisa estar pronto para revisao');
     }
+    const changesCanonicalSource = record.status !== CharacterAssetStatus.approved && Boolean(await this.prisma.projectCharacter.findFirst({
+      where: { projectId, selectedVersionId: versionId }, select: { id: true }
+    }));
     await this.prisma.$transaction([
       this.prisma.characterAsset.updateMany({
         where: { characterVersionId: versionId, role: record.role, label: record.label, status: CharacterAssetStatus.approved, id: { not: record.id } },
@@ -350,6 +355,9 @@ export class ChildrenClipCharactersService {
         where: { id: record.id }, data: { status: CharacterAssetStatus.approved, approvedAt: new Date(), errorMessage: null }
       })
     ]);
+    if (changesCanonicalSource) {
+      await this.styles.markStale(projectId, 'Um asset aprovado de personagem mudou. Atualize o Style Lock depois de revisar a nova referencia.');
+    }
     return this.getVersion(projectId, characterId, versionId, organizationId);
   }
 
@@ -426,6 +434,10 @@ export class ChildrenClipCharactersService {
         })
       ] : [])
     ]);
+
+    if (previousVersionId && previousVersionId !== versionId) {
+      await this.styles.markStale(projectId, 'A versao aprovada de um personagem mudou. Atualize o Style Lock depois de revisar os novos assets.');
+    }
 
     return this.getVersion(projectId, characterId, versionId, organizationId);
   }
