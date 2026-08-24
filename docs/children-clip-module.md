@@ -272,3 +272,14 @@ O modulo sera considerado completo quando um usuario puder, sem operacao manual 
 - O fallback usa seção, letra sincronizada, story beat, enquadramento e localização; summary/logline global nunca vira descrição de tomada.
 - `Replanejar tomadas` mantém IDs e arquivos existentes. Um background aprovado cujo Shot Plan mudou volta para revisão com motivo explícito, sem apagar o asset.
 - Antes de aprovar ou gerar, o sistema rejeita conflitos allowed/forbidden, entidades desconhecidas ou duplicadas, plano legado sem semântica, descrição igual à narrativa global e background que mencione entidade cadastrada.
+
+#### Project Style Lock e coerência de cenários
+
+- Assets aprovados de personagens são as fontes canônicas. A ordem de precedência persistida é: assets aprovados, Bíblia Visual, texto da tomada e defaults do modelo.
+- Ao aprovar o plano, o sistema cria um `ChildrenClipStyleProfile` versionado. Ele registra IDs e fingerprint das fontes, mede paleta dominante, saturação, contraste e densidade de bordas diretamente dos pixels e combina essas evidências com a Bíblia Visual.
+- O nível de detalhe dos personagens define o máximo permitido no cenário. O prompt inclui explicitamente medium, contorno, shading, textura, direção cromática, métricas medidas e restrições negativas derivadas do projeto.
+- Imagens de personagens são registradas como `styleReferenceAssetIds`, mas nunca são enviadas ao latent `img2img` de background. A integração atual do ComfyUI não separa style de content com segurança; por isso o Style Profile é a camada intermediária obrigatória.
+- Alterar uma fonte aprovada marca o lock como `stale`; nenhuma regeneração o substitui silenciosamente. A Etapa 4 mostra o motivo e oferece atualização explícita, criando uma nova versão.
+- Cada tomada persiste `characterPlacement`, `backgroundSafeZones` e `groundingRules`. O cenário reserva espaço desobstruído, chão, horizonte, perspectiva, escala e direção de movimento para a composição posterior.
+- A primeira imagem de background aprovada torna-se o master imutável da `ChildrenClipLocation`. Novas vistas da mesma Location podem usá-la como referência de conteúdo com denoise controlado, preservando arquitetura, layout, cores, iluminação e perspectiva.
+- Geração widescreen usa resolução 16:9 nativa (`1344x768`); não depende de recorte de uma imagem quadrada.

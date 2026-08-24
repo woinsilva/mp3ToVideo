@@ -325,6 +325,10 @@ class ProjectsService {
     return apiService.request<ChildrenClipProductionAssetsStatus>(`/projects/${projectId}/children-clip/production-assets`, {}, token);
   }
 
+  refreshChildrenClipStyleLock(projectId: string, token: string) {
+    return apiService.request<ChildrenClipProductionAssetsStatus>(`/projects/${projectId}/children-clip/production-assets/style-lock/refresh`, { method: 'POST' }, token);
+  }
+
   generateMissingChildrenClipBackgrounds(projectId: string, token: string) {
     return apiService.request<ChildrenClipProductionAssetsStatus>(`/projects/${projectId}/children-clip/production-assets/generate-missing-backgrounds`, { method: 'POST' }, token);
   }

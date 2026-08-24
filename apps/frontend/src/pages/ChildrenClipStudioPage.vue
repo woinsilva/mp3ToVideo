@@ -225,6 +225,12 @@
           <div><p class="page-eyebrow">Etapa 4</p><h3>Cenarios e assets das tomadas</h3><p>Gere fundos sem personagens, envie elementos próprios e aprove cada versão antes da animação.</p></div>
           <span v-if="productionAssets" class="version-status" :class="{ 'version-status--approved': productionAssets.summary.readyForAnimation }">{{ productionAssets.summary.approvedBackgrounds }}/{{ productionAssets.summary.totalShots }} fundos aprovados</span>
         </div>
+        <v-alert v-if="productionAssets?.styleLock" class="style-lock-card" :type="productionAssets.styleLock.status === 'locked' ? 'success' : 'warning'" variant="tonal">
+          <strong>Project Style Lock v{{ productionAssets.styleLock.versionNumber }} · {{ productionAssets.styleLock.status === 'locked' ? 'ATIVO' : 'DESATUALIZADO' }}</strong>
+          <div>Baseado em {{ productionAssets.styleLock.styleReferenceAssetIds.length }} asset(s) aprovado(s). Estilo: {{ productionAssets.styleLock.profile.medium || 'Bíblia Visual' }} · detalhe máximo do fundo: {{ productionAssets.styleLock.profile.maxBackgroundDetail || 'definido pelo projeto' }}.</div>
+          <div v-if="productionAssets.styleLock.staleReason">{{ productionAssets.styleLock.staleReason }}</div>
+          <button v-if="productionAssets.styleLock.status === 'stale'" class="app-button app-button--secondary" type="button" :disabled="refreshingStyleLock" @click="refreshStyleLock">{{ refreshingStyleLock ? 'Atualizando...' : 'Revisar e atualizar Style Lock' }}</button>
+        </v-alert>
         <div class="production-assets-actions">
           <button class="app-button app-button--secondary" type="button" :disabled="replanningShots" @click="replanShots">{{ replanningShots ? 'Replanejando...' : 'Replanejar tomadas' }}</button>
           <button class="app-button" type="button" :disabled="generatingBackgrounds" @click="generateMissingBackgrounds">{{ generatingBackgrounds ? 'Enfileirando...' : 'Gerar fundos que faltam' }}</button>
@@ -238,6 +244,8 @@
               <p><strong>Letra:</strong> {{ shot.lyricText || 'Trecho instrumental' }}</p>
               <p><strong>Descrição visual:</strong> {{ shot.description }}</p>
               <p><strong>Local:</strong> {{ shot.location?.name || shot.environment }}<span v-if="shot.timeOfDay"> · {{ shot.timeOfDay }}</span></p>
+              <p v-if="shot.location?.masterBackgroundAssetId"><strong>Coerência do local:</strong> cenário mestre aprovado e bloqueado</p>
+              <p><strong>Composição:</strong> {{ shot.backgroundSafeZones?.length || 0 }} zona(s) segura(s) · chão/perspectiva {{ shot.groundingRules ? 'definidos' : 'pendentes' }}</p>
               <p><strong>Foco:</strong> {{ shot.primaryFocus || 'Ambiente' }}</p>
               <p><strong>Permitidos:</strong> {{ entityNames(shot.characterVersionIds) || 'Nenhuma entidade cadastrada' }}</p>
               <p><strong>Proibidos:</strong> {{ entityNames(shot.forbiddenEntityVersionIds) || 'Nenhum' }}</p>
@@ -251,6 +259,7 @@
                 <div v-if="asset.status === 'queued' || asset.status === 'generating'" class="asset-job-progress"><v-progress-linear :model-value="asset.job?.progress || 0" color="warning" /><small>{{ asset.job?.detailMessage || 'Aguardando worker...' }} ({{ asset.job?.progress || 0 }}%)</small></div>
                 <v-alert v-if="asset.errorMessage || asset.job?.errorMessage" density="compact" type="error" variant="tonal">{{ asset.errorMessage || asset.job?.errorMessage }}</v-alert>
                 <v-alert v-if="asset.reviewReason" density="compact" type="warning" variant="tonal">{{ asset.reviewReason }}</v-alert>
+                <v-alert v-if="asset.role === 'background' && !asset.styleCompatible" density="compact" type="warning" variant="tonal">Esta versão é anterior ao Style Lock atual. Gere ou envie uma nova versão e aprove-a para liberar a animação.</v-alert>
                 <div class="version-actions"><button v-if="asset.status === 'ready_for_review'" class="app-button" type="button" @click="approveShotAsset(asset.id)">Aprovar</button><button v-if="asset.status === 'ready_for_review'" class="app-button app-button--secondary" type="button" @click="rejectShotAsset(asset.id)">Rejeitar</button><button v-if="asset.status === 'failed'" class="app-button app-button--secondary" type="button" @click="retryShotAsset(asset.id)">Tentar novamente</button><span v-if="asset.status === 'approved'" class="approved-copy"><v-icon icon="mdi-lock-check" /> Aprovado</span></div>
               </figure>
             </div>
@@ -327,6 +336,7 @@ export default class ChildrenClipStudioPage extends Vue {
   audioStatus: ChildrenClipAudioStatus | null = null;
   planStatus: ChildrenClipPlanStatus | null = null;
   productionAssets: ChildrenClipProductionAssetsStatus | null = null;
+  refreshingStyleLock = false;
   animationStatus: ChildrenClipAnimationStatus | null = null;
   outputStatus: ChildrenClipOutputStatus | null = null;
   visualBibleJson = '';
@@ -644,6 +654,13 @@ export default class ChildrenClipStudioPage extends Vue {
     if (!this.authStore.token) return;
     this.generatingBackgrounds = true;
     try { this.productionAssets = await projectsService.generateMissingChildrenClipBackgrounds(this.projectId, this.authStore.token); } catch (error) { this.captureError(error, 'Falha ao enfileirar os fundos'); } finally { this.generatingBackgrounds = false; }
+  }
+  async refreshStyleLock() {
+    if (!this.authStore.token) return;
+    this.refreshingStyleLock = true;
+    try { this.productionAssets = await projectsService.refreshChildrenClipStyleLock(this.projectId, this.authStore.token); }
+    catch (error) { this.captureError(error, 'Falha ao atualizar o Project Style Lock'); }
+    finally { this.refreshingStyleLock = false; }
   }
   async replanShots() {
     if (!this.authStore.token) return;
