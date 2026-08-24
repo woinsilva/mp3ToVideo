@@ -16,6 +16,11 @@ interface OllamaChatResponse {
   };
 }
 
+interface OllamaStreamChunk extends OllamaChatResponse, OllamaGenerateResponse {
+  done?: boolean;
+  error?: string;
+}
+
 @Injectable()
 export class OllamaClientService {
   private readonly logger = new Logger(OllamaClientService.name);
@@ -49,7 +54,7 @@ export class OllamaClientService {
         },
         body: JSON.stringify({
           model,
-          stream: false,
+          stream: true,
           format: 'json',
           keep_alive: keepAlive,
           think,
@@ -65,11 +70,17 @@ export class OllamaClientService {
         throw new Error(`Ollama request failed with status ${response.status}`);
       }
 
-      const payload = (await response.json()) as OllamaChatResponse | OllamaGenerateResponse;
-      const content =
-        'message' in payload
-          ? payload.message?.content?.trim()
-          : (payload as OllamaGenerateResponse).response?.trim();
+      const rawStream = await response.text();
+      const content = rawStream
+        .split(/\r?\n/)
+        .filter((line) => line.trim())
+        .map((line) => JSON.parse(line) as OllamaStreamChunk)
+        .map((chunk) => {
+          if (chunk.error) throw new Error(`Ollama stream failed: ${chunk.error}`);
+          return chunk.message?.content ?? chunk.response ?? '';
+        })
+        .join('')
+        .trim();
 
       if (!content) {
         throw new Error('Ollama returned an empty response');

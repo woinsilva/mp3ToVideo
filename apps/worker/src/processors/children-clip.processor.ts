@@ -16,7 +16,7 @@ import { OllamaClientService } from '../services/ollama-client.service';
 import { ChildrenClipAudioAnalysisService, type AudioEnergyPoint } from '../services/children-clip-audio-analysis.service';
 import { ChildrenClipLyricsAlignmentService } from '../services/children-clip-lyrics-alignment.service';
 import { MusicStructureService } from '../services/music-structure.service';
-import { ChildrenClipPlanningService, type CreativePlanResponse } from '../services/children-clip-planning.service';
+import { ChildrenClipPlanningService, type CreativePlanResponse, type CreativeShotPlan } from '../services/children-clip-planning.service';
 import { ChildrenClipShotPromptService } from '../services/children-clip-shot-prompt.service';
 import { ChildrenClip2dRendererService } from '../services/children-clip-2d-renderer.service';
 import { VideoMetadataProbeService } from '../services/video-metadata-probe.service';
@@ -27,6 +27,14 @@ import { ChildrenClipCompositionService } from '../services/children-clip-compos
 interface OptimizedCharacterPrompt {
   positivePrompt: string;
   negativePrompt: string;
+}
+
+interface ShotPlanningDraft {
+  version: 1;
+  signature: string;
+  globalCreative?: CreativePlanResponse | null;
+  batches: Array<{ batchIndex: number; response: CreativePlanResponse }>;
+  repairs?: CreativePlanResponse[];
 }
 
 @Injectable()
@@ -502,6 +510,7 @@ export class ChildrenClipProcessor {
       const skeletons = project.childrenClipShots.length
         ? project.childrenClipShots.map((shot) => ({
           index: shot.index,
+          localIndex: project.childrenClipShots.filter((candidate) => candidate.musicSectionId === shot.musicSectionId && candidate.index < shot.index).length,
           sectionId: shot.musicSectionId ?? project.musicSections[0]?.id ?? '',
           sectionTitle: project.musicSections.find((section) => section.id === shot.musicSectionId)?.title ?? 'Secao',
           sectionType: project.musicSections.find((section) => section.id === shot.musicSectionId)?.type ?? 'instrumental',
@@ -513,41 +522,147 @@ export class ChildrenClipProcessor {
           durationSeconds: project.childrenClipAudioAnalysis.durationSeconds!, beatGrid,
           sections: project.musicSections, cues: project.childrenClipLyricCues
         });
-      const creative = await this.withPlanHeartbeat(job, this.ollama.generateJson<CreativePlanResponse>([
-        {
-          role: 'system',
-          content: [
-            'You are a production designer and shot planner for original 2D children music videos.',
-            'Return JSON only with visualBible, narrative, locations and shotPlans.',
-            'Create exactly one semantic shotPlan for every supplied shotIndex.',
-            'Each shot must describe only its synchronized lyric moment, never repeat the global summary or logline.',
-            'Reuse locationKey for shots in the same place. Declare allowedEntities and forbiddenEntities using exact catalog names.',
-            'Respect narrative introduction order: an entity cannot appear before its introduction.',
-            'Backgrounds are composed separately, so shot action may contain entities but locations must describe environment only.',
-            'Entity type vehicle or object is not a human/animal character. Keep actions safe and feasible with layered 2D animation.',
-            mode === 'shots_only' ? 'Preserve the supplied visualBible and narrative; replan only locations and shotPlans.' : ''
-          ].filter(Boolean).join(' ')
-        },
-        {
-          role: 'user',
-          content: JSON.stringify({
-            title: project.title,
-            concept: project.childrenClip.concept,
-            visualStyle: project.childrenClip.visualStyle,
-            audience: [project.childrenClip.audienceAgeMin, project.childrenClip.audienceAgeMax],
-            sections: project.musicSections.map((section) => ({ id: section.id, title: section.title, type: section.type, startSeconds: section.startSeconds, endSeconds: section.endSeconds, lyrics: section.lyricsExcerpt, energy: section.energy })),
-            shots: skeletons,
-            entityCatalog: characters.map((character) => ({ name: character.name, role: character.roleName, description: character.description })),
-            existingVisualBible: project.childrenClipPlan?.visualBible ?? null,
-            existingNarrative: project.childrenClipPlan?.narrative ?? null,
-            revisionInstruction: revisionInstruction || null
-          })
+      const draftSignature = JSON.stringify({
+        mode,
+        revisionInstruction: revisionInstruction || null,
+        planVersion: project.childrenClipPlan?.versionNumber ?? 0,
+        shots: skeletons.map((shot) => [shot.index, shot.sectionId, shot.startSeconds, shot.endSeconds, shot.lyricText])
+      });
+      const jobDataWithDraft = job.data as ChildrenClipPlanGenerationJobPayload & { shotPlanningDraft?: ShotPlanningDraft };
+      const savedDraft = jobDataWithDraft.shotPlanningDraft;
+      const planningDraft: ShotPlanningDraft = savedDraft?.version === 1 && savedDraft.signature === draftSignature
+        ? savedDraft
+        : { version: 1, signature: draftSignature, batches: [] };
+      const persistDraft = async () => job.updateData({ ...job.data, shotPlanningDraft: planningDraft } as ChildrenClipPlanGenerationJobPayload);
+      let globalCreative: CreativePlanResponse | null = planningDraft.globalCreative ?? null;
+      if (mode === 'full' && !project.childrenClipPlan?.visualBible && !globalCreative) {
+        globalCreative = await this.withPlanHeartbeat(job, this.ollama.generateJson<CreativePlanResponse>([
+          {
+            role: 'system',
+            content: 'Return concise JSON with visualBible and narrative for an original safe 2D children music video. visualBible must include style, palette, lighting, backgroundStyle, continuityRules and characterRules with exact name, type and identity. narrative must include summary, storyBeats, characterIntroductionOrder and continuityRules. Do not create shotPlans yet.'
+          },
+          {
+            role: 'user',
+            content: JSON.stringify({
+              title: project.title,
+              concept: this.limitText(project.childrenClip.concept, 1800),
+              visualStyle: this.limitText(project.childrenClip.visualStyle, 800),
+              audience: [project.childrenClip.audienceAgeMin, project.childrenClip.audienceAgeMax],
+              sections: project.musicSections.map((section) => ({ title: section.title, type: section.type, lyrics: this.limitText(section.lyricsExcerpt, 300) })),
+              entities: characters.map((character) => ({ name: character.name, role: character.roleName, description: this.limitText(character.description, 300) })),
+              revisionInstruction: revisionInstruction || null
+            })
+          }
+        ]), 18, 30, 'O Ollama esta estruturando a Biblia Visual e a Narrativa.');
+        if (globalCreative) {
+          planningDraft.globalCreative = globalCreative;
+          await persistDraft();
         }
-      ]));
+      }
+      const baseVisualBible = globalCreative?.visualBible ?? project.childrenClipPlan?.visualBible ?? null;
+      const baseNarrative = globalCreative?.narrative ?? project.childrenClipPlan?.narrative ?? null;
+      const batches = this.shotPlanningBatches(skeletons, 6);
+      const generatedLocations = new Map<string, NonNullable<CreativePlanResponse['locations']>[number]>();
+      const generatedShotPlans: NonNullable<CreativePlanResponse['shotPlans']> = [];
+      for (let batchIndex = 0; batchIndex < batches.length; batchIndex += 1) {
+        const batch = batches[batchIndex];
+        const startProgress = 20 + Math.floor((batchIndex / Math.max(1, batches.length)) * 22);
+        const nextBatchProgress = 20 + Math.floor(((batchIndex + 1) / Math.max(1, batches.length)) * 22);
+        const cachedBatch = planningDraft.batches.find((item) => item.batchIndex === batchIndex);
+        if (cachedBatch) {
+          await this.planProgress(job, startProgress, 'REUSING_SHOT_BATCH', `Reutilizando tomadas ${batch[0].index + 1} a ${batch[batch.length - 1].index + 1} do checkpoint (${batchIndex + 1}/${batches.length}).`);
+          for (const location of cachedBatch.response.locations ?? []) {
+            const key = location.key?.trim().toLowerCase();
+            if (key) generatedLocations.set(key, location);
+          }
+          if (Array.isArray(cachedBatch.response.shotPlans)) generatedShotPlans.push(...cachedBatch.response.shotPlans);
+          continue;
+        }
+        await this.planProgress(job, startProgress, 'PLANNING_SHOT_BATCH', `Planejando tomadas ${batch[0].index + 1} a ${batch[batch.length - 1].index + 1} (${batchIndex + 1}/${batches.length}).`);
+        const response = await this.withPlanHeartbeat(job, this.ollama.generateJson<CreativePlanResponse>([
+          {
+            role: 'system',
+            content: [
+              'Return concise JSON only with locations and shotPlans.',
+              'Create exactly one shotPlan for each supplied shotIndex.',
+              'Every shotPlan must use: shotIndex, purpose, locationKey, locationName, locationDescription, timeOfDay, primaryFocus, allowedEntities, forbiddenEntities, objects, action, composition, camera, emotion, motionIntent, continuityFromPreviousShot.',
+              'Use exact entity names. Respect introduction order. A future entity must be forbidden, never allowed.',
+              'Each action and composition must visualize only that shot lyrics and differ from adjacent shots.',
+              'Reuse a locationKey when the place is unchanged. Location descriptions contain environment only, never entities.',
+              'Do not repeat global summary. Keep values short. Vehicle/object entities are not humans or animals.'
+            ].join(' ')
+          },
+          {
+            role: 'user',
+            content: JSON.stringify({
+              title: project.title,
+              visualContext: this.compactVisualContext(baseVisualBible, project.childrenClip.visualStyle, characters),
+              narrativeContext: this.compactNarrativeContext(baseNarrative, batch.map((item) => item.sectionTitle)),
+              shots: batch,
+              revisionInstruction: revisionInstruction || null
+            })
+          }
+        ]), startProgress, Math.max(startProgress, nextBatchProgress - 1), `O Ollama continua planejando o lote ${batchIndex + 1}/${batches.length}.`);
+        for (const location of response?.locations ?? []) {
+          const key = location.key?.trim().toLowerCase();
+          if (key) generatedLocations.set(key, location);
+        }
+        if (Array.isArray(response?.shotPlans)) generatedShotPlans.push(...response.shotPlans);
+        if (response) {
+          planningDraft.batches.push({ batchIndex, response });
+          await persistDraft();
+        }
+      }
+      for (const savedRepair of planningDraft.repairs ?? []) {
+        const repair = this.normalizeCreativePlanResponse(savedRepair);
+        for (const location of repair.locations ?? []) {
+          const key = location.key?.trim().toLowerCase();
+          if (key) generatedLocations.set(key, location);
+        }
+        if (Array.isArray(repair.shotPlans)) generatedShotPlans.push(...repair.shotPlans);
+      }
+      for (let repairAttempt = 0; repairAttempt < 2; repairAttempt += 1) {
+        const plannedIndexes = new Set(generatedShotPlans.map((shot) => shot.shotIndex).filter((index): index is number => typeof index === 'number'));
+        const missingShots = skeletons.filter((shot) => !plannedIndexes.has(shot.index));
+        if (!missingShots.length) break;
+        await this.planProgress(job, 43 + repairAttempt, 'REPAIRING_SHOT_PLAN', `Completando ${missingShots.length} tomada(s) omitida(s) pelo modelo: ${missingShots.map((shot) => shot.index + 1).join(', ')}.`);
+        const rawRepair = await this.withPlanHeartbeat(job, this.ollama.generateJson<CreativePlanResponse>([
+          {
+            role: 'system',
+            content: [
+              'Return concise JSON only with locations and shotPlans.',
+              'Create exactly one complete shotPlan for every supplied shotIndex; do not return any other index.',
+              'Every shotPlan must use: shotIndex, purpose, locationKey, locationName, locationDescription, timeOfDay, primaryFocus, allowedEntities, forbiddenEntities, objects, action, composition, camera, emotion, motionIntent, continuityFromPreviousShot.',
+              'Use exact entity names, respect introduction order, describe only the synchronized lyric moment, and keep location fields environment-only.'
+            ].join(' ')
+          },
+          {
+            role: 'user',
+            content: JSON.stringify({
+              title: project.title,
+              visualContext: this.compactVisualContext(baseVisualBible, project.childrenClip.visualStyle, characters),
+              narrativeContext: this.compactNarrativeContext(baseNarrative, missingShots.map((item) => item.sectionTitle)),
+              missingShots,
+              adjacentShotPlans: generatedShotPlans.filter((plan) => typeof plan.shotIndex === 'number' && missingShots.some((shot) => Math.abs(shot.index - plan.shotIndex!) === 1)),
+              revisionInstruction: revisionInstruction || null
+            })
+          }
+        ]), 43 + repairAttempt, 44 + repairAttempt, `O Ollama esta completando tomadas omitidas (tentativa ${repairAttempt + 1}/2).`);
+        if (!rawRepair) continue;
+        const repair = this.normalizeCreativePlanResponse(rawRepair);
+        planningDraft.repairs = [...(planningDraft.repairs ?? []), repair];
+        await persistDraft();
+        for (const location of repair.locations ?? []) {
+          const key = location.key?.trim().toLowerCase();
+          if (key) generatedLocations.set(key, location);
+        }
+        if (Array.isArray(repair.shotPlans)) generatedShotPlans.push(...repair.shotPlans);
+      }
+      const creative: CreativePlanResponse | null = globalCreative || generatedShotPlans.length || generatedLocations.size
+        ? { ...globalCreative, locations: [...generatedLocations.values()], shotPlans: generatedShotPlans }
+        : null;
       await this.planProgress(job, 48, 'PLANNING_SECTIONS', `Direcao narrativa definida para ${project.musicSections.length} secoes.`);
-      const planningCreative = creative && mode === 'shots_only'
-        ? { ...creative, visualBible: undefined, narrative: undefined }
-        : creative;
+      const planningCreative = creative && mode === 'shots_only' ? { ...creative, visualBible: undefined, narrative: undefined } : creative;
       const result = this.planning.build({
         title: project.title,
         concept: project.childrenClip.concept,
@@ -560,8 +675,8 @@ export class ChildrenClipProcessor {
         cues: project.childrenClipLyricCues,
         characters,
         creative: planningCreative,
-        existingVisualBible: project.childrenClipPlan?.visualBible,
-        existingNarrative: project.childrenClipPlan?.narrative,
+        existingVisualBible: baseVisualBible,
+        existingNarrative: baseNarrative,
         existingShots: project.childrenClipShots.length ? project.childrenClipShots.map((shot) => ({
           index: shot.index, startSeconds: shot.startSeconds, endSeconds: shot.endSeconds,
           musicSectionId: shot.musicSectionId ?? project.musicSections[0]?.id ?? '', lyricText: shot.lyricText
@@ -628,6 +743,7 @@ export class ChildrenClipProcessor {
         } else {
           await tx.childrenClipShot.createMany({ data: result.shots.map(shotData) });
         }
+        await tx.childrenClipLocation.deleteMany({ where: { projectId, shots: { none: {} } } });
         await tx.childrenClipPlan.update({
           where: { projectId },
           data: {
@@ -639,6 +755,9 @@ export class ChildrenClipProcessor {
               provider: creative ? 'ollama-shot-plans+deterministic-validation' : 'deterministic-shot-fallback',
               mode,
               shotCount: result.shots.length,
+              ollamaBatchCount: batches.length,
+              ollamaShotPlanCount: new Set(generatedShotPlans.map((shot) => shot.shotIndex).filter((index): index is number => typeof index === 'number')).size,
+              deterministicFallbackShotCount: result.shots.length - new Set(generatedShotPlans.map((shot) => shot.shotIndex).filter((index): index is number => typeof index === 'number')).size,
               characterVersionIds: project.characterLinks.map((link) => link.selectedVersion!.id),
               generatedAt: new Date().toISOString()
             },
@@ -1189,11 +1308,17 @@ export class ChildrenClipProcessor {
     this.logger.log(`[${String(job.id)}] ${stage} ${progress}%: ${message}`);
   }
 
-  private async withPlanHeartbeat<T>(job: Job<ChildrenClipPlanGenerationJobPayload>, operation: Promise<T>) {
-    let progress = 18;
+  private async withPlanHeartbeat<T>(
+    job: Job<ChildrenClipPlanGenerationJobPayload>,
+    operation: Promise<T>,
+    initialProgress = 18,
+    maximumProgress = 42,
+    message = 'O Ollama continua estruturando a direcao criativa.'
+  ) {
+    let progress = initialProgress;
     const timer = setInterval(() => {
-      progress = Math.min(42, progress + 3);
-      void this.planProgress(job, progress, 'WAITING_OLLAMA', 'O Ollama continua estruturando a direcao criativa.')
+      progress = Math.min(maximumProgress, progress + 1);
+      void this.planProgress(job, progress, 'WAITING_OLLAMA', message)
         .catch((error) => this.logger.warn(`Could not persist planning heartbeat: ${String(error)}`));
     }, 15_000);
     try {
@@ -1201,6 +1326,77 @@ export class ChildrenClipProcessor {
     } finally {
       clearInterval(timer);
     }
+  }
+
+  private shotPlanningBatches<T extends { index: number }>(shots: T[], maximumShots: number): T[][] {
+    const batches: T[][] = [];
+    for (let index = 0; index < shots.length; index += maximumShots) batches.push(shots.slice(index, index + maximumShots));
+    return batches;
+  }
+
+  private compactVisualContext(
+    value: unknown,
+    fallbackStyle: string,
+    characters: Array<{ name: string; roleName: string | null; description: string }>
+  ) {
+    const bible = this.jsonRecord(value);
+    const rules = Array.isArray(bible.characterRules)
+      ? bible.characterRules.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object' && !Array.isArray(item)))
+      : [];
+    return {
+      style: this.limitText(bible.style, 450) || this.limitText(fallbackStyle, 450),
+      palette: Array.isArray(bible.palette) ? bible.palette.slice(0, 8) : null,
+      lighting: this.limitText(bible.lighting, 260),
+      backgroundStyle: this.limitText(bible.backgroundStyle, 320),
+      entities: characters.map((character) => {
+        const rule = rules.find((item) => String(item.name ?? '').toLowerCase() === character.name.toLowerCase());
+        return {
+          name: character.name,
+          type: typeof rule?.type === 'string' ? rule.type : 'character',
+          role: this.limitText(character.roleName, 140),
+          identity: this.limitText(typeof rule?.identity === 'string' ? rule.identity : character.description, 240)
+        };
+      })
+    };
+  }
+
+  private normalizeCreativePlanResponse(value: CreativePlanResponse): CreativePlanResponse {
+    const record = value as unknown as Record<string, unknown>;
+    if (typeof record.shotIndex === 'number') return { shotPlans: [record as unknown as CreativeShotPlan] };
+    return value;
+  }
+
+  private compactNarrativeContext(value: unknown, sectionTitles: string[]) {
+    const narrative = this.jsonRecord(value);
+    const normalizedSections = new Set(sectionTitles.map((item) => item.toLowerCase()));
+    const storyBeats = Array.isArray(narrative.storyBeats)
+      ? narrative.storyBeats.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object' && !Array.isArray(item)))
+        .filter((item) => typeof item.section !== 'string' || normalizedSections.has(item.section.toLowerCase()))
+        .map((item) => ({
+          section: item.section,
+          focus: item.focus,
+          purpose: this.limitText(item.purpose, 180),
+          visualGuidance: this.limitText(item.visualGuidance, 320)
+        }))
+      : [];
+    return {
+      storyBeats,
+      characterIntroductionOrder: Array.isArray(narrative.characterIntroductionOrder) ? narrative.characterIntroductionOrder : [],
+      entityIntroductions: Array.isArray(narrative.entityIntroductions) ? narrative.entityIntroductions : [],
+      continuityRules: Array.isArray(narrative.continuityRules)
+        ? narrative.continuityRules.filter((item): item is string => typeof item === 'string').slice(0, 12).map((item) => this.limitText(item, 220))
+        : []
+    };
+  }
+
+  private jsonRecord(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  }
+
+  private limitText(value: unknown, maximumLength: number): string | null {
+    if (typeof value !== 'string' || !value.trim()) return null;
+    const text = value.trim();
+    return text.length > maximumLength ? `${text.slice(0, maximumLength - 3)}...` : text;
   }
 
   private numberArray(value: Prisma.JsonValue | null): number[] {

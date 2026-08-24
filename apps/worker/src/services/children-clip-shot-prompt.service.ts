@@ -62,16 +62,20 @@ export class ChildrenClipShotPromptService {
     if (context.role === 'background') {
       const namedEntity = context.entities.find((entity) => this.containsName(basePrompt, entity.name));
       if (namedEntity) throw new Error(`Background-only nao pode solicitar a entidade ${namedEntity.name}`);
+      const safeStyle = this.withoutNamedFragments(style, context.entities.map((entity) => entity.name));
+      const positivePrompt = [
+        'original polished 2D children animation background plate, clean layered environment, clear foreground middle ground and background',
+        safeStyle,
+        basePrompt,
+        context.shot.timeOfDay,
+        context.shot.continuityFromPreviousShot,
+        `environmental composition only: ${context.shot.framing}; ${context.shot.cameraMovement}`,
+        'empty staging area for later 2D composition; no registered entities; no characters; no vehicles; no text'
+      ].filter(Boolean).join(', ');
+      const leakedEntity = context.entities.find((entity) => this.containsName(positivePrompt, entity.name));
+      if (leakedEntity) throw new Error(`Background-only positivo inclui a entidade ${leakedEntity.name}`);
       return {
-        positivePrompt: [
-          'original polished 2D children animation background plate, clean layered environment, clear foreground middle ground and background',
-          style,
-          basePrompt,
-          context.shot.timeOfDay,
-          context.shot.continuityFromPreviousShot,
-          `environmental composition only: ${context.shot.framing}; ${context.shot.cameraMovement}`,
-          'empty staging area for later 2D composition; no registered entities; no characters; no vehicles; no text'
-        ].filter(Boolean).join(', '),
+        positivePrompt,
         negativePrompt: [
           'person, people, child, human, character, animal, creature, mascot, vehicle, duplicate subject',
           ...context.entities.map((item) => item.name),
@@ -134,5 +138,10 @@ export class ChildrenClipShotPromptService {
   private unique(values: string[]) { return [...new Set(values)]; }
   private normalize(value: unknown) { return typeof value === 'string' ? value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim() : ''; }
   private containsName(text: string, name: string) { const target = this.normalize(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); return target.length > 1 && new RegExp(`(^|[^a-z0-9])${target}($|[^a-z0-9])`).test(this.normalize(text)); }
+  private withoutNamedFragments(value: string, names: string[]) {
+    return value.split(/(?<=[.!?;])\s+|,\s+/)
+      .filter((fragment) => fragment.trim() && !names.some((name) => this.containsName(fragment, name)))
+      .join(', ');
+  }
   private limit(value: string, length: number) { return value.length > length ? `${value.slice(0, length - 3)}...` : value; }
 }

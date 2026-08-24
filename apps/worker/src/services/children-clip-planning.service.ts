@@ -143,9 +143,9 @@ export class ChildrenClipPlanningService {
     const framings = ['plano geral', 'plano medio', 'close-up', 'plano conjunto'];
     const cameras = ['panoramica suave', 'aproximacao lenta', 'camera fixa com parallax', 'acompanhamento lateral'];
     const motions = ['gentle-bounce', 'sway-on-beat', 'walk-cycle', 'celebration-loop'];
-    const style = this.shortText(visualBible.style, input.visualStyle);
-    const backgroundStyle = this.shortText(visualBible.backgroundStyle, 'cenario infantil 2D em camadas');
-    const lighting = this.shortText(visualBible.lighting, 'luz suave e alegre');
+    const style = this.environmentOnlyText(visualBible.style, entities, input.visualStyle, 'arte infantil 2D original, colorida e limpa');
+    const backgroundStyle = this.environmentOnlyText(visualBible.backgroundStyle, entities, null, 'cenario infantil 2D em camadas');
+    const lighting = this.environmentOnlyText(visualBible.lighting, entities, null, 'luz suave e alegre');
     const storyBeats = this.arrayOfRecords(narrative.storyBeats);
 
     const shots = skeletons.map((skeleton, arrayIndex): PlannedChildrenClipShot => {
@@ -157,13 +157,14 @@ export class ChildrenClipPlanningService {
       const locationKey = this.slug(generated.locationKey || skeleton.sectionTitle || skeleton.sectionType);
       const creativeLocation = Array.isArray(input.creative?.locations)
         ? input.creative.locations.find((item) => this.slug(item.key || item.name || '') === locationKey) : undefined;
-      const locationName = this.clean(generated.locationName) || this.clean(creativeLocation?.name) || this.clean(skeleton.sectionTitle) || 'Cenario principal';
-      const locationDescription = this.clean(generated.locationDescription) || this.clean(creativeLocation?.description) || this.clean(legacySectionPlan?.environment) ||
-        `Ambiente infantil associado a secao ${skeleton.sectionTitle}, com formas simples e leitura visual clara`;
-      const timeOfDay = this.clean(generated.timeOfDay) || this.clean(creativeLocation?.timeOfDay) || 'iluminacao clara e consistente';
+      const locationName = this.environmentOnlyText(generated.locationName, entities, creativeLocation?.name,
+        `Cenario ${skeleton.sectionType || 'principal'}`);
+      const locationDescription = this.environmentOnlyText(generated.locationDescription, entities, creativeLocation?.description,
+        `Ambiente infantil da secao ${skeleton.sectionTitle}, com formas simples e leitura visual clara`);
+      const timeOfDay = this.environmentOnlyText(generated.timeOfDay, entities, creativeLocation?.timeOfDay, 'iluminacao clara e consistente');
       if (!locations.has(locationKey)) locations.set(locationKey, {
         key: locationKey, name: locationName, description: locationDescription, timeOfDay,
-        visualPrompt: this.clean(creativeLocation?.visualPrompt) || `${locationDescription}. ${timeOfDay}. ${backgroundStyle}.`,
+        visualPrompt: this.environmentOnlyText(creativeLocation?.visualPrompt, entities, null, `${locationDescription}. ${timeOfDay}. ${backgroundStyle}.`),
         continuityRules: this.stringArray(creativeLocation?.continuityRules).length ? this.stringArray(creativeLocation?.continuityRules) : ['manter arquitetura, paleta, iluminacao, vegetacao e orientacao espacial entre tomadas']
       });
 
@@ -202,8 +203,11 @@ export class ChildrenClipPlanningService {
         forbiddenNames.length ? `Nao aparecem: ${forbiddenNames.join(', ')}.` : null
       ].filter(Boolean).join(' ');
       const location = locations.get(locationKey)!;
+      const backgroundContinuity = this.environmentOnlyText(continuity, entities, null, '');
+      const backgroundFraming = this.environmentOnlyText(framing, entities, null, 'plano geral do ambiente');
+      const backgroundCamera = this.environmentOnlyText(camera, entities, null, 'camera ambiental fixa com parallax suave');
       const backgroundPrompt = [style, backgroundStyle, lighting, `background plate vazio de ${location.name}: ${location.visualPrompt}`,
-        `enquadramento ambiental: ${framing}; camera: ${camera}`, continuity,
+        `enquadramento ambiental: ${backgroundFraming}; camera: ${backgroundCamera}`, backgroundContinuity,
         'somente ambiente, sem pessoas, personagens, animais, criaturas, mascotes ou veiculos cadastrados; sem texto'].filter(Boolean).join('. ');
       return {
         musicSectionId: skeleton.sectionId, locationKey, index, title: `${skeleton.sectionTitle} - tomada ${skeleton.localIndex + 1}`,
@@ -267,6 +271,17 @@ export class ChildrenClipPlanningService {
   private uniqueStrings(values: string[]) { return [...new Map(values.map((value) => [this.normalize(value), value.trim()])).values()].filter(Boolean); }
   private clean(value: unknown): string { return typeof value === 'string' ? value.trim() : ''; }
   private shortText(value: unknown, fallback: string) { const text = this.clean(value) || fallback; return text.length > 700 ? `${text.slice(0, 697)}...` : text; }
+  private environmentOnlyText(value: unknown, entities: EntityDescriptor[], secondary: unknown, fallback: string) {
+    for (const candidate of [value, secondary, fallback]) {
+      const text = this.clean(candidate);
+      if (!text) continue;
+      const safe = text.split(/(?<=[.!?;])\s+|,\s+/)
+        .filter((fragment) => fragment.trim() && !entities.some((entity) => this.containsName(this.normalize(fragment), entity.name)))
+        .join(', ').trim();
+      if (safe) return this.shortText(safe, fallback);
+    }
+    return fallback;
+  }
   private normalize(value: unknown): string { return typeof value === 'string' ? value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim() : ''; }
   private containsName(normalizedText: string, name: string) { const target = this.normalize(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); return target.length > 1 && new RegExp(`(^|[^a-z0-9])${target}($|[^a-z0-9])`).test(normalizedText); }
   private sameText(left: unknown, right: unknown) { const a = this.normalize(left); const b = this.normalize(right); return Boolean(a && b && a === b); }

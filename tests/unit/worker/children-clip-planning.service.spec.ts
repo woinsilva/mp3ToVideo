@@ -115,4 +115,26 @@ describe('ChildrenClipPlanningService', () => {
     expect(() => service.validate(result.shots, [{ name: 'A', roleName: null, versionId: 'v1', description: 'A' }], result.narrative))
       .toThrow(/permitida e proibida/);
   });
+
+  it('removes model entity leakage from reusable location and background fields', () => {
+    const service = new ChildrenClipPlanningService();
+    const result = service.build({
+      title: 'Viagem', concept: 'Uma viagem musical', visualStyle: '2D colorido', audienceAgeMin: 2, audienceAgeMax: 6,
+      durationSeconds: 7, beatGrid: [0, 7],
+      sections: [{ id: 's1', title: 'Intro', type: 'intro', startSeconds: 0, endSeconds: 7, lyricsExcerpt: 'partiu', energy: 0.5 }],
+      cues: [], characters: [{ name: 'Lia', roleName: 'Guia', versionId: 'lia-v1', description: 'menina guia' }],
+      creative: {
+        visualBible: { style: '2D colorido. Lia sempre usa amarelo.', backgroundStyle: 'camadas suaves, Lia no centro' },
+        narrative: { storyBeats: [{ section: 'Intro', focus: ['Lia'] }] },
+        locations: [{ key: 'estacao', name: 'Estacao', description: 'Lia espera na plataforma. Trilhos entre colinas.', visualPrompt: 'Lia acena, plataforma de madeira' }],
+        shotPlans: [{ shotIndex: 0, locationKey: 'estacao', locationDescription: 'Lia entra no trem. Estacao com relogio azul.', allowedEntities: ['Lia'], action: 'Lia acena', composition: 'plano medio com Lia no centro', camera: 'camera acompanha Lia pela plataforma', continuityFromPreviousShot: 'manter Lia no mesmo lado' }]
+      }
+    });
+    expect(result.locations[0].description).toContain('Estacao com relogio azul');
+    expect(result.locations[0].description).not.toContain('Lia');
+    expect(result.shots[0].backgroundPrompt).not.toMatch(/Lia/i);
+    expect(result.shots[0].description).toMatch(/Lia/i);
+    expect(result.shots[0].framing).toContain('Lia');
+    expect(result.shots[0].cameraMovement).toContain('Lia');
+  });
 });
