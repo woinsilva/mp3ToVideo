@@ -229,7 +229,9 @@ export class ChildrenClipProcessor {
       for (let index = 0; index < characterLinks.length; index += 1) {
         const link = characterLinks[index];
         const version = link.selectedVersion!;
-        const pose = poseAssets[index]?.asset ?? version.assets.find((item) => item.role === 'pose')?.asset ?? version.assets.find((item) => item.role === 'primary_reference')?.asset;
+        const pose = poseAssets.find((item) => item.characterVersionId === version.id)?.asset
+          ?? version.assets.find((item) => item.role === 'pose')?.asset
+          ?? version.assets.find((item) => item.role === 'primary_reference')?.asset;
         if (!pose) continue;
         const mouths = version.assets.filter((item) => item.role === 'mouth_shape');
         const mouthSources = new Map<string, string>();

@@ -276,7 +276,7 @@ describe('Projects integration', () => {
         name: 'Bibi',
         description: 'Coelhinha branca de vestido amarelo, orelhas rosas e tenis azuis.',
         sourceMode: 'uploaded',
-        scope: 'project',
+        scope: 'organization',
         roleName: 'Protagonista',
         invariants: ['vestido amarelo', 'orelhas rosas', 'tenis azuis']
       })
@@ -324,6 +324,43 @@ describe('Projects integration', () => {
       approvedVersionId: versionId,
       selectedVersionId: versionId
     });
+
+    await request(app.getHttpServer())
+      .post(`/projects/${projectResponse.body.id}/children-clip/characters/${characterId}/versions/${versionId}/assets`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .field('role', 'mouth_shape')
+      .attach('file', png, { filename: 'mouth.png', contentType: 'image/png' })
+      .expect(400);
+    await request(app.getHttpServer())
+      .post(`/projects/${projectResponse.body.id}/children-clip/characters/${characterId}/versions/${versionId}/assets`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .field('role', 'mouth_shape')
+      .field('label', 'A')
+      .attach('file', png, { filename: 'mouth-a.png', contentType: 'image/png' })
+      .expect(201)
+      .expect(({ body }) => expect(body.assets.some((asset: { role: string; label: string }) => asset.role === 'mouth_shape' && asset.label === 'A')).toBe(true));
+
+    const secondProject = await request(app.getHttpServer())
+      .post('/projects')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({
+        title: 'Outro clipe da Bibi', generationMode: 'children_clip', manualLyricsText: 'Bibi vai cantar',
+        childrenClipConcept: 'Bibi visita um parque musical cheio de cores.',
+        childrenClipVisualStyle: 'Animacao 2D infantil colorida e original.',
+        audienceAgeMin: 2, audienceAgeMax: 7, childrenClipAspectRatio: 'landscape_16_9'
+      })
+      .expect(201);
+    await request(app.getHttpServer())
+      .get(`/projects/${secondProject.body.id}/children-clip/characters/library`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .expect(200)
+      .expect(({ body }) => expect(body[0]).toMatchObject({ id: characterId, approvedVersionId: versionId }));
+    await request(app.getHttpServer())
+      .post(`/projects/${secondProject.body.id}/children-clip/characters/library/${characterId}/attach`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ roleName: 'Protagonista convidada' })
+      .expect(201)
+      .expect(({ body }) => expect(body).toMatchObject({ id: characterId, selectedVersionId: versionId, roleName: 'Protagonista convidada' }));
 
     await prisma.childrenClipAudioAnalysis.create({
       data: {
@@ -389,6 +426,19 @@ describe('Projects integration', () => {
         expect(body.shots[0].assets[0].status).toBe('approved');
         expect(body.summary).toMatchObject({ totalShots: 2, approvedBackgrounds: 1, readyForAnimation: false });
       });
+    const poseResponse = await request(app.getHttpServer())
+      .post(`/projects/${projectResponse.body.id}/children-clip/production-assets/shots/${shots[0].id}/upload`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .field('role', 'character_pose')
+      .field('characterVersionId', versionId)
+      .attach('file', png, { filename: 'bibi-plantando.png', contentType: 'image/png' })
+      .expect(201);
+    const poseAsset = poseResponse.body.shots[0].assets.find((asset: { role: string }) => asset.role === 'character_pose');
+    expect(poseAsset).toMatchObject({ characterVersionId: versionId, status: 'ready_for_review' });
+    await request(app.getHttpServer())
+      .post(`/projects/${projectResponse.body.id}/children-clip/production-assets/${poseAsset.id}/approve`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .expect(201);
     await request(app.getHttpServer())
       .get(`/projects/${projectResponse.body.id}/children-clip/production-assets/${shotAsset.id}/file`)
       .set('Authorization', `Bearer ${authToken}`)

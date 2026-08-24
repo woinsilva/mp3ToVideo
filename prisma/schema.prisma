@@ -614,6 +614,7 @@ model ChildrenClipShotAsset {
   id                  String                      @id @default(cuid())
   shotId              String
   assetId             String?                     @unique
+  characterVersionId  String?
   role                ChildrenClipShotAssetRole
   origin              ChildrenClipShotAssetOrigin
   status              ChildrenClipShotAssetStatus @default(draft)
@@ -632,9 +633,11 @@ model ChildrenClipShotAsset {
   updatedAt           DateTime                    @updatedAt
   shot                ChildrenClipShot            @relation(fields: [shotId], references: [id], onDelete: Cascade)
   asset               Asset?                      @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  characterVersion    CharacterVersion?           @relation("ShotAssetCharacterVersion", fields: [characterVersionId], references: [id], onDelete: SetNull)
 
   @@unique([shotId, role, versionNumber])
   @@index([shotId, role, status])
+  @@index([characterVersionId])
   @@index([bullJobId])
 }
 
@@ -763,6 +766,7 @@ model CharacterVersion {
   approvedForCharacters Character[]            @relation("CharacterApprovedVersion")
   assets                CharacterAsset[]
   projectSelections     ProjectCharacter[]     @relation("ProjectSelectedCharacterVersion")
+  shotAssets            ChildrenClipShotAsset[] @relation("ShotAssetCharacterVersion")
 
   @@unique([characterId, versionNumber])
   @@index([characterId, status])

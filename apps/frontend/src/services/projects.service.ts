@@ -2,6 +2,7 @@ import { apiService } from '@/services/api.service';
 import type {
   CharacterAssetRole,
   ChildrenClipCharacter,
+  ChildrenClipLibraryCharacter,
   ChildrenClipCharacterVersion,
   ChildrenClipAudioStatus,
   ChildrenClipPlanStatus,
@@ -201,6 +202,16 @@ class ProjectsService {
     return apiService.request<ChildrenClipCharacter[]>(`/projects/${projectId}/children-clip/characters`, {}, token);
   }
 
+  listChildrenClipCharacterLibrary(projectId: string, token: string) {
+    return apiService.request<ChildrenClipLibraryCharacter[]>(`/projects/${projectId}/children-clip/characters/library`, {}, token);
+  }
+
+  attachChildrenClipLibraryCharacter(projectId: string, characterId: string, roleName: string | null, token: string) {
+    return apiService.request<ChildrenClipCharacter>(`/projects/${projectId}/children-clip/characters/library/${characterId}/attach`, {
+      method: 'POST', body: JSON.stringify({ roleName })
+    }, token);
+  }
+
   createChildrenClipCharacter(projectId: string, input: CreateChildrenClipCharacterInput, token: string) {
     return apiService.request<ChildrenClipCharacter>(`/projects/${projectId}/children-clip/characters`, {
       method: 'POST', body: JSON.stringify(input)
@@ -296,9 +307,10 @@ class ProjectsService {
     }, token);
   }
 
-  uploadChildrenClipShotAsset(projectId: string, shotId: string, file: File, role: ChildrenClipShotAssetRole, token: string) {
+  uploadChildrenClipShotAsset(projectId: string, shotId: string, file: File, role: ChildrenClipShotAssetRole, characterVersionId: string | null, token: string) {
     const form = new FormData();
     form.append('file', file); form.append('role', role);
+    if (characterVersionId) form.append('characterVersionId', characterVersionId);
     return apiService.request<ChildrenClipProductionAssetsStatus>(`/projects/${projectId}/children-clip/production-assets/shots/${shotId}/upload`, { method: 'POST', body: form }, token);
   }
 

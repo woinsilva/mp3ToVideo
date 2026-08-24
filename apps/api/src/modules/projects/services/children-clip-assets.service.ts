@@ -121,12 +121,20 @@ export class ChildrenClipAssetsService {
     catch { throw new BadRequestException('O arquivo enviado nao e uma imagem valida'); }
     if (!dimensions.width || !dimensions.height) throw new BadRequestException('Nao foi possivel determinar as dimensoes da imagem');
     const role = input.role as ChildrenClipShotAssetRole;
+    const characterVersionId = role === 'character_pose' ? input.characterVersionId?.trim() || null : null;
+    if (role === 'character_pose') {
+      if (!characterVersionId) throw new BadRequestException('Selecione o personagem desta pose');
+      const selected = await this.prisma.projectCharacter.findFirst({
+        where: { projectId, selectedVersionId: characterVersionId }
+      });
+      if (!selected) throw new BadRequestException('A pose precisa pertencer a um personagem aprovado deste projeto');
+    }
     const versionNumber = await this.nextVersion(shotId, role);
     const record = await this.prisma.childrenClipShotAsset.create({
       data: {
         shotId, role, origin: ChildrenClipShotAssetOrigin.uploaded,
         status: ChildrenClipShotAssetStatus.ready_for_review, versionNumber,
-        label: input.label?.trim() || null, generationEndedAt: new Date()
+        label: input.label?.trim() || null, characterVersionId, generationEndedAt: new Date()
       }
     });
     const storagePath = await this.storage.saveChildrenClipShotAsset(
@@ -136,7 +144,7 @@ export class ChildrenClipAssetsService {
       data: {
         organizationId, projectId, type: 'image', mimeType: file.mimetype,
         storagePath, sizeBytes: file.size, width: dimensions.width, height: dimensions.height,
-        metadata: { source: 'user_upload', shotId, shotAssetId: record.id, role }
+        metadata: { source: 'user_upload', shotId, shotAssetId: record.id, role, characterVersionId }
       }
     });
     await this.prisma.childrenClipShotAsset.update({ where: { id: record.id }, data: { assetId: asset.id } });
@@ -150,7 +158,13 @@ export class ChildrenClipAssetsService {
     }
     await this.prisma.$transaction([
       this.prisma.childrenClipShotAsset.updateMany({
-        where: { shotId: shotAsset.shotId, role: shotAsset.role, status: 'approved', id: { not: shotAsset.id } },
+        where: {
+          shotId: shotAsset.shotId,
+          role: shotAsset.role,
+          characterVersionId: shotAsset.role === 'character_pose' ? shotAsset.characterVersionId : undefined,
+          status: 'approved',
+          id: { not: shotAsset.id }
+        },
         data: { status: 'ready_for_review', approvedAt: null }
       }),
       this.prisma.childrenClipShotAsset.update({

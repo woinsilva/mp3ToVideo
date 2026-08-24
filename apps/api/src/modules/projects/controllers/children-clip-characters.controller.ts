@@ -19,6 +19,7 @@ import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import type { AuthenticatedUser } from '../../auth/types/authenticated-user.type';
 import { CreateCharacterDto } from '../dtos/create-character.dto';
+import { AttachLibraryCharacterDto } from '../dtos/attach-library-character.dto';
 import { CreateCharacterVersionDto } from '../dtos/create-character-version.dto';
 import { UploadCharacterAssetDto } from '../dtos/upload-character-asset.dto';
 import { ChildrenClipCharactersService } from '../services/children-clip-characters.service';
@@ -36,6 +37,21 @@ export class ChildrenClipCharactersController {
   @Get()
   list(@CurrentUser() user: AuthenticatedUser, @Param('projectId') projectId: string) {
     return this.characters.list(projectId, user.organizationId);
+  }
+
+  @Get('library')
+  listLibrary(@CurrentUser() user: AuthenticatedUser, @Param('projectId') projectId: string) {
+    return this.characters.listLibrary(projectId, user.organizationId);
+  }
+
+  @Post('library/:libraryCharacterId/attach')
+  attachLibrary(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('projectId') projectId: string,
+    @Param('libraryCharacterId') characterId: string,
+    @Body() input: AttachLibraryCharacterDto
+  ) {
+    return this.characters.attachLibrary(projectId, characterId, user.organizationId, input);
   }
 
   @Post()

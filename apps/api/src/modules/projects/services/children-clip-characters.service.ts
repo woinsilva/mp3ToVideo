@@ -11,6 +11,7 @@ import { ChildrenClipQueueService } from '../../jobs/services/children-clip-queu
 import type { CreateCharacterDto } from '../dtos/create-character.dto';
 import type { CreateCharacterVersionDto } from '../dtos/create-character-version.dto';
 import type { UploadCharacterAssetDto } from '../dtos/upload-character-asset.dto';
+import type { AttachLibraryCharacterDto } from '../dtos/attach-library-character.dto';
 import { LocalStorageService } from './local-storage.service';
 
 @Injectable()
@@ -40,6 +41,63 @@ export class ChildrenClipCharactersService {
     });
 
     return links.map((link) => this.presentCharacter(link));
+  }
+
+  async listLibrary(projectId: string, organizationId: string) {
+    await this.getOwnedChildrenClip(projectId, organizationId);
+    const linked = await this.prisma.projectCharacter.findMany({ where: { projectId }, select: { characterId: true } });
+    const characters = await this.prisma.character.findMany({
+      where: {
+        organizationId,
+        scope: 'organization',
+        deletedAt: null,
+        approvedVersionId: { not: null },
+        id: { notIn: linked.map((item) => item.characterId) }
+      },
+      include: { approvedVersion: { include: { assets: { include: { asset: true }, orderBy: { sortOrder: 'asc' } } } } },
+      orderBy: { name: 'asc' }
+    });
+    return characters.map((character) => ({
+      id: character.id,
+      name: character.name,
+      description: character.description,
+      approvedVersionId: character.approvedVersionId,
+      versionNumber: character.approvedVersion?.versionNumber ?? null,
+      previewAssetId: character.approvedVersion?.assets.find((item) => item.role === 'primary_reference')?.assetId
+        ?? character.approvedVersion?.assets[0]?.assetId
+        ?? null
+    }));
+  }
+
+  async attachLibrary(
+    projectId: string,
+    characterId: string,
+    organizationId: string,
+    input: AttachLibraryCharacterDto
+  ) {
+    await this.getOwnedChildrenClip(projectId, organizationId);
+    const character = await this.prisma.character.findFirst({
+      where: { id: characterId, organizationId, scope: 'organization', deletedAt: null },
+      include: { approvedVersion: true }
+    });
+    if (!character?.approvedVersion) {
+      throw new BadRequestException('O personagem da biblioteca precisa possuir uma versao aprovada');
+    }
+    const exists = await this.prisma.projectCharacter.findUnique({
+      where: { projectId_characterId: { projectId, characterId } }
+    });
+    if (exists) throw new BadRequestException('Este personagem ja faz parte do projeto');
+    await this.prisma.projectCharacter.create({
+      data: {
+        projectId,
+        characterId,
+        selectedVersionId: character.approvedVersion.id,
+        roleName: input.roleName?.trim() || null,
+        sortOrder: await this.prisma.projectCharacter.count({ where: { projectId } })
+      }
+    });
+    await this.prisma.childrenClip.update({ where: { projectId }, data: { productionStatus: 'designing_characters' } });
+    return (await this.list(projectId, organizationId)).find((item) => item.id === characterId);
   }
 
   async create(
@@ -162,6 +220,10 @@ export class ChildrenClipCharactersService {
     file: Express.Multer.File
   ) {
     const version = await this.getOwnedVersion(projectId, characterId, versionId, organizationId);
+    const label = input.label?.trim() || null;
+    if (input.role === 'mouth_shape' && !['a', 'e', 'o', 'u', 'closed', 'rest'].includes((label ?? '').toLowerCase())) {
+      throw new BadRequestException('Formas de boca precisam do rotulo A, E, O, U, closed ou rest');
+    }
     let dimensions: ReturnType<typeof imageSize>;
     try {
       dimensions = imageSize(new Uint8Array(file.buffer));
@@ -200,7 +262,7 @@ export class ChildrenClipCharactersService {
           characterVersionId: versionId,
           assetId: asset.id,
           role: input.role as CharacterAssetRole,
-          label: input.label?.trim() || null,
+          label,
           sortOrder: await tx.characterAsset.count({ where: { characterVersionId: versionId } })
         }
       });
@@ -208,7 +270,9 @@ export class ChildrenClipCharactersService {
         where: { id: versionId },
         data: {
           origin: version.origin === 'generated' ? 'hybrid' : version.origin,
-          status: CharacterVersionStatus.ready_for_review,
+          status: version.status === CharacterVersionStatus.approved
+            ? CharacterVersionStatus.approved
+            : CharacterVersionStatus.ready_for_review,
           errorMessage: null
         }
       });

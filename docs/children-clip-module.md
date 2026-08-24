@@ -51,6 +51,10 @@ O formulario deve aceitar nome, descricao fisica, idade aparente, especie, roupa
 
 O usuario pode enviar uma imagem principal e referencias adicionais de angulos, expressoes, poses e bocas. Se apenas uma imagem for fornecida, o sistema pode gerar os complementos preservando a referencia, sempre exigindo aprovacao.
 
+Personagens aprovados com escopo de organizacao aparecem na biblioteca dos demais projetos. O
+vinculo reutiliza a mesma versao imutavel, permite definir outro papel narrativo e nao duplica nem
+regenera os arquivos.
+
 ### Regras de consistencia
 
 - Storyboard, assets, animacao 2D e tomadas Wan usam a mesma versao aprovada.
@@ -159,6 +163,10 @@ letra vira legenda sincronizada; os tempos de cada palavra sao convertidos deter
 formas `A`, `E`, `O`, `U` e `closed`. Quando o personagem possui `mouth_shape` rotulada, a forma e
 sobreposta na pose. Sem sprites de boca, a tomada continua renderizavel e preserva os cues no
 manifesto para posterior complementacao.
+
+Uploads de boca exigem um rotulo reconhecido (`A`, `E`, `O`, `U`, `closed` ou `rest`). Uma pose
+enviada para uma tomada e vinculada explicitamente a versao do personagem; assim, tomadas com
+elenco multiplo mantem uma pose aprovada independente para cada integrante.
 
 Cada tentativa gera um MP4 H.264 separado e passa por FFprobe para validar dimensoes, FPS, frames e
 duracao. Falhas mantem erro e historico, o retry cria outra tentativa, e a interface exibe progresso,

@@ -125,6 +125,15 @@ export interface ChildrenClipCharacter {
   versions: ChildrenClipCharacterVersion[];
 }
 
+export interface ChildrenClipLibraryCharacter {
+  id: string;
+  name: string;
+  description: string;
+  approvedVersionId: string;
+  versionNumber: number;
+  previewAssetId: string | null;
+}
+
 export interface CreateChildrenClipCharacterInput {
   name: string;
   description: string;
@@ -250,6 +259,7 @@ export interface ChildrenClipShotAsset {
   status: 'draft' | 'queued' | 'generating' | 'ready_for_review' | 'approved' | 'failed';
   versionNumber: number;
   label: string | null;
+  characterVersionId: string | null;
   generationPrompt: string | null;
   seed: number | null;
   errorMessage: string | null;

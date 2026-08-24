@@ -95,6 +95,15 @@
         </form>
       </section>
 
+      <section v-if="libraryCharacters.length" class="surface-card studio-width character-panel">
+        <div class="panel-heading"><div><p class="page-eyebrow">Biblioteca</p><h3>Reutilizar personagem aprovado</h3><p>Vincule uma identidade já aprovada nesta organização sem gerar imagens novamente.</p></div></div>
+        <div class="library-character-form">
+          <select v-model="libraryCharacterId" class="auth-input"><option value="">Selecione um personagem</option><option v-for="item in libraryCharacters" :key="item.id" :value="item.id">{{ item.name }} · versão {{ item.versionNumber }}</option></select>
+          <input v-model="libraryRoleName" class="auth-input" placeholder="Papel neste clipe (opcional)" />
+          <button class="app-button app-button--secondary" type="button" :disabled="!libraryCharacterId || attachingLibraryCharacter" @click="attachLibraryCharacter">{{ attachingLibraryCharacter ? 'Vinculando...' : 'Usar neste clipe' }}</button>
+        </div>
+      </section>
+
       <section class="studio-width character-list-section">
         <div class="list-heading"><div><p class="page-eyebrow">Elenco</p><h3>Personagens do clipe</h3></div><span>{{ characters.length }} personagem{{ characters.length === 1 ? '' : 's' }}</span></div>
 
@@ -127,6 +136,7 @@
                 <summary>Adicionar outra pose, expressao ou angulo</summary>
                 <div class="supplementary-assets__form">
                   <select v-model="assetRoles[version.id]" class="auth-input"><option value="front_view">Vista frontal</option><option value="side_view">Vista lateral</option><option value="back_view">Vista traseira</option><option value="portrait">Retrato</option><option value="expression">Expressao</option><option value="pose">Pose</option><option value="mouth_shape">Forma de boca</option><option value="eye_state">Estado dos olhos</option><option value="source_reference">Referencia original</option></select>
+                  <input v-model="assetLabels[version.id]" class="auth-input" :placeholder="assetRoles[version.id] === 'mouth_shape' ? 'A, E, O, U ou closed' : 'Nome da pose/expressão (opcional)'" />
                   <input class="auth-input" type="file" accept="image/jpeg,image/png,image/webp" @change="onVersionFileSelected(version.id, $event)" />
                   <button class="app-button app-button--secondary" type="button" :disabled="!versionFiles[version.id]" @click="uploadSupplementary(character.id, version.id)">Enviar</button>
                 </div>
@@ -228,6 +238,7 @@
             </div>
             <details class="supplementary-assets"><summary>Gerar nova versão ou enviar asset</summary><div class="shot-asset-form">
               <select v-model="shotAssetRoles[shot.id]" class="auth-input"><option value="background">Fundo</option><option value="foreground">Primeiro plano</option><option value="prop">Objeto</option><option value="storyboard_frame">Quadro de storyboard</option><option value="character_pose">Pose de personagem (somente upload)</option></select>
+              <select v-if="shotAssetRoles[shot.id] === 'character_pose'" v-model="shotPoseCharacterVersions[shot.id]" class="auth-input"><option value="">Selecione o personagem da pose</option><option v-for="character in charactersForShot(shot)" :key="character.id" :value="character.selectedVersionId || ''">{{ character.name }}</option></select>
               <textarea v-model="shotAssetPrompts[shot.id]" class="auth-input auth-input--textarea" rows="2" :placeholder="shot.backgroundPrompt" />
               <button v-if="shotAssetRoles[shot.id] !== 'character_pose'" class="app-button app-button--secondary" type="button" @click="generateShotAsset(shot.id)">Gerar versão</button>
               <input class="auth-input" type="file" accept="image/jpeg,image/png,image/webp" @change="onShotAssetFileSelected(shot.id, $event)" />
@@ -286,11 +297,15 @@ import AppLayout from '@/layouts/AppLayout.vue';
 import { projectsService } from '@/services/projects.service';
 import { useAuthStore } from '@/stores/auth.store';
 import { useProjectsStore } from '@/stores/projects.store';
-import type { CharacterAssetRole, ChildrenClipAnimationStatus, ChildrenClipAudioStatus, ChildrenClipCharacter, ChildrenClipCharacterVersion, ChildrenClipOutputStatus, ChildrenClipPlanStatus, ChildrenClipProductionAssetsStatus, ChildrenClipShot, ChildrenClipShotAsset, ChildrenClipShotAssetRole, ChildrenClipShotRenderAttempt } from '@/types/project.types';
+import type { CharacterAssetRole, ChildrenClipAnimationStatus, ChildrenClipAudioStatus, ChildrenClipCharacter, ChildrenClipCharacterVersion, ChildrenClipLibraryCharacter, ChildrenClipOutputStatus, ChildrenClipPlanStatus, ChildrenClipProductionAssetsStatus, ChildrenClipShot, ChildrenClipShotAsset, ChildrenClipShotAssetRole, ChildrenClipShotRenderAttempt } from '@/types/project.types';
 
 @Component({ components: { AppLayout } })
 export default class ChildrenClipStudioPage extends Vue {
   characters: ChildrenClipCharacter[] = [];
+  libraryCharacters: ChildrenClipLibraryCharacter[] = [];
+  libraryCharacterId = '';
+  libraryRoleName = '';
+  attachingLibraryCharacter = false;
   audioStatus: ChildrenClipAudioStatus | null = null;
   planStatus: ChildrenClipPlanStatus | null = null;
   productionAssets: ChildrenClipProductionAssetsStatus | null = null;
@@ -311,6 +326,7 @@ export default class ChildrenClipStudioPage extends Vue {
   errorMessage: string | null = null;
   assetUrls: Record<string, string> = {};
   assetRoles: Record<string, CharacterAssetRole> = {};
+  assetLabels: Record<string, string> = {};
   versionFiles: Record<string, File | null> = {};
   pollTimer: ReturnType<typeof setInterval> | null = null;
   replacementTrack: File | null = null;
@@ -320,6 +336,7 @@ export default class ChildrenClipStudioPage extends Vue {
   shotAssetRoles: Record<string, ChildrenClipShotAssetRole> = {};
   shotAssetPrompts: Record<string, string> = {};
   shotAssetFiles: Record<string, File | null> = {};
+  shotPoseCharacterVersions: Record<string, string> = {};
   renderingMissingShots = false;
   renderUrls: Record<string, string> = {};
   heroUrls: Record<string, string> = {};
@@ -360,7 +377,10 @@ export default class ChildrenClipStudioPage extends Vue {
 
   async loadCharacters() {
     if (!this.authStore.token) return;
-    this.characters = await projectsService.listChildrenClipCharacters(this.projectId, this.authStore.token);
+    [this.characters, this.libraryCharacters] = await Promise.all([
+      projectsService.listChildrenClipCharacters(this.projectId, this.authStore.token),
+      projectsService.listChildrenClipCharacterLibrary(this.projectId, this.authStore.token)
+    ]);
     await this.loadAssetUrls();
   }
 
@@ -529,10 +549,28 @@ export default class ChildrenClipStudioPage extends Vue {
   async uploadSupplementary(characterId: string, versionId: string) {
     if (!this.authStore.token || !this.versionFiles[versionId]) return;
     try {
-      await projectsService.uploadChildrenClipCharacterAsset(this.projectId, characterId, versionId, this.versionFiles[versionId]!, this.assetRoles[versionId] ?? 'pose', '', this.authStore.token);
+      const role = this.assetRoles[versionId] ?? 'pose';
+      const label = (this.assetLabels[versionId] || '').trim();
+      if (role === 'mouth_shape' && !['a', 'e', 'o', 'u', 'closed', 'rest'].includes(label.toLowerCase())) {
+        this.errorMessage = 'Informe A, E, O, U ou closed para identificar a forma de boca.';
+        return;
+      }
+      await projectsService.uploadChildrenClipCharacterAsset(this.projectId, characterId, versionId, this.versionFiles[versionId]!, role, label, this.authStore.token);
       this.versionFiles = { ...this.versionFiles, [versionId]: null };
+      this.assetLabels = { ...this.assetLabels, [versionId]: '' };
       await this.loadCharacters();
     } catch (error) { this.captureError(error, 'Falha ao enviar imagem complementar'); }
+  }
+  async attachLibraryCharacter() {
+    if (!this.authStore.token || !this.libraryCharacterId) return;
+    this.attachingLibraryCharacter = true;
+    try {
+      await projectsService.attachChildrenClipLibraryCharacter(this.projectId, this.libraryCharacterId, this.libraryRoleName.trim() || null, this.authStore.token);
+      this.libraryCharacterId = '';
+      this.libraryRoleName = '';
+      await Promise.all([this.loadCharacters(), this.loadPlan()]);
+    } catch (error) { this.captureError(error, 'Falha ao vincular personagem da biblioteca'); }
+    finally { this.attachingLibraryCharacter = false; }
   }
 
   statusLabel(status: ChildrenClipCharacterVersion['status']) { return ({ draft: 'Rascunho', queued: 'Enfileirada', generating: 'Gerando', ready_for_review: 'Revisar', approved: 'Aprovada', rejected: 'Rejeitada', failed: 'Falhou' })[status]; }
@@ -578,8 +616,12 @@ export default class ChildrenClipStudioPage extends Vue {
   }
   async uploadShotAsset(shotId: string) {
     if (!this.authStore.token || !this.shotAssetFiles[shotId]) return;
-    try { this.productionAssets = await projectsService.uploadChildrenClipShotAsset(this.projectId, shotId, this.shotAssetFiles[shotId]!, this.shotAssetRoles[shotId] || 'background', this.authStore.token); this.shotAssetFiles = { ...this.shotAssetFiles, [shotId]: null }; await this.loadShotAssetUrls(); } catch (error) { this.captureError(error, 'Falha ao enviar asset'); }
+    const role = this.shotAssetRoles[shotId] || 'background';
+    const characterVersionId = role === 'character_pose' ? this.shotPoseCharacterVersions[shotId] || null : null;
+    if (role === 'character_pose' && !characterVersionId) { this.errorMessage = 'Selecione a qual personagem pertence esta pose.'; return; }
+    try { this.productionAssets = await projectsService.uploadChildrenClipShotAsset(this.projectId, shotId, this.shotAssetFiles[shotId]!, role, characterVersionId, this.authStore.token); this.shotAssetFiles = { ...this.shotAssetFiles, [shotId]: null }; await this.loadShotAssetUrls(); } catch (error) { this.captureError(error, 'Falha ao enviar asset'); }
   }
+  charactersForShot(shot: ChildrenClipShot) { const ids = Array.isArray(shot.characterVersionIds) ? shot.characterVersionIds : []; return this.characters.filter((character) => character.selectedVersionId && (!ids.length || ids.includes(character.selectedVersionId))); }
   async approveShotAsset(assetId: string) { if (!this.authStore.token) return; try { this.productionAssets = await projectsService.approveChildrenClipShotAsset(this.projectId, assetId, this.authStore.token); if (this.productionAssets.summary.readyForAnimation) await Promise.all([this.loadAnimation(), this.loadOutput()]); } catch (error) { this.captureError(error, 'Falha ao aprovar asset'); } }
   async retryShotAsset(assetId: string) { if (!this.authStore.token) return; try { this.productionAssets = await projectsService.retryChildrenClipShotAsset(this.projectId, assetId, this.authStore.token); } catch (error) { this.captureError(error, 'Falha ao reiniciar geracao do asset'); } }
   shotAssetRoleLabel(role: ChildrenClipShotAssetRole) { return ({ background: 'Fundo', foreground: 'Primeiro plano', prop: 'Objeto', character_pose: 'Pose de personagem', storyboard_frame: 'Storyboard' })[role]; }
@@ -678,6 +720,8 @@ export default class ChildrenClipStudioPage extends Vue {
 .supplementary-assets { margin-top: 14px; }
 .supplementary-assets summary { color: #4b648a; cursor: pointer; font-weight: 700; }
 .supplementary-assets__form { display: grid; grid-template-columns: 180px 1fr auto; gap: 10px; margin-top: 10px; }
+.library-character-form { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(180px, 1fr) auto; gap: 12px; margin-top: 18px; }
+.supplementary-assets__form { grid-template-columns: 170px minmax(180px, 1fr) minmax(180px, 1fr) auto; }
 .production-assets-actions { display: flex; align-items: center; gap: 16px; margin: 18px 0; }
 .production-shot-list { display: grid; gap: 16px; }
 .shot-asset-card { padding: 16px; border: 1px solid #dfe3e8; border-radius: 14px; background: #fafbfc; }
@@ -702,5 +746,5 @@ export default class ChildrenClipStudioPage extends Vue {
 .hero-shot-list, .final-render-card { display: grid; gap: 12px; margin-top: 18px; }
 .final-render-preview { width: min(820px, 100%); max-height: 460px; border-radius: 14px; background: #111; }
 .final-download { width: fit-content; text-decoration: none; }
-@media (max-width: 700px) { .setup-grid, .character-form, .audio-metrics, .replace-track, .plan-json-grid, .shot-form { grid-template-columns: 1fr; } .character-form__wide, .shot-form__wide { grid-column: auto; } .character-panel, .character-card, .audio-panel, .plan-panel { padding: 18px; } .supplementary-assets__form, .shot-asset-form { grid-template-columns: 1fr; } .shot-card summary { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 700px) { .setup-grid, .character-form, .audio-metrics, .replace-track, .plan-json-grid, .shot-form { grid-template-columns: 1fr; } .character-form__wide, .shot-form__wide { grid-column: auto; } .character-panel, .character-card, .audio-panel, .plan-panel { padding: 18px; } .supplementary-assets__form, .shot-asset-form, .library-character-form { grid-template-columns: 1fr; } .shot-card summary { align-items: flex-start; flex-direction: column; } }
 </style>

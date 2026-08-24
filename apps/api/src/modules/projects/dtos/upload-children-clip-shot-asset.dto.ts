@@ -8,4 +8,8 @@ export class UploadChildrenClipShotAssetDto {
   @IsString()
   @MaxLength(120)
   label?: string;
+
+  @IsOptional()
+  @IsString()
+  characterVersionId?: string;
 }
