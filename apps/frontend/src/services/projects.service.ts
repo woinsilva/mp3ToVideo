@@ -1,13 +1,17 @@
 import { apiService } from '@/services/api.service';
 import type {
+  CharacterAssetRole,
+  ChildrenClipCharacter,
+  ChildrenClipCharacterVersion,
+  CreateChildrenClipCharacterInput,
   CreateProjectInput,
+  FrameInterpolationStatus,
   ProjectRender,
   ProjectScene,
   ProjectStatusResponse,
   ProjectSummary,
   ProjectVisualStoryboard,
-  TrackUploadResult,
-  FrameInterpolationStatus
+  TrackUploadResult
 } from '@/types/project.types';
 
 class ProjectsService {
@@ -184,6 +188,57 @@ class ProjectsService {
 
   downloadInterpolation(projectId: string, token: string) {
     return apiService.download(`/projects/${projectId}/interpolation/download`, token);
+  }
+
+  listChildrenClipCharacters(projectId: string, token: string) {
+    return apiService.request<ChildrenClipCharacter[]>(`/projects/${projectId}/children-clip/characters`, {}, token);
+  }
+
+  createChildrenClipCharacter(projectId: string, input: CreateChildrenClipCharacterInput, token: string) {
+    return apiService.request<ChildrenClipCharacter>(`/projects/${projectId}/children-clip/characters`, {
+      method: 'POST', body: JSON.stringify(input)
+    }, token);
+  }
+
+  createChildrenClipCharacterVersion(
+    projectId: string,
+    characterId: string,
+    input: { description: string; origin: 'generated' | 'uploaded' | 'hybrid'; invariants: string[] },
+    token: string
+  ) {
+    return apiService.request<ChildrenClipCharacterVersion>(`/projects/${projectId}/children-clip/characters/${characterId}/versions`, {
+      method: 'POST', body: JSON.stringify(input)
+    }, token);
+  }
+
+  uploadChildrenClipCharacterAsset(
+    projectId: string,
+    characterId: string,
+    versionId: string,
+    file: File,
+    role: CharacterAssetRole,
+    label: string,
+    token: string
+  ) {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('role', role);
+    if (label.trim()) form.append('label', label.trim());
+    return apiService.request<ChildrenClipCharacterVersion>(`/projects/${projectId}/children-clip/characters/${characterId}/versions/${versionId}/assets`, {
+      method: 'POST', body: form
+    }, token);
+  }
+
+  approveChildrenClipCharacterVersion(projectId: string, characterId: string, versionId: string, token: string) {
+    return apiService.request<ChildrenClipCharacterVersion>(`/projects/${projectId}/children-clip/characters/${characterId}/versions/${versionId}/approve`, { method: 'POST' }, token);
+  }
+
+  retryChildrenClipCharacterGeneration(projectId: string, characterId: string, versionId: string, token: string) {
+    return apiService.request<ChildrenClipCharacterVersion>(`/projects/${projectId}/children-clip/characters/${characterId}/versions/${versionId}/generate`, { method: 'POST' }, token);
+  }
+
+  downloadChildrenClipCharacterAsset(projectId: string, characterId: string, versionId: string, assetId: string, token: string) {
+    return apiService.download(`/projects/${projectId}/children-clip/characters/${characterId}/versions/${versionId}/assets/${assetId}`, token);
   }
 }
 

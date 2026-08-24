@@ -65,6 +65,24 @@ export interface GenerateVideoInput {
 export interface ComfyUiGenerationResult {
   buffer: Buffer;
   provider: 'comfyui-video' | 'comfyui-image';
+  promptId?: string;
+  seed?: number;
+}
+
+export interface GenerateStillImageInput {
+  positivePrompt: string;
+  negativePrompt: string;
+  checkpointName: string;
+  width: number;
+  height: number;
+  steps: number;
+  cfg: number;
+  sampler: string;
+  scheduler: string;
+  seed: number;
+  filenamePrefix: string;
+  loraName?: string | null;
+  loraStrength?: number;
 }
 
 export interface ComfyUiHeartbeat {
@@ -99,6 +117,87 @@ export class ComfyUiClientService {
 
   isEnabled(): boolean {
     return this.configService.get<string>('visual.provider', 'procedural') === 'comfyui';
+  }
+
+  async generateStillImage(input: GenerateStillImageInput): Promise<ComfyUiGenerationResult> {
+    if (!this.isEnabled()) {
+      throw new Error('ComfyUI image generation requires SCENE_VISUAL_PROVIDER=comfyui');
+    }
+    if (!input.checkpointName.trim()) {
+      throw new Error('Character image generation checkpoint is not configured');
+    }
+
+    this.logger.log(
+      `[ComfyUI Still] Starting generation: checkpoint=${input.checkpointName}, ` +
+        `size=${input.width}x${input.height}, steps=${input.steps}, cfg=${input.cfg}, seed=${input.seed}`
+    );
+
+    const modelSource: [string, number] = input.loraName ? ['10', 0] : ['4', 0];
+    const clipSource: [string, number] = input.loraName ? ['10', 1] : ['4', 1];
+    const workflow: Record<string, unknown> = {
+      '4': {
+        class_type: 'CheckpointLoaderSimple',
+        inputs: { ckpt_name: input.checkpointName }
+      },
+      '5': {
+        class_type: 'EmptyLatentImage',
+        inputs: { width: input.width, height: input.height, batch_size: 1 }
+      },
+      '6': {
+        class_type: 'CLIPTextEncode',
+        inputs: { text: input.positivePrompt, clip: clipSource }
+      },
+      '7': {
+        class_type: 'CLIPTextEncode',
+        inputs: { text: input.negativePrompt, clip: clipSource }
+      },
+      '3': {
+        class_type: 'KSampler',
+        inputs: {
+          seed: input.seed,
+          steps: input.steps,
+          cfg: input.cfg,
+          sampler_name: input.sampler,
+          scheduler: input.scheduler,
+          denoise: 1,
+          model: modelSource,
+          positive: ['6', 0],
+          negative: ['7', 0],
+          latent_image: ['5', 0]
+        }
+      },
+      '8': {
+        class_type: 'VAEDecode',
+        inputs: { samples: ['3', 0], vae: ['4', 2] }
+      },
+      '9': {
+        class_type: 'SaveImage',
+        inputs: { filename_prefix: input.filenamePrefix, images: ['8', 0] }
+      }
+    };
+    if (input.loraName) {
+      workflow['10'] = {
+        class_type: 'LoraLoader',
+        inputs: {
+          lora_name: input.loraName,
+          strength_model: input.loraStrength ?? 1,
+          strength_clip: input.loraStrength ?? 1,
+          model: ['4', 0],
+          clip: ['4', 1]
+        }
+      };
+    }
+    const promptId = await this.submitWorkflow(workflow);
+    const historyEntry = await this.waitForHistory(promptId);
+    const image = this.extractOutputAsset(historyEntry, ['images']);
+    if (!image) throw new Error('ComfyUI did not return a still image output');
+
+    return {
+      buffer: await this.downloadAsset(image),
+      provider: 'comfyui-image',
+      promptId,
+      seed: input.seed
+    };
   }
 
   async generateImage(

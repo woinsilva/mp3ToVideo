@@ -69,6 +69,7 @@ enum CharacterVersionOrigin {
 
 enum CharacterVersionStatus {
   draft
+  queued
   generating
   ready_for_review
   approved
@@ -452,8 +453,13 @@ model CharacterVersion {
   status                CharacterVersionStatus @default(draft)
   description           String
   generationPrompt      String?
+  seed                  Int?
+  bullJobId             String?
+  errorMessage          String?
   invariants            Json?
   generationMetadata    Json?
+  generationStartedAt   DateTime?
+  generationCompletedAt DateTime?
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
   character             Character              @relation("CharacterVersions", fields: [characterId], references: [id], onDelete: Cascade)
@@ -463,6 +469,7 @@ model CharacterVersion {
 
   @@unique([characterId, versionNumber])
   @@index([characterId, status])
+  @@index([bullJobId])
 }
 
 model CharacterAsset {

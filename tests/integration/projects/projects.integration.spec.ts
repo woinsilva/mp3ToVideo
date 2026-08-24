@@ -243,6 +243,89 @@ describe('Projects integration', () => {
     uploadedFilePath = resolve(persisted?.track?.storagePath ?? '');
   });
 
+  it('uploads, versions and approves a children clip character', async () => {
+    const projectResponse = await request(app.getHttpServer())
+      .post('/projects')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({
+        title: 'Turma da horta',
+        generationMode: 'children_clip',
+        manualLyricsText: 'Vamos todos plantar e cantar',
+        childrenClipConcept: 'Uma turma aprende a cuidar de uma horta comunitaria.',
+        childrenClipVisualStyle: 'Animacao 2D infantil colorida e original.',
+        audienceAgeMin: 2,
+        audienceAgeMax: 7,
+        childrenClipAspectRatio: 'landscape_16_9'
+      })
+      .expect(201);
+
+    const characterResponse = await request(app.getHttpServer())
+      .post(`/projects/${projectResponse.body.id}/children-clip/characters`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({
+        name: 'Bibi',
+        description: 'Coelhinha branca de vestido amarelo, orelhas rosas e tenis azuis.',
+        sourceMode: 'uploaded',
+        scope: 'project',
+        roleName: 'Protagonista',
+        invariants: ['vestido amarelo', 'orelhas rosas', 'tenis azuis']
+      })
+      .expect(201);
+
+    expect(characterResponse.body.versions[0]).toMatchObject({
+      versionNumber: 1,
+      origin: 'uploaded',
+      status: 'draft'
+    });
+
+    const characterId = characterResponse.body.id;
+    const versionId = characterResponse.body.versions[0].id;
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAQAAABoKxmiAAAADUlEQVR42mNk+M/wHwAF/gL+AvwNAAAAAElFTkSuQmCC',
+      'base64'
+    );
+    const assetResponse = await request(app.getHttpServer())
+      .post(`/projects/${projectResponse.body.id}/children-clip/characters/${characterId}/versions/${versionId}/assets`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .field('role', 'primary_reference')
+      .field('label', 'Referencia principal')
+      .attach('file', png, { filename: 'bibi.png', contentType: 'image/png' })
+      .expect(201);
+
+    expect(assetResponse.body).toMatchObject({ status: 'ready_for_review' });
+    expect(assetResponse.body.assets[0]).toMatchObject({
+      role: 'primary_reference',
+      width: 2,
+      height: 1
+    });
+
+    await request(app.getHttpServer())
+      .post(`/projects/${projectResponse.body.id}/children-clip/characters/${characterId}/versions/${versionId}/approve`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .expect(201)
+      .expect(({ body }) => expect(body.status).toBe('approved'));
+
+    const listResponse = await request(app.getHttpServer())
+      .get(`/projects/${projectResponse.body.id}/children-clip/characters`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .expect(200);
+    expect(listResponse.body[0]).toMatchObject({
+      name: 'Bibi',
+      approvedVersionId: versionId,
+      selectedVersionId: versionId
+    });
+
+    const assetId = listResponse.body[0].versions[0].assets[0].id;
+    await request(app.getHttpServer())
+      .get(`/projects/${projectResponse.body.id}/children-clip/characters/${characterId}/versions/${versionId}/assets/${assetId}`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .expect(200)
+      .expect('Content-Type', /image\/png/);
+
+    const asset = await prisma.asset.findUnique({ where: { id: assetId } });
+    uploadedFilePath = resolve(asset?.storagePath ?? '');
+  });
+
   it('creates and immediately queues a reproducible Wan stability baseline from a prompt', async () => {
     const response = await request(app.getHttpServer())
       .post('/projects')

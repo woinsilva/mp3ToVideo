@@ -5,6 +5,7 @@ import { configuration } from './config/configuration';
 import { envValidationSchema } from './config/env.validation';
 import { PrismaModule } from './database/prisma.module';
 import { ProjectProcessor } from './processors/project.processor';
+import { ChildrenClipProcessor } from './processors/children-clip.processor';
 import { FrameInterpolationProcessor } from './processors/frame-interpolation.processor';
 import { AudioMetadataService } from './services/audio-metadata.service';
 import { AudioExcerptService } from './services/audio-excerpt.service';
@@ -35,6 +36,7 @@ import { WhisperTranscriptionService } from './services/whisper-transcription.se
 import { ProjectProcessingWorkerService } from './workers/project-processing-worker.service';
 import { FrameInterpolationWorkerService } from './workers/frame-interpolation-worker.service';
 import { RedisConnectionService } from './workers/redis-connection.service';
+import { ChildrenClipWorkerService } from './workers/children-clip-worker.service';
 
 @Module({
   imports: [
@@ -49,6 +51,8 @@ import { RedisConnectionService } from './workers/redis-connection.service';
   ],
   providers: [
     RedisConnectionService,
+    ChildrenClipProcessor,
+    ChildrenClipWorkerService,
     ProjectProcessor,
     FrameInterpolationProcessor,
     AudioMetadataService,

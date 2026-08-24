@@ -96,6 +96,16 @@ Cada etapa persiste estado, progresso, logs, tentativas e erro de forma retomave
 - Fila `children-clip-production` com jobs filhos por etapa e por tomada.
 - Coordenador global de GPU para serializar ComfyUI, Wan e RIFE na unica GPU local.
 
+### Modelo local de ilustracao
+
+O workflow de personagens usa o checkpoint SDXL configurado no ComfyUI junto ao LoRA
+[`Muapi/picture-books-children-cartoon`](https://huggingface.co/Muapi/picture-books-children-cartoon),
+licenciado sob OpenRAIL++. A instalacao local e reproduzivel por
+`tools/install-children-clip-models.ps1`, que valida o SHA-256 antes de concluir.
+
+Descricoes em portugues sao convertidas em prompts SDXL estruturados pelo Ollama local. O modelo
+e descarregado da memoria ao finalizar a resposta para liberar a GPU antes do ComfyUI.
+
 RIFE fica disponivel apenas para tomadas generativas que realmente precisem de interpolacao. Animacao 2D sera renderizada diretamente no FPS final.
 
 ## Modelo de dados

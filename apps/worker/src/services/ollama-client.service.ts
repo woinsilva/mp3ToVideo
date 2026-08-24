@@ -37,6 +37,7 @@ export class OllamaClientService {
     const baseUrl = this.configService.get<string>('ai.ollamaBaseUrl', 'http://localhost:11434');
     const model = this.configService.get<string>('ai.ollamaModel', 'qwen3:8b');
     const timeoutMs = this.configService.get<number>('ai.ollamaTimeoutMs', 180000);
+    const keepAlive = this.configService.get<string>('ai.ollamaKeepAlive', '0s');
     const allowFallbacks = this.configService.get<boolean>('ai.enableFallbacks', true);
 
     try {
@@ -49,6 +50,7 @@ export class OllamaClientService {
           model,
           stream: false,
           format: 'json',
+          keep_alive: keepAlive,
           messages,
           options: {
             temperature: 0.2

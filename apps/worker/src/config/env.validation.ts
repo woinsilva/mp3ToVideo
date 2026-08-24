@@ -28,6 +28,7 @@ export const envValidationSchema = Joi.object({
   OLLAMA_BASE_URL: Joi.string().uri({ scheme: ['http', 'https'] }).default('http://localhost:11434'),
   OLLAMA_MODEL: Joi.string().default('qwen3:8b'),
   OLLAMA_TIMEOUT_MS: Joi.number().integer().positive().default(180000),
+  OLLAMA_KEEP_ALIVE: Joi.string().default('0s'),
   SCENE_VISUAL_PROVIDER: Joi.string().valid('procedural', 'comfyui').default('procedural'),
   COMFYUI_BASE_URL: Joi.string()
     .uri({ scheme: ['http', 'https'] })
@@ -50,6 +51,15 @@ export const envValidationSchema = Joi.object({
   COMFYUI_CFG: Joi.number().positive().default(5),
   COMFYUI_SAMPLER: Joi.string().default('uni_pc'),
   COMFYUI_SCHEDULER: Joi.string().default('simple'),
+  CHILDREN_CLIP_CHARACTER_CHECKPOINT_NAME: Joi.string().allow('').default(''),
+  CHILDREN_CLIP_CHARACTER_WIDTH: Joi.number().integer().positive().default(1024),
+  CHILDREN_CLIP_CHARACTER_HEIGHT: Joi.number().integer().positive().default(1024),
+  CHILDREN_CLIP_CHARACTER_STEPS: Joi.number().integer().positive().default(30),
+  CHILDREN_CLIP_CHARACTER_CFG: Joi.number().positive().default(6.5),
+  CHILDREN_CLIP_CHARACTER_SAMPLER: Joi.string().default('dpmpp_2m'),
+  CHILDREN_CLIP_CHARACTER_SCHEDULER: Joi.string().default('karras'),
+  CHILDREN_CLIP_CHARACTER_LORA_NAME: Joi.string().allow('').default(''),
+  CHILDREN_CLIP_CHARACTER_LORA_STRENGTH: Joi.number().min(-3).max(3).default(1),
   ENABLE_AI_FALLBACKS: Joi.boolean().truthy('true').falsy('false').default(true),
   REDIS_HOST: Joi.string().default('localhost'),
   REDIS_PORT: Joi.number().default(6379),

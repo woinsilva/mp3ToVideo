@@ -40,7 +40,8 @@ export const configuration = () => ({
     enableOllama: process.env.ENABLE_OLLAMA === 'true',
     ollamaBaseUrl: process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434',
     ollamaModel: process.env.OLLAMA_MODEL ?? 'qwen3:8b',
-    ollamaTimeoutMs: Number(process.env.OLLAMA_TIMEOUT_MS ?? 180000)
+    ollamaTimeoutMs: Number(process.env.OLLAMA_TIMEOUT_MS ?? 180000),
+    ollamaKeepAlive: process.env.OLLAMA_KEEP_ALIVE ?? '0s'
   },
   visual: {
     provider: process.env.SCENE_VISUAL_PROVIDER ?? 'procedural',
@@ -67,7 +68,19 @@ export const configuration = () => ({
     comfyuiSteps: Number(process.env.COMFYUI_STEPS ?? 20),
     comfyuiCfg: Number(process.env.COMFYUI_CFG ?? 5),
     comfyuiSampler: process.env.COMFYUI_SAMPLER ?? 'uni_pc',
-    comfyuiScheduler: process.env.COMFYUI_SCHEDULER ?? 'simple'
+    comfyuiScheduler: process.env.COMFYUI_SCHEDULER ?? 'simple',
+    characterCheckpointName:
+      process.env.CHILDREN_CLIP_CHARACTER_CHECKPOINT_NAME?.trim() ||
+      process.env.COMFYUI_CHECKPOINT_NAME ||
+      '',
+    characterWidth: Number(process.env.CHILDREN_CLIP_CHARACTER_WIDTH ?? 1024),
+    characterHeight: Number(process.env.CHILDREN_CLIP_CHARACTER_HEIGHT ?? 1024),
+    characterSteps: Number(process.env.CHILDREN_CLIP_CHARACTER_STEPS ?? 30),
+    characterCfg: Number(process.env.CHILDREN_CLIP_CHARACTER_CFG ?? 6.5),
+    characterSampler: process.env.CHILDREN_CLIP_CHARACTER_SAMPLER ?? 'dpmpp_2m',
+    characterScheduler: process.env.CHILDREN_CLIP_CHARACTER_SCHEDULER ?? 'karras',
+    characterLoraName: process.env.CHILDREN_CLIP_CHARACTER_LORA_NAME ?? '',
+    characterLoraStrength: Number(process.env.CHILDREN_CLIP_CHARACTER_LORA_STRENGTH ?? 1)
   },
   redis: {
     host: process.env.REDIS_HOST ?? 'localhost',

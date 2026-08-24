@@ -75,6 +75,65 @@ export interface ChildrenClipConfiguration {
   productionStatus: string;
 }
 
+export type CharacterAssetRole =
+  | 'primary_reference'
+  | 'front_view'
+  | 'side_view'
+  | 'back_view'
+  | 'portrait'
+  | 'expression'
+  | 'pose'
+  | 'mouth_shape'
+  | 'eye_state'
+  | 'source_reference';
+
+export interface ChildrenClipCharacterAsset {
+  id: string;
+  role: CharacterAssetRole;
+  label: string | null;
+  mimeType: string;
+  width: number | null;
+  height: number | null;
+  createdAt: string;
+}
+
+export interface ChildrenClipCharacterVersion {
+  id: string;
+  versionNumber: number;
+  origin: 'generated' | 'uploaded' | 'hybrid';
+  status: 'draft' | 'queued' | 'generating' | 'ready_for_review' | 'approved' | 'rejected' | 'failed';
+  description: string;
+  generationPrompt: string | null;
+  seed: number | null;
+  bullJobId: string | null;
+  errorMessage: string | null;
+  invariants: string[];
+  generationMetadata: Record<string, unknown> | null;
+  generationStartedAt: string | null;
+  generationCompletedAt: string | null;
+  assets: ChildrenClipCharacterAsset[];
+}
+
+export interface ChildrenClipCharacter {
+  id: string;
+  name: string;
+  description: string;
+  scope: 'project' | 'organization';
+  roleName: string | null;
+  approvedVersionId: string | null;
+  selectedVersionId: string | null;
+  versions: ChildrenClipCharacterVersion[];
+}
+
+export interface CreateChildrenClipCharacterInput {
+  name: string;
+  description: string;
+  sourceMode: 'generated' | 'uploaded';
+  scope: 'project' | 'organization';
+  roleName?: string | null;
+  invariants: string[];
+}
+
 export interface TrackUploadResult {
   projectId: string;
   trackId: string;
