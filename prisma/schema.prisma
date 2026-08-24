@@ -103,6 +103,7 @@ enum ChildrenClipShotAssetStatus {
   generating
   ready_for_review
   approved
+  rejected
   failed
 }
 
@@ -119,6 +120,7 @@ enum ChildrenClipHeroShotStatus {
   validating
   ready_for_review
   approved
+  rejected
   failed
 }
 

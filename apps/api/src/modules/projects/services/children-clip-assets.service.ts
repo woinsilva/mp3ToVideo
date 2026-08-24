@@ -174,6 +174,17 @@ export class ChildrenClipAssetsService {
     return this.get(projectId, organizationId);
   }
 
+  async reject(projectId: string, shotAssetId: string, organizationId: string) {
+    const { shotAsset } = await this.getOwnedAsset(projectId, shotAssetId, organizationId);
+    if (shotAsset.status !== 'ready_for_review') {
+      throw new BadRequestException('Somente um asset pronto para revisao pode ser rejeitado');
+    }
+    await this.prisma.childrenClipShotAsset.update({
+      where: { id: shotAsset.id }, data: { status: 'rejected', approvedAt: null }
+    });
+    return this.get(projectId, organizationId);
+  }
+
   async getDownload(projectId: string, shotAssetId: string, organizationId: string) {
     const { shotAsset } = await this.getOwnedAsset(projectId, shotAssetId, organizationId);
     if (!shotAsset.asset) throw new NotFoundException('Arquivo do asset nao encontrado');

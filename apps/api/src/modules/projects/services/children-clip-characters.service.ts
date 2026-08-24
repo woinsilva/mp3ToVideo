@@ -353,6 +353,17 @@ export class ChildrenClipCharactersService {
     return this.getVersion(projectId, characterId, versionId, organizationId);
   }
 
+  async rejectAsset(projectId: string, characterId: string, versionId: string, characterAssetId: string, organizationId: string) {
+    const record = await this.getOwnedCharacterAsset(projectId, characterId, versionId, characterAssetId, organizationId);
+    if (record.status !== CharacterAssetStatus.ready_for_review) {
+      throw new BadRequestException('Somente um asset pronto para revisao pode ser rejeitado');
+    }
+    await this.prisma.characterAsset.update({
+      where: { id: record.id }, data: { status: CharacterAssetStatus.rejected, approvedAt: null }
+    });
+    return this.getVersion(projectId, characterId, versionId, organizationId);
+  }
+
   async approve(
     projectId: string,
     characterId: string,
@@ -416,6 +427,17 @@ export class ChildrenClipCharactersService {
       ] : [])
     ]);
 
+    return this.getVersion(projectId, characterId, versionId, organizationId);
+  }
+
+  async reject(projectId: string, characterId: string, versionId: string, organizationId: string) {
+    const version = await this.getOwnedVersion(projectId, characterId, versionId, organizationId);
+    if (version.status !== CharacterVersionStatus.ready_for_review) {
+      throw new BadRequestException('Somente uma versao pronta para revisao pode ser rejeitada');
+    }
+    await this.prisma.characterVersion.update({
+      where: { id: versionId }, data: { status: CharacterVersionStatus.rejected }
+    });
     return this.getVersion(projectId, characterId, versionId, organizationId);
   }
 

@@ -207,7 +207,7 @@ export interface ChildrenClipAudioStatus {
 export interface ChildrenClipProductionPlan {
   id: string;
   versionNumber: number;
-  status: 'draft' | 'queued' | 'generating' | 'ready_for_review' | 'approved' | 'failed';
+  status: 'draft' | 'queued' | 'generating' | 'ready_for_review' | 'approved' | 'rejected' | 'failed';
   bullJobId: string | null;
   visualBible: Record<string, unknown> | null;
   narrative: Record<string, unknown> | null;
@@ -314,7 +314,7 @@ export interface ChildrenClipAnimationStatus {
 export interface ChildrenClipHeroShotAttempt {
   id: string;
   attemptNumber: number;
-  status: 'queued' | 'generating' | 'validating' | 'ready_for_review' | 'approved' | 'failed';
+  status: 'queued' | 'generating' | 'validating' | 'ready_for_review' | 'approved' | 'rejected' | 'failed';
   progress: number;
   stage: string | null;
   errorMessage: string | null;

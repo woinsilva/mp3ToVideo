@@ -253,3 +253,13 @@ O modulo sera considerado completo quando um usuario puder, sem operacao manual 
 8. renderizar e validar o clipe completo;
 9. baixar o resultado e reutilizar personagens aprovados em outro projeto.
 
+## Validacao executada
+
+- Suites unitarias, integradas, typecheck e build do monorepo.
+- Migracoes PostgreSQL aplicadas e verificadas.
+- Geracao SDXL/LoRA real no ComfyUI nativo, incluindo img2img com referencia.
+- Render real de tomada 2D H.264 via Remotion e validacao FFprobe.
+- Composicao real de tomadas normalizadas com faixa AAC, duracao e dimensoes validadas.
+- API integrada cobrindo criacao, upload, biblioteca de personagens, assets, aprovacoes, rejeicoes,
+  filas, retry e downloads autenticados.
+

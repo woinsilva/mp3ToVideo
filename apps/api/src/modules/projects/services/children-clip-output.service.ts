@@ -65,6 +65,17 @@ export class ChildrenClipOutputService {
     return this.get(projectId, organizationId);
   }
 
+  async rejectHero(projectId: string, attemptId: string, organizationId: string) {
+    await this.getOwnedProject(projectId, organizationId);
+    const attempt = await this.prisma.childrenClipHeroShotAttempt.findFirst({ where: { id: attemptId, shot: { projectId } } });
+    if (!attempt) throw new NotFoundException('Tentativa Wan nao encontrada');
+    if (attempt.status !== 'ready_for_review') throw new BadRequestException('Somente uma tomada pronta para revisao pode ser rejeitada');
+    await this.prisma.childrenClipHeroShotAttempt.update({
+      where: { id: attempt.id }, data: { status: 'rejected', approvedAt: null }
+    });
+    return this.get(projectId, organizationId);
+  }
+
   async renderFinal(projectId: string, organizationId: string, userId: string) {
     const project = await this.getOwnedProject(projectId, organizationId);
     const blockers = this.finalBlockers(project);

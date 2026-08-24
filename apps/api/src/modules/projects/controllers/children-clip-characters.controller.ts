@@ -155,6 +155,17 @@ export class ChildrenClipCharactersController {
     return this.characters.approveAsset(projectId, characterId, versionId, characterAssetId, user.organizationId);
   }
 
+  @Post(':characterId/versions/:versionId/assets/:characterAssetId/reject')
+  rejectAsset(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('projectId') projectId: string,
+    @Param('characterId') characterId: string,
+    @Param('versionId') versionId: string,
+    @Param('characterAssetId') characterAssetId: string
+  ) {
+    return this.characters.rejectAsset(projectId, characterId, versionId, characterAssetId, user.organizationId);
+  }
+
   @Post(':characterId/versions/:versionId/approve')
   approve(
     @CurrentUser() user: AuthenticatedUser,
@@ -163,6 +174,16 @@ export class ChildrenClipCharactersController {
     @Param('versionId') versionId: string
   ) {
     return this.characters.approve(projectId, characterId, versionId, user.organizationId);
+  }
+
+  @Post(':characterId/versions/:versionId/reject')
+  reject(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('projectId') projectId: string,
+    @Param('characterId') characterId: string,
+    @Param('versionId') versionId: string
+  ) {
+    return this.characters.reject(projectId, characterId, versionId, user.organizationId);
   }
 
   @Get(':characterId/versions/:versionId/assets/:assetId')

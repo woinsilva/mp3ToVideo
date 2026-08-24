@@ -52,6 +52,11 @@ export class ChildrenClipAssetsController {
     return this.assets.approve(projectId, shotAssetId, user.organizationId);
   }
 
+  @Post(':shotAssetId/reject')
+  reject(@CurrentUser() user: AuthenticatedUser, @Param('projectId') projectId: string, @Param('shotAssetId') shotAssetId: string) {
+    return this.assets.reject(projectId, shotAssetId, user.organizationId);
+  }
+
   @Post(':shotAssetId/retry')
   retry(@CurrentUser() user: AuthenticatedUser, @Param('projectId') projectId: string, @Param('shotAssetId') shotAssetId: string) {
     return this.assets.retry(projectId, shotAssetId, user.organizationId, user.userId);

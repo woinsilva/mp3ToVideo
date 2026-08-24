@@ -340,6 +340,12 @@ describe('Projects integration', () => {
       .attach('file', png, { filename: 'mouth-a.png', contentType: 'image/png' })
       .expect(201)
       .expect(({ body }) => expect(body.assets.some((asset: { role: string; label: string }) => asset.role === 'mouth_shape' && asset.label === 'A')).toBe(true));
+    const mouthAsset = await prisma.characterAsset.findFirst({ where: { characterVersionId: versionId, role: 'mouth_shape', label: 'A' } });
+    await request(app.getHttpServer())
+      .post(`/projects/${projectResponse.body.id}/children-clip/characters/${characterId}/versions/${versionId}/assets/${mouthAsset!.id}/reject`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .expect(201)
+      .expect(({ body }) => expect(body.assets.find((asset: { id: string }) => asset.id === mouthAsset!.id).status).toBe('rejected'));
 
     const generatedPose = await request(app.getHttpServer())
       .post(`/projects/${projectResponse.body.id}/children-clip/characters/${characterId}/versions/${versionId}/assets/generate`)
@@ -449,6 +455,18 @@ describe('Projects integration', () => {
       .post(`/projects/${projectResponse.body.id}/children-clip/production-assets/${poseAsset.id}/approve`)
       .set('Authorization', `Bearer ${authToken}`)
       .expect(201);
+    const propResponse = await request(app.getHttpServer())
+      .post(`/projects/${projectResponse.body.id}/children-clip/production-assets/shots/${shots[0].id}/upload`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .field('role', 'prop')
+      .attach('file', png, { filename: 'regador.png', contentType: 'image/png' })
+      .expect(201);
+    const propAsset = propResponse.body.shots[0].assets.find((asset: { role: string }) => asset.role === 'prop');
+    await request(app.getHttpServer())
+      .post(`/projects/${projectResponse.body.id}/children-clip/production-assets/${propAsset.id}/reject`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .expect(201)
+      .expect(({ body }) => expect(body.shots[0].assets.find((asset: { id: string }) => asset.id === propAsset.id).status).toBe('rejected'));
     await request(app.getHttpServer())
       .get(`/projects/${projectResponse.body.id}/children-clip/production-assets/${shotAsset.id}/file`)
       .set('Authorization', `Bearer ${authToken}`)

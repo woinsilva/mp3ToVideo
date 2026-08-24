@@ -223,7 +223,7 @@ Depois de rodar `corepack pnpm prisma:seed`, existe uma conta de desenvolvimento
 - email: `demo@example.com`
 - senha: `12345678`
 
-## Estado atual do MVP
+## Estado atual do sistema
 
 Implementado:
 
@@ -233,20 +233,19 @@ Implementado:
 - pipeline de storyboard e cenas
 - renderizacao MP4 com FFmpeg
 - API de status, cenas, render e download
-- frontend MVP para executar o fluxo completo
+- frontend para executar os fluxos completos
 - opcao de limitar o clipe aos primeiros segundos da musica
 - testes unitarios e integrados no monorepo
 
 Ainda nao implementado:
 
-- geracao de video por modelos nativamente text-to-video
 - billing
 
 Implementado parcialmente:
 
 - integracao real com Ollama para storyboard e prompts de cena
 - integracao real com faster-whisper para transcricao quando habilitado
-- geracao visual local por prompt via ComfyUI, com tentativa de video direto por workflow Wan2.2 e fallback para imagem animada
+- geracao visual local por prompt via ComfyUI, incluindo Wan2.2, img2img de personagens e fallback para imagem animada
 - fallback automatico para modo mock quando Ollama estiver desabilitado ou indisponivel
 
 ## Observacoes
@@ -258,3 +257,27 @@ Implementado parcialmente:
 - o modelo padrao sugerido para GPU local com 12 GB e `qwen3:8b`
 - o modelo padrao sugerido para transcricao local e `distil-large-v3`
 - para a camada visual local, o worker agora tenta `ComfyUI Wan2.2 -> video por cena`, depois cai para `ComfyUI -> imagem por cena -> animacao no ffmpeg`
+
+## Clipe infantil completo
+
+Ao criar um projeto, selecione `Clipe infantil`. O estudio dedicado conduz o fluxo da musica final
+do Suno ate o MP4 de no maximo quatro minutos:
+
+1. envie MP3/WAV e letra;
+2. aguarde a analise musical;
+3. gere personagens por descricao, envie imagens ou reutilize a biblioteca da organizacao;
+4. aprove a identidade e gere, envie, aprove ou rejeite vistas, poses, expressoes e bocas;
+5. gere e revise biblia visual, roteiro, storyboard e timeline;
+6. produza e aprove fundos e camadas por tomada;
+7. renderize as tomadas 2D e, opcionalmente, tomadas especiais Wan;
+8. revise os previews e renderize o clipe final com a musica original;
+9. valide o preview final e baixe o MP4.
+
+Falhas ficam visiveis no item correspondente e possuem retry. ComfyUI, Wan e RIFE compartilham um
+lease global de GPU; quando outro job ocupa a placa, a interface mostra `WAITING_GPU`. O documento
+de arquitetura e decisoes esta em [`docs/children-clip-module.md`](docs/children-clip-module.md).
+
+Para operar localmente, mantenha Postgres, Redis e Ollama do Compose ativos, abra o ComfyUI Desktop
+no Windows e execute `corepack pnpm dev:logs`. Verifique `.api.out.log`, `.worker.out.log` e
+`.frontend.out.log`; o worker deve informar as tres filas e o ComfyUI deve responder em
+`http://localhost:8188`.

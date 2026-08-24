@@ -261,8 +261,16 @@ class ProjectsService {
     return apiService.request<ChildrenClipCharacterVersion>(`/projects/${projectId}/children-clip/characters/${characterId}/versions/${versionId}/assets/${characterAssetId}/approve`, { method: 'POST' }, token);
   }
 
+  rejectChildrenClipCharacterAsset(projectId: string, characterId: string, versionId: string, characterAssetId: string, token: string) {
+    return apiService.request<ChildrenClipCharacterVersion>(`/projects/${projectId}/children-clip/characters/${characterId}/versions/${versionId}/assets/${characterAssetId}/reject`, { method: 'POST' }, token);
+  }
+
   approveChildrenClipCharacterVersion(projectId: string, characterId: string, versionId: string, token: string) {
     return apiService.request<ChildrenClipCharacterVersion>(`/projects/${projectId}/children-clip/characters/${characterId}/versions/${versionId}/approve`, { method: 'POST' }, token);
+  }
+
+  rejectChildrenClipCharacterVersion(projectId: string, characterId: string, versionId: string, token: string) {
+    return apiService.request<ChildrenClipCharacterVersion>(`/projects/${projectId}/children-clip/characters/${characterId}/versions/${versionId}/reject`, { method: 'POST' }, token);
   }
 
   retryChildrenClipCharacterGeneration(projectId: string, characterId: string, versionId: string, token: string) {
@@ -332,6 +340,10 @@ class ProjectsService {
     return apiService.request<ChildrenClipProductionAssetsStatus>(`/projects/${projectId}/children-clip/production-assets/${shotAssetId}/approve`, { method: 'POST' }, token);
   }
 
+  rejectChildrenClipShotAsset(projectId: string, shotAssetId: string, token: string) {
+    return apiService.request<ChildrenClipProductionAssetsStatus>(`/projects/${projectId}/children-clip/production-assets/${shotAssetId}/reject`, { method: 'POST' }, token);
+  }
+
   retryChildrenClipShotAsset(projectId: string, shotAssetId: string, token: string) {
     return apiService.request<ChildrenClipProductionAssetsStatus>(`/projects/${projectId}/children-clip/production-assets/${shotAssetId}/retry`, { method: 'POST' }, token);
   }
@@ -374,6 +386,10 @@ class ProjectsService {
 
   approveChildrenClipHeroShot(projectId: string, attemptId: string, token: string) {
     return apiService.request<ChildrenClipOutputStatus>(`/projects/${projectId}/children-clip/output/hero-attempts/${attemptId}/approve`, { method: 'POST' }, token);
+  }
+
+  rejectChildrenClipHeroShot(projectId: string, attemptId: string, token: string) {
+    return apiService.request<ChildrenClipOutputStatus>(`/projects/${projectId}/children-clip/output/hero-attempts/${attemptId}/reject`, { method: 'POST' }, token);
   }
 
   renderChildrenClipFinal(projectId: string, token: string) {
