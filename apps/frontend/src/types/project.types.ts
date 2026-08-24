@@ -14,7 +14,7 @@ export type ProjectStatus =
 export interface ProjectSummary {
   id: string;
   title: string;
-  generationMode: 'music' | 'prompt' | 'image';
+  generationMode: 'music' | 'prompt' | 'image' | 'children_clip';
   generationPrompt: string | null;
   stabilityTest: boolean;
   wanOnly: boolean;
@@ -36,13 +36,14 @@ export interface ProjectSummary {
   visualCheckpointName: string | null;
   status: ProjectStatus;
   lyrics: ProjectLyricsStatus | null;
+  childrenClip: ChildrenClipConfiguration | null;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface CreateProjectInput {
   title: string;
-  generationMode: 'music' | 'prompt' | 'image';
+  generationMode: 'music' | 'prompt' | 'image' | 'children_clip';
   generationPrompt: string | null;
   stabilityTest: boolean;
   wanOnly: boolean;
@@ -55,6 +56,23 @@ export interface CreateProjectInput {
   sceneDurationSeconds: number | null;
   visualCheckpointName: string | null;
   manualLyricsText: string | null;
+  childrenClipConcept?: string | null;
+  childrenClipVisualStyle?: string | null;
+  audienceAgeMin?: number | null;
+  audienceAgeMax?: number | null;
+  childrenClipAspectRatio?: ChildrenClipAspectRatio | null;
+}
+
+export type ChildrenClipAspectRatio = 'landscape_16_9' | 'portrait_9_16' | 'square_1_1';
+
+export interface ChildrenClipConfiguration {
+  id: string;
+  concept: string;
+  audienceAgeMin: number;
+  audienceAgeMax: number;
+  aspectRatio: ChildrenClipAspectRatio;
+  visualStyle: string;
+  productionStatus: string;
 }
 
 export interface TrackUploadResult {

@@ -192,6 +192,57 @@ describe('Projects integration', () => {
     });
   });
 
+  it('creates a children clip project and keeps its Suno track out of the legacy queue', async () => {
+    const createResponse = await request(app.getHttpServer())
+      .post('/projects')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({
+        title: 'A festa dos bichinhos',
+        generationMode: 'children_clip',
+        manualLyricsText: '[Verse]\nCada bichinho vai cantar',
+        childrenClipConcept: 'Animais aprendem a plantar juntos em uma horta colorida.',
+        childrenClipVisualStyle: 'Animacao 2D infantil original com formas arredondadas.',
+        audienceAgeMin: 2,
+        audienceAgeMax: 7,
+        childrenClipAspectRatio: 'landscape_16_9'
+      })
+      .expect(201);
+
+    expect(createResponse.body).toMatchObject({
+      generationMode: 'children_clip',
+      status: 'draft',
+      childrenClip: {
+        concept: 'Animais aprendem a plantar juntos em uma horta colorida.',
+        visualStyle: 'Animacao 2D infantil original com formas arredondadas.',
+        audienceAgeMin: 2,
+        audienceAgeMax: 7,
+        aspectRatio: 'landscape_16_9',
+        productionStatus: 'setup'
+      }
+    });
+
+    const uploadResponse = await request(app.getHttpServer())
+      .post(`/projects/${createResponse.body.id}/upload-track`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .field('manualLyricsText', '[Verse]\nCada bichinho vai cantar')
+      .attach('file', sampleMp3Path, {
+        filename: 'suno-final.mp3',
+        contentType: 'audio/mpeg'
+      })
+      .expect(201);
+
+    expect(uploadResponse.body.status).toBe('uploaded');
+    expect(await prisma.processingJob.count({ where: { projectId: createResponse.body.id } })).toBe(0);
+
+    const persisted = await prisma.project.findUnique({
+      where: { id: createResponse.body.id },
+      include: { childrenClip: true, track: true }
+    });
+    expect(persisted?.childrenClip?.productionStatus).toBe('setup');
+    expect(persisted?.track?.originalFileName).toBe('suno-final.mp3');
+    uploadedFilePath = resolve(persisted?.track?.storagePath ?? '');
+  });
+
   it('creates and immediately queues a reproducible Wan stability baseline from a prompt', async () => {
     const response = await request(app.getHttpServer())
       .post('/projects')

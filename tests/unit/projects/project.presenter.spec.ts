@@ -21,6 +21,7 @@ describe('ProjectPresenter', () => {
         generationCfg: null,
         generationSteps: null,
         generationFps: 16,
+        frameInterpolationMode: 'off',
         sourceImageAssetId: null,
         clipDurationSeconds: 20,
         sceneDurationSeconds: 5,
@@ -42,6 +43,7 @@ describe('ProjectPresenter', () => {
       generationCfg: null,
       generationSteps: null,
       generationFps: 16,
+      frameInterpolationMode: 'off',
       sourceImageAssetId: null,
       hasSourceImage: false,
       sourceImage: null,
@@ -50,6 +52,7 @@ describe('ProjectPresenter', () => {
       visualCheckpointName: 'sd_xl_turbo_1.0.safetensors',
       status: 'draft',
       lyrics: null,
+      childrenClip: null,
       createdAt: now,
       updatedAt: now
     });

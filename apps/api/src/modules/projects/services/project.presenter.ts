@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { SceneRenderAttemptStatus } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
 import type {
+  Asset,
+  ChildrenClip,
   Lyrics,
   MusicSection,
   ProcessingJob,
@@ -10,8 +12,7 @@ import type {
   Render,
   Scene,
   SceneRenderAttempt,
-  ScenePrompt,
-  Asset
+  ScenePrompt
 } from '@prisma/client';
 
 export interface ProcessingActivityEntry {
@@ -42,7 +43,7 @@ export class ProjectPresenter {
   private static readonly quietThresholdMs = 7 * 60_000;
   private static readonly longRunningThresholdMs = 10 * 60_000;
 
-  summary(project: Project & { sourceImageAsset?: Asset | null }) {
+  summary(project: Project & { sourceImageAsset?: Asset | null; childrenClip?: ChildrenClip | null }) {
     return {
       id: project.id,
       title: project.title,
@@ -70,6 +71,7 @@ export class ProjectPresenter {
       visualCheckpointName: project.visualCheckpointName,
       status: project.status,
       lyrics: null,
+      childrenClip: this.childrenClip(project.childrenClip),
       createdAt: project.createdAt,
       updatedAt: project.updatedAt
     };
@@ -79,6 +81,7 @@ export class ProjectPresenter {
     project: Project & {
       lyrics?: Lyrics | null;
       sourceImageAsset?: Asset | null;
+      childrenClip?: ChildrenClip | null;
     }
   ) {
     return {
@@ -114,8 +117,23 @@ export class ProjectPresenter {
             normalizedText: project.lyrics.normalizedText
           }
         : null,
+      childrenClip: this.childrenClip(project.childrenClip),
       createdAt: project.createdAt,
       updatedAt: project.updatedAt
+    };
+  }
+
+  private childrenClip(childrenClip: ChildrenClip | null | undefined) {
+    if (!childrenClip) return null;
+
+    return {
+      id: childrenClip.id,
+      concept: childrenClip.concept,
+      audienceAgeMin: childrenClip.audienceAgeMin,
+      audienceAgeMax: childrenClip.audienceAgeMax,
+      aspectRatio: childrenClip.aspectRatio,
+      visualStyle: childrenClip.visualStyle,
+      productionStatus: childrenClip.productionStatus
     };
   }
 
