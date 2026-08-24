@@ -20,8 +20,10 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import type { AuthenticatedUser } from '../../auth/types/authenticated-user.type';
 import { CreateProjectDto } from '../dtos/create-project.dto';
 import { RetryProjectDto } from '../dtos/retry-project.dto';
+import { RegenerateVisualStoryboardDto } from '../dtos/regenerate-visual-storyboard.dto';
 import { UploadTrackDto } from '../dtos/upload-track.dto';
 import { ProjectsService } from '../services/projects.service';
+import { ImageUploadPolicyService } from '../services/image-upload-policy.service';
 import { TrackUploadPolicyService } from '../services/track-upload-policy.service';
 
 @UseGuards(JwtAuthGuard)
@@ -32,6 +34,8 @@ export class ProjectsController {
     private readonly projectsService: ProjectsService,
     @Inject(TrackUploadPolicyService)
     private readonly trackUploadPolicyService: TrackUploadPolicyService,
+    @Inject(ImageUploadPolicyService)
+    private readonly imageUploadPolicyService: ImageUploadPolicyService,
     @Inject(ConfigService)
     private readonly configService: ConfigService
   ) {}
@@ -42,6 +46,15 @@ export class ProjectsController {
       organizationId: user.organizationId,
       createdByUserId: user.userId,
       title: input.title,
+      generationMode: input.generationMode,
+      generationPrompt: input.generationPrompt,
+      stabilityTest: input.stabilityTest,
+      wanOnly: input.wanOnly,
+      generationSeed: input.generationSeed,
+      generationCfg: input.generationCfg,
+      generationSteps: input.generationSteps,
+      generationFps: input.generationFps,
+      frameInterpolationMode: input.frameInterpolationMode,
       clipDurationSeconds: input.clipDurationSeconds,
       sceneDurationSeconds: input.sceneDurationSeconds,
       visualCheckpointName: input.visualCheckpointName,
@@ -69,6 +82,41 @@ export class ProjectsController {
     return this.projectsService.listProjectScenes(id, user.organizationId);
   }
 
+  @Get(':id/visual-storyboard')
+  getVisualStoryboard(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.projectsService.getVisualStoryboard(id, user.organizationId);
+  }
+
+  @Get(':id/visual-storyboard/image')
+  async getVisualStoryboardImage(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') projectId: string,
+    @Res() response: Response
+  ) {
+    const image = await this.projectsService.getVisualStoryboardImage(
+      projectId,
+      user.organizationId
+    );
+
+    response.setHeader('Content-Type', image.mimeType);
+    response.setHeader('Content-Disposition', `inline; filename="${image.fileName}"`);
+
+    return response.sendFile(image.absolutePath);
+  }
+
+  @Post(':id/visual-storyboard/regenerate')
+  regenerateVisualStoryboard(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') projectId: string,
+    @Body() input: RegenerateVisualStoryboardDto
+  ) {
+    return this.projectsService.regenerateVisualStoryboard(
+      projectId,
+      user.organizationId,
+      input.instruction
+    );
+  }
+
   @Post(':id/scenes/:sceneId/retry-render')
   retrySceneRender(
     @CurrentUser() user: AuthenticatedUser,
@@ -90,12 +138,7 @@ export class ProjectsController {
       throw new BadRequestException('Reference image file is required');
     }
 
-    const allowedMimeTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
-    const allowedExtension = /\.(jpe?g|png|webp)$/i.test(file.originalname);
-
-    if (!allowedMimeTypes.has(file.mimetype) || !allowedExtension) {
-      throw new BadRequestException('Only JPEG, PNG and WebP reference images are supported');
-    }
+    this.assertValidImageUpload(file);
 
     return this.projectsService.uploadSceneReferenceImage(
       projectId,
@@ -103,6 +146,59 @@ export class ProjectsController {
       user.organizationId,
       file
     );
+  }
+
+  @Post(':id/source-image')
+  @UseInterceptors(FileInterceptor('file'))
+  uploadProjectSourceImage(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') projectId: string,
+    @UploadedFile() file: Express.Multer.File | undefined
+  ) {
+    if (!file) {
+      throw new BadRequestException('Source image file is required');
+    }
+
+    this.assertValidImageUpload(file);
+
+    return this.projectsService.uploadProjectSourceImage(
+      projectId,
+      user.organizationId,
+      file
+    );
+  }
+
+  @Get(':id/source-image')
+  async getProjectSourceImage(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') projectId: string,
+    @Res() response: Response
+  ) {
+    const image = await this.projectsService.getProjectSourceImage(
+      projectId,
+      user.organizationId
+    );
+
+    response.setHeader('Content-Type', image.mimeType);
+    response.setHeader('Content-Disposition', `inline; filename="${image.fileName}"`);
+
+    return response.sendFile(image.absolutePath);
+  }
+
+  private assertValidImageUpload(file: Express.Multer.File): void {
+    const maxUploadBytes =
+      this.configService.get<number>('uploads.maxUploadMb', 50) * 1024 * 1024;
+
+    if (file.size > maxUploadBytes) {
+      throw new BadRequestException('Uploaded image exceeds the configured size limit');
+    }
+
+    if (
+      !this.imageUploadPolicyService.isAllowedMimeType(file.mimetype) ||
+      !this.imageUploadPolicyService.isAllowedFileName(file.originalname)
+    ) {
+      throw new BadRequestException('Only JPEG, PNG and WebP reference images are supported');
+    }
   }
 
   @Get(':id/scenes/:sceneId/reference-image')
@@ -140,6 +236,28 @@ export class ProjectsController {
     response.setHeader('Content-Type', download.mimeType);
     response.setHeader('Content-Disposition', `attachment; filename="${download.fileName}"`);
 
+    return response.sendFile(download.absolutePath);
+  }
+
+  @Post(':id/interpolation')
+  requestFrameInterpolation(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.projectsService.requestFrameInterpolation(id, user.organizationId);
+  }
+
+  @Get(':id/interpolation')
+  getFrameInterpolation(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.projectsService.getFrameInterpolation(id, user.organizationId);
+  }
+
+  @Get(':id/interpolation/download')
+  async downloadFrameInterpolation(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Res() response: Response
+  ) {
+    const download = await this.projectsService.getFrameInterpolationDownload(id, user.organizationId);
+    response.setHeader('Content-Type', download.mimeType);
+    response.setHeader('Content-Disposition', `attachment; filename="${download.fileName}"`);
     return response.sendFile(download.absolutePath);
   }
 
@@ -188,5 +306,10 @@ export class ProjectsController {
     @Body() input: RetryProjectDto
   ) {
     return this.projectsService.retryProject(projectId, user.organizationId, input);
+  }
+
+  @Post(':id/start-render')
+  startProjectRender(@CurrentUser() user: AuthenticatedUser, @Param('id') projectId: string) {
+    return this.projectsService.startProjectRender(projectId, user.organizationId);
   }
 }

@@ -24,6 +24,17 @@ export const configuration = () => ({
     height: Number(process.env.RENDER_HEIGHT ?? 720),
     frameRate: Number(process.env.RENDER_FRAME_RATE ?? 24)
   },
+  interpolation: {
+    rifeExecutablePath: resolveFromWorkspaceRoot(
+      process.env.RIFE_EXECUTABLE_PATH ?? './tools/rife-ncnn-vulkan/rife-ncnn-vulkan.exe'
+    ),
+    rifeModelPath: resolveFromWorkspaceRoot(
+      process.env.RIFE_MODEL_PATH ?? './tools/rife-ncnn-vulkan/rife-v4.6'
+    ),
+    gpuId: Number(process.env.RIFE_GPU_ID ?? 0),
+    crf: Number(process.env.RIFE_CRF ?? 17),
+    preset: process.env.RIFE_FFMPEG_PRESET ?? 'slow'
+  },
   ai: {
     enableFallbacks: process.env.ENABLE_AI_FALLBACKS !== 'false',
     enableOllama: process.env.ENABLE_OLLAMA === 'true',
@@ -40,6 +51,7 @@ export const configuration = () => ({
     comfyuiTimeoutMs: Number(process.env.COMFYUI_TIMEOUT_MS ?? 1200000),
     comfyuiPollIntervalMs: Number(process.env.COMFYUI_POLL_INTERVAL_MS ?? 3000),
     comfyuiWorkflowPath: process.env.COMFYUI_WORKFLOW_PATH ?? '',
+    comfyuiVideoWorkflowName: process.env.COMFYUI_VIDEO_WORKFLOW_NAME ?? 'wan-2.2-ti2v-5b',
     comfyuiEnableImageFallback: process.env.COMFYUI_ENABLE_IMAGE_FALLBACK === 'true',
     comfyuiCheckpointName: process.env.COMFYUI_CHECKPOINT_NAME ?? '',
     comfyuiVideoUnetName:
@@ -49,7 +61,7 @@ export const configuration = () => ({
     comfyuiVideoClipType: process.env.COMFYUI_VIDEO_CLIP_TYPE ?? 'wan',
     comfyuiVideoVaeName: process.env.COMFYUI_VIDEO_VAE_NAME ?? 'wan2.2_vae.safetensors',
     comfyuiVideoModelShift: Number(process.env.COMFYUI_VIDEO_MODEL_SHIFT ?? 8),
-    comfyuiVideoFps: Number(process.env.COMFYUI_VIDEO_FPS ?? 24),
+    comfyuiVideoFps: Number(process.env.COMFYUI_VIDEO_FPS ?? 16),
     comfyuiWidth: Number(process.env.COMFYUI_WIDTH ?? 1024),
     comfyuiHeight: Number(process.env.COMFYUI_HEIGHT ?? 576),
     comfyuiSteps: Number(process.env.COMFYUI_STEPS ?? 20),

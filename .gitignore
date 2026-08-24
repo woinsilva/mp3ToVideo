@@ -8,16 +8,23 @@ dist/
 coverage/
 *.log
 *.tsbuildinfo
+tools/rife-ncnn-vulkan/
+tools/rife-ncnn-vulkan-*-windows.zip
 
 storage/uploads/
 storage/generated-scenes/
 storage/scene-reference-images/
+storage/source-images/
+storage/continuity-frames/
+storage/storyboard-images/
 storage/comfyui/
 storage/renders/
 storage/temp/
 !storage/uploads/.gitkeep
 !storage/generated-scenes/.gitkeep
 !storage/scene-reference-images/.gitkeep
+!storage/continuity-frames/.gitkeep
+!storage/storyboard-images/.gitkeep
 !storage/renders/.gitkeep
 !storage/temp/.gitkeep
 

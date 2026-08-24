@@ -10,7 +10,17 @@ export interface VideoWorkflowParams {
   width: number;
   height: number;
   length: number;
+  fps: number;
   seed: number;
+  steps: number;
+  cfg: number;
+  sampler: string;
+  scheduler: string;
+  unetName: string;
+  clipName: string;
+  clipType: string;
+  vaeName: string;
+  modelShift: number;
   filenamePrefix: string;
   referenceImageFilename?: string | null;
 }
@@ -28,37 +38,17 @@ export class ComfyUiWorkflowLoaderService {
   async buildVideoWorkflow(params: VideoWorkflowParams): Promise<Record<string, unknown>> {
     const template = await this.loadTemplate();
 
-    const unetName = this.configService.get<string>(
-      'visual.comfyuiVideoUnetName',
-      'wan2.2_ti2v_5B_fp16.safetensors'
-    );
-    const clipName = this.configService.get<string>(
-      'visual.comfyuiVideoClipName',
-      'umt5_xxl_fp8_e4m3fn_scaled.safetensors'
-    );
-    const clipType = this.configService.get<string>('visual.comfyuiVideoClipType', 'wan');
-    const vaeName = this.configService.get<string>(
-      'visual.comfyuiVideoVaeName',
-      'wan2.2_vae.safetensors'
-    );
-    const shift = this.configService.get<number>('visual.comfyuiVideoModelShift', 8);
-    const fps = this.configService.get<number>('visual.comfyuiVideoFps', 24);
-    const steps = this.configService.get<number>('visual.comfyuiSteps', 20);
-    const cfg = this.configService.get<number>('visual.comfyuiCfg', 5);
-    const sampler = this.configService.get<string>('visual.comfyuiSampler', 'uni_pc');
-    const scheduler = this.configService.get<string>('visual.comfyuiScheduler', 'simple');
-
     const replacements: Record<string, string | number> = {
-      unetName,
-      clipName,
-      clipType,
-      vaeName,
-      shift,
-      fps,
-      steps,
-      cfg,
-      sampler,
-      scheduler,
+      unetName: params.unetName,
+      clipName: params.clipName,
+      clipType: params.clipType,
+      vaeName: params.vaeName,
+      shift: params.modelShift,
+      fps: params.fps,
+      steps: params.steps,
+      cfg: params.cfg,
+      sampler: params.sampler,
+      scheduler: params.scheduler,
       positivePrompt: params.positivePrompt,
       negativePrompt: params.negativePrompt,
       width: params.width,
@@ -90,7 +80,8 @@ export class ComfyUiWorkflowLoaderService {
 
     this.logger.debug(
       `Built video workflow with params: width=${params.width}, height=${params.height}, ` +
-        `length=${params.length}, seed=${params.seed}, unet=${unetName}, ` +
+        `length=${params.length}, seed=${params.seed}, unet=${params.unetName}, ` +
+        `fps=${params.fps}, steps=${params.steps}, cfg=${params.cfg}, ` +
         `referenceImage=${params.referenceImageFilename ? 'yes' : 'no'}`
     );
 

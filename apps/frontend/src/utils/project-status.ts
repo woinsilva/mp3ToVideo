@@ -15,6 +15,7 @@ const statusLabels: Record<ProjectStatus, string> = {
   analyzing: 'Analisando audio',
   storyboarding: 'Criando storyboard',
   generating_scenes: 'Gerando cenas',
+  awaiting_references: 'Aguardando referencias',
   rendering: 'Renderizando',
   completed: 'Concluido',
   failed: 'Falhou'
@@ -44,14 +45,19 @@ export function buildProjectStatusSteps(
   const reachedUpload =
     status !== 'draft' && (safeProgress >= stepThresholds.upload || status === 'completed');
   const reachedAnalyzing =
-    ['analyzing', 'storyboarding', 'generating_scenes', 'rendering', 'completed'].includes(
-      status
-    ) || safeProgress >= stepThresholds.analyzing;
+    [
+      'analyzing',
+      'storyboarding',
+      'generating_scenes',
+      'awaiting_references',
+      'rendering',
+      'completed'
+    ].includes(status) || safeProgress >= stepThresholds.analyzing;
   const reachedStoryboarding =
-    ['storyboarding', 'generating_scenes', 'rendering', 'completed'].includes(status) ||
+    ['storyboarding', 'generating_scenes', 'awaiting_references', 'rendering', 'completed'].includes(status) ||
     safeProgress >= stepThresholds.storyboarding;
   const reachedGeneratingScenes =
-    ['generating_scenes', 'rendering', 'completed'].includes(status) ||
+    ['generating_scenes', 'awaiting_references', 'rendering', 'completed'].includes(status) ||
     safeProgress >= stepThresholds.generatingScenes;
   const reachedRendering =
     ['rendering', 'completed'].includes(status) || safeProgress >= stepThresholds.rendering;
@@ -79,7 +85,7 @@ export function buildProjectStatusSteps(
       key: 'generating_scenes',
       label: 'Cenas',
       reached: reachedGeneratingScenes,
-      active: status === 'generating_scenes'
+      active: status === 'generating_scenes' || status === 'awaiting_references'
     },
     {
       key: 'rendering',

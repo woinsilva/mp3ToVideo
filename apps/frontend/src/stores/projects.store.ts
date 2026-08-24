@@ -2,10 +2,12 @@ import { defineStore } from 'pinia';
 
 import { projectsService } from '@/services/projects.service';
 import type {
+  CreateProjectInput,
   ProjectRender,
   ProjectScene,
   ProjectStatusResponse,
-  ProjectSummary
+  ProjectSummary,
+  ProjectVisualStoryboard
 } from '@/types/project.types';
 
 interface ProjectsState {
@@ -13,6 +15,8 @@ interface ProjectsState {
   currentProject: ProjectSummary | null;
   currentStatus: ProjectStatusResponse | null;
   currentScenes: ProjectScene[];
+  currentVisualStoryboard: ProjectVisualStoryboard | null;
+  currentVisualStoryboardImageUrl: string | null;
   currentRender: ProjectRender | null;
   isLoading: boolean;
   errorMessage: string | null;
@@ -24,6 +28,8 @@ export const useProjectsStore = defineStore('projects', {
     currentProject: null,
     currentStatus: null,
     currentScenes: [],
+    currentVisualStoryboard: null,
+    currentVisualStoryboardImageUrl: null,
     currentRender: null,
     isLoading: false,
     errorMessage: null
@@ -32,10 +38,14 @@ export const useProjectsStore = defineStore('projects', {
     resetProjectViewState() {
       this.currentStatus = null;
       this.currentScenes = [];
+      this.revokeVisualStoryboardImageUrl();
+      this.currentVisualStoryboard = null;
       this.currentRender = null;
     },
     clearProjectArtifacts() {
       this.currentScenes = [];
+      this.revokeVisualStoryboardImageUrl();
+      this.currentVisualStoryboard = null;
       this.currentRender = null;
     },
     async fetchProjects(token: string) {
@@ -51,32 +61,34 @@ export const useProjectsStore = defineStore('projects', {
         this.isLoading = false;
       }
     },
-    async createProject(
-      title: string,
-      clipDurationSeconds: number | null,
-      sceneDurationSeconds: number | null,
-      visualCheckpointName: string | null,
-      manualLyricsText: string | null,
-      token: string
-    ) {
+    async createProject(input: CreateProjectInput, token: string) {
       this.isLoading = true;
       this.errorMessage = null;
 
       try {
-        const project = await projectsService.create(
-          title,
-          clipDurationSeconds,
-          sceneDurationSeconds,
-          visualCheckpointName,
-          manualLyricsText,
-          token
-        );
+        const project = await projectsService.create(input, token);
         this.projects = [project, ...this.projects];
         this.currentProject = project;
 
         return project;
       } catch (error) {
         this.errorMessage = error instanceof Error ? error.message : 'Falha ao criar projeto';
+        throw error;
+      } finally {
+        this.isLoading = false;
+      }
+    },
+    async uploadSourceImage(projectId: string, file: File, token: string) {
+      this.isLoading = true;
+      this.errorMessage = null;
+
+      try {
+        const project = await projectsService.uploadSourceImage(projectId, file, token);
+        this.currentProject = project;
+        this.projects = this.projects.map((item) => item.id === project.id ? project : item);
+        return project;
+      } catch (error) {
+        this.errorMessage = error instanceof Error ? error.message : 'Falha ao enviar imagem';
         throw error;
       } finally {
         this.isLoading = false;
@@ -206,6 +218,43 @@ export const useProjectsStore = defineStore('projects', {
       this.currentScenes = await projectsService.scenes(projectId, token);
       return this.currentScenes;
     },
+    async fetchVisualStoryboard(projectId: string, token: string) {
+      this.currentVisualStoryboard = await projectsService.visualStoryboard(projectId, token);
+
+      if (this.currentVisualStoryboard.hasImage) {
+        await this.fetchVisualStoryboardImage(projectId, token);
+      } else {
+        this.revokeVisualStoryboardImageUrl();
+      }
+
+      return this.currentVisualStoryboard;
+    },
+    async fetchVisualStoryboardImage(projectId: string, token: string) {
+      const blob = await projectsService.downloadVisualStoryboardImage(projectId, token);
+      this.revokeVisualStoryboardImageUrl();
+      this.currentVisualStoryboardImageUrl = URL.createObjectURL(blob);
+      return this.currentVisualStoryboardImageUrl;
+    },
+    async regenerateVisualStoryboard(projectId: string, instruction: string, token: string) {
+      this.isLoading = true;
+      this.errorMessage = null;
+
+      try {
+        this.currentVisualStoryboard = await projectsService.regenerateVisualStoryboard(
+          projectId,
+          instruction,
+          token
+        );
+        await this.fetchVisualStoryboardImage(projectId, token);
+        return this.currentVisualStoryboard;
+      } catch (error) {
+        this.errorMessage =
+          error instanceof Error ? error.message : 'Falha ao regerar storyboard visual';
+        throw error;
+      } finally {
+        this.isLoading = false;
+      }
+    },
     async uploadSceneReferenceImage(
       projectId: string,
       sceneId: string,
@@ -256,6 +305,27 @@ export const useProjectsStore = defineStore('projects', {
         this.isLoading = false;
       }
     },
+    async startRender(projectId: string, token: string) {
+      this.isLoading = true;
+      this.errorMessage = null;
+
+      try {
+        const project = await projectsService.startRender(projectId, token);
+        this.currentProject = project;
+        this.projects = this.projects.map((currentProject) =>
+          currentProject.id === projectId ? project : currentProject
+        );
+        this.syncProjectStatus(projectId, project.status);
+        this.currentStatus = null;
+        return project;
+      } catch (error) {
+        this.errorMessage =
+          error instanceof Error ? error.message : 'Falha ao iniciar renderizacao';
+        throw error;
+      } finally {
+        this.isLoading = false;
+      }
+    },
     async fetchRender(projectId: string, token: string) {
       this.currentRender = await projectsService.render(projectId, token);
       return this.currentRender;
@@ -267,6 +337,12 @@ export const useProjectsStore = defineStore('projects', {
       this.currentProject = null;
       this.resetProjectViewState();
       this.errorMessage = null;
+    },
+    revokeVisualStoryboardImageUrl() {
+      if (this.currentVisualStoryboardImageUrl) {
+        URL.revokeObjectURL(this.currentVisualStoryboardImageUrl);
+        this.currentVisualStoryboardImageUrl = null;
+      }
     },
     syncProjectStatus(projectId: string, status: ProjectSummary['status']) {
       if (this.currentProject && this.currentProject.id === projectId) {

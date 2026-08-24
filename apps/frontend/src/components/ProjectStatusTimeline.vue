@@ -240,6 +240,7 @@ export default class ProjectStatusTimeline extends Vue {
     if (this.status === 'completed') return 'Videoclipe concluído';
     if (this.status === 'failed') return 'A geração encontrou um problema';
     if (this.status === 'draft') return 'Pronto para começar';
+    if (this.status === 'awaiting_references') return 'Cenas prontas para revisao';
     return 'Criando seu videoclipe';
   }
 
@@ -363,6 +364,7 @@ export default class ProjectStatusTimeline extends Vue {
     if (stage === 'analyzing') return 'Análise';
     if (stage === 'storyboarding') return 'Storyboard';
     if (stage === 'generating_scenes') return 'Cenas';
+    if (stage === 'awaiting_references') return 'Revisao';
     if (stage === 'rendering') return 'Render';
     if (stage === 'completed') return 'Concluído';
     if (stage === 'failed') return 'Falhou';

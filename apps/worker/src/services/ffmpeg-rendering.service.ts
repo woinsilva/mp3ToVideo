@@ -100,4 +100,21 @@ export class FfmpegRenderingService {
       })
     );
   }
+
+  async extractLastFrame(videoPath: string, outputPath: string): Promise<void> {
+    const ffmpegPath = this.configService.get<string>('rendering.ffmpegPath', 'ffmpeg');
+
+    await execFileAsync(ffmpegPath, [
+      '-y',
+      '-sseof',
+      '-0.08',
+      '-i',
+      videoPath,
+      '-frames:v',
+      '1',
+      '-q:v',
+      '2',
+      outputPath
+    ]);
+  }
 }

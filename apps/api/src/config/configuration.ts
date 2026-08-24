@@ -17,5 +17,17 @@ export const configuration = () => ({
   redis: {
     host: process.env.REDIS_HOST ?? 'localhost',
     port: Number(process.env.REDIS_PORT ?? 6379)
+  },
+  visual: {
+    provider: process.env.SCENE_VISUAL_PROVIDER ?? 'procedural',
+    comfyuiBaseUrl: process.env.COMFYUI_BASE_URL ?? 'http://localhost:8188',
+    comfyuiHealthTimeoutMs: Number(process.env.COMFYUI_HEALTH_TIMEOUT_MS ?? 5000),
+    comfyuiCheckpointName: process.env.COMFYUI_CHECKPOINT_NAME ?? '',
+    comfyuiStoryboardWidth: Number(process.env.COMFYUI_STORYBOARD_WIDTH ?? 1536),
+    comfyuiStoryboardHeight: Number(process.env.COMFYUI_STORYBOARD_HEIGHT ?? 864),
+    comfyuiStoryboardSteps: Number(process.env.COMFYUI_STORYBOARD_STEPS ?? 24),
+    comfyuiStoryboardCfg: Number(process.env.COMFYUI_STORYBOARD_CFG ?? 5),
+    comfyuiStoryboardSampler: process.env.COMFYUI_STORYBOARD_SAMPLER ?? 'uni_pc',
+    comfyuiStoryboardScheduler: process.env.COMFYUI_STORYBOARD_SCHEDULER ?? 'simple'
   }
 });

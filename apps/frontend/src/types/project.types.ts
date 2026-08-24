@@ -6,6 +6,7 @@ export type ProjectStatus =
   | 'analyzing'
   | 'storyboarding'
   | 'generating_scenes'
+  | 'awaiting_references'
   | 'rendering'
   | 'completed'
   | 'failed';
@@ -13,6 +14,23 @@ export type ProjectStatus =
 export interface ProjectSummary {
   id: string;
   title: string;
+  generationMode: 'music' | 'prompt' | 'image';
+  generationPrompt: string | null;
+  stabilityTest: boolean;
+  wanOnly: boolean;
+  generationSeed: number | null;
+  generationCfg: number | null;
+  generationSteps: number | null;
+  generationFps: number;
+  frameInterpolationMode: 'off' | 'rife_2x';
+  sourceImageAssetId: string | null;
+  hasSourceImage: boolean;
+  sourceImage: {
+    id: string;
+    mimeType: string;
+    width: number | null;
+    height: number | null;
+  } | null;
   clipDurationSeconds: number | null;
   sceneDurationSeconds: number | null;
   visualCheckpointName: string | null;
@@ -20,6 +38,23 @@ export interface ProjectSummary {
   lyrics: ProjectLyricsStatus | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface CreateProjectInput {
+  title: string;
+  generationMode: 'music' | 'prompt' | 'image';
+  generationPrompt: string | null;
+  stabilityTest: boolean;
+  wanOnly: boolean;
+  generationSeed: number | null;
+  generationCfg: number | null;
+  generationSteps: number | null;
+  generationFps: 16 | 24;
+  frameInterpolationMode: 'off' | 'rife_2x';
+  clipDurationSeconds: number | null;
+  sceneDurationSeconds: number | null;
+  visualCheckpointName: string | null;
+  manualLyricsText: string | null;
 }
 
 export interface TrackUploadResult {
@@ -110,6 +145,19 @@ export interface ProjectScene {
   prompt: ScenePromptView | null;
 }
 
+export interface ProjectVisualStoryboard {
+  concept: string;
+  visualStyle: string;
+  mood: string;
+  colorPalette: string;
+  narrativeSummary: string;
+  visualPrompt: string | null;
+  revisionInstruction: string | null;
+  hasImage: boolean;
+  imageUrl: string | null;
+  updatedAt: string;
+}
+
 export interface SceneRenderAttemptSummary {
   activeAttemptId: string | null;
   latestAttemptStatus: string | null;
@@ -118,6 +166,33 @@ export interface SceneRenderAttemptSummary {
   lastHeartbeatAt: string | null;
   lastExternalHeartbeatAt: string | null;
   canRetryAttempt: boolean;
+  provider: string;
+  sourceType: string;
+  hasReferenceImage: boolean;
+  referenceImageAssetId: string | null;
+  workflowName: string | null;
+  positivePrompt: string | null;
+  negativePrompt: string | null;
+  seed: number | null;
+  cfg: number | null;
+  steps: number | null;
+  sampler: string | null;
+  scheduler: string | null;
+  width: number | null;
+  height: number | null;
+  fps: number | null;
+  requestedFps: number | null;
+  effectiveFps: number | null;
+  requestedFrameCount: number | null;
+  calculatedFrameCount: number | null;
+  effectiveFrameCount: number | null;
+  frameCount: number | null;
+  requestedDurationSeconds: number | null;
+  effectiveDurationSeconds: number | null;
+  calculatedDurationSeconds: number | null;
+  videoValidationStatus: string | null;
+  videoValidationWarnings: string[];
+  unetName: string | null;
 }
 
 export interface RenderAssetView {
@@ -132,4 +207,16 @@ export interface ProjectRender {
   status: string;
   durationSeconds: number | null;
   asset: RenderAssetView | null;
+}
+
+export interface FrameInterpolationStatus {
+  job: {
+    id: string;
+    status: 'queued' | 'active' | 'completed' | 'failed' | 'retrying';
+    progress: number;
+    detailMessage: string | null;
+    errorMessage: string | null;
+    updatedAt: string;
+  } | null;
+  asset: (RenderAssetView & { metadata: Record<string, unknown> | null }) | null;
 }

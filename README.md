@@ -63,10 +63,12 @@ Variaveis importantes:
 - `WHISPER_MODEL`
 - `SCENE_VISUAL_PROVIDER`
 - `COMFYUI_BASE_URL`
+- `COMFYUI_OUTPUT_HOST_PATH`
 - `COMFYUI_ENABLE_IMAGE_FALLBACK`
 - `COMFYUI_CHECKPOINT_NAME`
-- `COMFYUI_MODELS_HOST_PATH`
-- `COMFYUI_CUSTOM_NODES_HOST_PATH`
+- `RIFE_EXECUTABLE_PATH`
+- `RIFE_MODEL_PATH`
+- `RIFE_GPU_ID`
 
 ## Subir ambiente local
 
@@ -126,52 +128,25 @@ Com GPU NVIDIA, o recomendado e usar CUDA configurado na maquina para o `faster-
 Se quiser geracao visual local por prompt:
 
 - deixe `SCENE_VISUAL_PROVIDER=comfyui`
-- suba o ComfyUI localmente em `http://localhost:8188` ou via Docker Compose com o profile `comfyui`
+- abra o ComfyUI Desktop no Windows e confirme que ele esta acessivel em `http://localhost:8188`
 - se quiser fallback por imagem, habilite `COMFYUI_ENABLE_IMAGE_FALLBACK=true` e configure um checkpoint compativel em `COMFYUI_CHECKPOINT_NAME`
 - se estiver usando apenas o workflow WAN de video, deixe `COMFYUI_ENABLE_IMAGE_FALLBACK=false`
 
 Sem ComfyUI ativo, o worker continua no modo `procedural` e gera cenas baseadas em composicao simples no `ffmpeg`.
 
-### ComfyUI via Docker
+Para habilitar a interpolacao opcional RIFE 2x no Windows, instale o binario oficial portatil:
 
-O projeto agora possui um servico opcional de `ComfyUI` no `docker-compose.yml`.
-
-Subir apenas o ComfyUI:
-
-```bash
-docker compose --profile comfyui up -d comfyui
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/install-rife.ps1
 ```
 
-Subir infra base + ComfyUI:
+O worker executa o RIFE como pos-processamento em uma fila separada, preserva o render original e usa FFprobe para validar FPS, frames, duracao, resolucao e audio.
 
-```bash
-docker compose --profile comfyui up -d
-```
+### ComfyUI no Windows
 
-O servico publica a interface em `http://localhost:8188`.
+O ComfyUI nao faz parte do Docker Compose. Use a instalacao do ComfyUI Desktop no Windows, com os modelos e custom nodes configurados nela.
 
-#### Reaproveitar sua instalacao atual do Windows
-
-Se voce ja baixou modelos, custom nodes e workflows no ComfyUI do Windows, o ideal e reaproveitar esses mesmos diretorios por volume.
-
-Exemplo:
-
-```env
-COMFYUI_MODELS_HOST_PATH=C:/caminho/do/seu/ComfyUI/models
-COMFYUI_CUSTOM_NODES_HOST_PATH=C:/caminho/do/seu/ComfyUI/custom_nodes
-COMFYUI_INPUT_HOST_PATH=C:/caminho/do/seu/ComfyUI/input
-COMFYUI_OUTPUT_HOST_PATH=C:/caminho/do/seu/ComfyUI/output
-COMFYUI_USER_HOST_PATH=C:/caminho/do/seu/ComfyUI/user
-COMFYUI_TEMP_HOST_PATH=C:/caminho/do/seu/ComfyUI/temp
-```
-
-Se voce apontar esses caminhos para a instalacao que funcionou ontem:
-
-- nao precisa baixar os modelos de novo
-- nao precisa reinstalar os custom nodes de novo
-- nao precisa refazer os workflows ja salvos
-
-Se voce deixar os caminhos padrao `./storage/comfyui/...`, o container vai usar um ambiente separado. Nesse caso, os modelos e custom nodes precisarao existir nessas pastas.
+A aplicacao se conecta ao endpoint definido em `COMFYUI_BASE_URL`, que por padrao e `http://localhost:8188`. Mantenha o ComfyUI Desktop aberto enquanto houver geracoes em andamento.
 
 #### Exportar o workflow JSON correto
 
@@ -279,7 +254,7 @@ Implementado parcialmente:
 - o worker usa fallback local quando `ffprobe` nao consegue ler duracao real do audio
 - o frontend baixa o MP4 autenticado via `fetch`, nao via link publico
 - o `docker-compose.yml` sobe Postgres, Redis e Ollama; API, worker e frontend rodam por `pnpm dev`
-- o `docker-compose.yml` tambem pode subir um `ComfyUI` opcional via profile `comfyui`
+- o ComfyUI executa diretamente no Windows e nao faz parte do `docker-compose.yml`
 - o modelo padrao sugerido para GPU local com 12 GB e `qwen3:8b`
 - o modelo padrao sugerido para transcricao local e `distil-large-v3`
 - para a camada visual local, o worker agora tenta `ComfyUI Wan2.2 -> video por cena`, depois cai para `ComfyUI -> imagem por cena -> animacao no ffmpeg`

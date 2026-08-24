@@ -42,7 +42,7 @@ export class ProjectProcessingPipelineService {
     private readonly projectRenderService: ProjectRenderService
   ) {}
 
-  async run(payload: ProjectProcessingJobPayload): Promise<void> {
+  async run(payload: ProjectProcessingJobPayload): Promise<ProjectStatus> {
     const project = await this.prismaService.project.findFirst({
       where: {
         id: payload.projectId,
@@ -51,6 +51,7 @@ export class ProjectProcessingPipelineService {
       },
       include: {
         track: true,
+        sourceImageAsset: true,
         lyrics: true,
         storyboard: true,
         musicSections: {
@@ -71,13 +72,28 @@ export class ProjectProcessingPipelineService {
       }
     });
 
-    if (!project || !project.track) {
+    if (!project) {
+      throw new NotFoundException('Project not found for processing');
+    }
+
+    const isImageProject = project.generationMode === 'image';
+    const isDirectVideoProject = project.generationMode === 'prompt' || isImageProject;
+
+    if (!isDirectVideoProject && !project.track) {
       throw new NotFoundException('Project track not found for processing');
     }
 
-    const sourceDurationSeconds = await this.audioMetadataService.resolveDurationSeconds(
-      project.track.storagePath
-    );
+    if (isDirectVideoProject && (!project.generationPrompt || !project.clipDurationSeconds)) {
+      throw new NotFoundException('Prompt and duration not found for direct video processing');
+    }
+
+    if (isImageProject && !project.sourceImageAsset) {
+      throw new NotFoundException('Source image not found for image-to-video processing');
+    }
+
+    const sourceDurationSeconds = isDirectVideoProject
+      ? project.clipDurationSeconds!
+      : await this.audioMetadataService.resolveDurationSeconds(project.track!.storagePath);
     const requestedClipDurationSeconds = project.clipDurationSeconds
       ? Math.min(project.clipDurationSeconds, sourceDurationSeconds)
       : null;
@@ -116,7 +132,10 @@ export class ProjectProcessingPipelineService {
       await this.projectRenderService.render({
         organizationId: payload.organizationId,
         projectId: project.id,
-        audioPath: project.clipDurationSeconds
+        generationMode: project.generationMode,
+        audioPath: !project.track
+          ? null
+          : project.clipDurationSeconds
           ? await this.audioExcerptService.buildInitialExcerpt(
               project.id,
               project.track.storagePath,
@@ -125,6 +144,12 @@ export class ProjectProcessingPipelineService {
           : project.track.storagePath,
         durationSeconds: effectiveDurationSeconds,
         visualCheckpointName: project.visualCheckpointName,
+        stabilityTest: project.stabilityTest,
+        wanOnly: project.wanOnly,
+        generationSeed: project.generationSeed,
+        generationCfg: project.generationCfg,
+        generationSteps: project.generationSteps,
+        generationFps: project.generationFps,
         scenes: project.scenes.map((scene) => ({
           id: scene.id,
           title: scene.title,
@@ -134,43 +159,58 @@ export class ProjectProcessingPipelineService {
           status: scene.status,
           visualProvider: scene.visualProvider,
           videoAssetStoragePath: scene.videoAsset?.storagePath ?? null,
-          referenceImageStoragePath: scene.referenceImageAsset?.storagePath ?? null
+          referenceImageStoragePath: scene.referenceImageAsset?.storagePath ?? null,
+          referenceImageAssetId: scene.referenceImageAsset?.id ?? null,
+          referenceImageWidth: scene.referenceImageAsset?.width ?? null,
+          referenceImageHeight: scene.referenceImageAsset?.height ?? null
         }))
       });
 
-      return;
+      return ProjectStatus.completed;
     }
 
     await this.projectPipelineStateService.update(
       project.id,
       ProjectStatus.analyzing,
       25,
-      'Lendo metadados do audio e preparando o intervalo que sera usado no clipe.',
+      isDirectVideoProject
+        ? 'Preparando a descricao e a duracao definidas para o video.'
+        : 'Lendo metadados do audio e preparando o intervalo que sera usado no clipe.',
       {
         stage: 'analyzing',
-        message: 'Lendo metadados do audio enviado e preparando a analise inicial.'
+        message: isDirectVideoProject
+          ? 'Analisando a descricao enviada pelo usuario.'
+          : 'Lendo metadados do audio enviado e preparando a analise inicial.'
       }
     );
 
     await this.processingProgressService.heartbeat(
       project.id,
       28,
-      `Duracao original detectada: ${Math.round(sourceDurationSeconds)}s.`,
+      isDirectVideoProject
+        ? `Duracao solicitada: ${Math.round(sourceDurationSeconds)}s.`
+        : `Duracao original detectada: ${Math.round(sourceDurationSeconds)}s.`,
       {
         stage: 'analyzing',
-        message: `Duracao original do audio detectada: ${Math.round(sourceDurationSeconds)}s.`
+        message: isDirectVideoProject
+          ? `Video configurado com ${Math.round(sourceDurationSeconds)}s.`
+          : `Duracao original do audio detectada: ${Math.round(sourceDurationSeconds)}s.`
       }
     );
-    await this.prismaService.track.update({
-      where: {
-        id: project.track.id
-      },
-      data: {
-        durationSeconds: sourceDurationSeconds
-      }
-    });
+    if (project.track) {
+      await this.prismaService.track.update({
+        where: {
+          id: project.track.id
+        },
+        data: {
+          durationSeconds: sourceDurationSeconds
+        }
+      });
+    }
 
-    const effectiveAudioPath = requestedClipDurationSeconds
+    const effectiveAudioPath = !project.track
+      ? null
+      : requestedClipDurationSeconds
       ? await this.audioExcerptService.buildInitialExcerpt(
           project.id,
           project.track.storagePath,
@@ -180,12 +220,16 @@ export class ProjectProcessingPipelineService {
     await this.processingProgressService.heartbeat(
       project.id,
       32,
-      requestedClipDurationSeconds
+      isDirectVideoProject
+        ? `Descricao preparada para gerar ${Math.round(effectiveDurationSeconds)}s de video.`
+        : requestedClipDurationSeconds
         ? `Recorte aplicado. O pipeline usara os primeiros ${Math.round(effectiveDurationSeconds)}s do audio.`
         : 'Nenhum recorte aplicado. O audio inteiro sera usado no pipeline.',
       {
         stage: 'analyzing',
-        message: requestedClipDurationSeconds
+        message: isDirectVideoProject
+          ? 'Prompt e duracao prontos para o planejamento visual.'
+          : requestedClipDurationSeconds
           ? `Recorte inicial aplicado para ${Math.round(effectiveDurationSeconds)}s.`
           : 'Audio completo mantido para processamento.'
       }
@@ -194,23 +238,33 @@ export class ProjectProcessingPipelineService {
     await this.processingProgressService.heartbeat(
       project.id,
       36,
-      project.lyrics?.source === 'manual'
+      isDirectVideoProject
+        ? 'Usando a descricao como base narrativa do video.'
+        : project.lyrics?.source === 'manual'
         ? 'Usando a letra manual fornecida no projeto.'
         : 'Gerando ou normalizando a letra da musica para estruturar o clip.',
       {
         stage: 'analyzing',
         message:
-          project.lyrics?.source === 'manual'
+          isDirectVideoProject
+            ? 'Usando o prompt do usuario como direcao narrativa.'
+            : project.lyrics?.source === 'manual'
             ? 'Usando letra manual existente.'
             : 'Gerando letra da musica para analise estrutural.'
       }
     );
     const generatedLyrics =
-      project.lyrics?.source === 'manual'
+      isDirectVideoProject || project.lyrics?.source === 'manual'
         ? null
-        : await this.lyricsGenerationService.build(project.title, effectiveAudioPath);
+        : await this.lyricsGenerationService.build(project.title, effectiveAudioPath!);
     const lyrics =
-      project.lyrics?.source === 'manual'
+      isDirectVideoProject
+        ? {
+            source: 'manual' as const,
+            rawText: project.generationPrompt!,
+            normalizedText: project.generationPrompt!.replace(/\s+/g, ' ').trim().toLowerCase()
+          }
+        : project.lyrics?.source === 'manual'
         ? project.lyrics
         : await this.prismaService.lyrics.upsert({
             where: {
@@ -225,26 +279,32 @@ export class ProjectProcessingPipelineService {
     await this.processingProgressService.heartbeat(
       project.id,
       40,
-      `Letra pronta via ${lyrics.source}.`,
+      isDirectVideoProject ? 'Descricao consolidada.' : `Letra pronta via ${lyrics.source}.`,
       {
         stage: 'analyzing',
-        message: `Letra consolidada via ${lyrics.source}. Trecho inicial: ${this.truncateForActivity(lyrics.rawText, 260)}`
+        message: isDirectVideoProject
+          ? `Descricao consolidada: ${this.truncateForActivity(lyrics.rawText, 260)}`
+          : `Letra consolidada via ${lyrics.source}. Trecho inicial: ${this.truncateForActivity(lyrics.rawText, 260)}`
       }
     );
     await this.processingProgressService.heartbeat(
       project.id,
       44,
-      'Letra pronta. Identificando secoes como intro, versos, refroes e finalizacao.',
+      isDirectVideoProject
+        ? 'Descricao pronta. Estruturando a progressao visual do video.'
+        : 'Letra pronta. Identificando secoes como intro, versos, refroes e finalizacao.',
       {
         stage: 'analyzing',
-        message: 'Letra pronta. Iniciando identificacao da estrutura musical.'
+        message: isDirectVideoProject
+          ? 'Iniciando a estrutura visual da descricao.'
+          : 'Letra pronta. Iniciando identificacao da estrutura musical.'
       }
     );
 
     const sections = this.musicStructureService.build(
       effectiveDurationSeconds,
-      lyrics.rawText,
-      lyrics.normalizedText
+      isDirectVideoProject ? '' : lyrics.rawText,
+      isDirectVideoProject ? '' : lyrics.normalizedText
     );
 
     const createdSections = await this.prismaService.$transaction(async (tx) => {
@@ -300,7 +360,7 @@ export class ProjectProcessingPipelineService {
 
     const storyboard = await this.storyboardGenerationService.build(
       project.title,
-      lyrics.normalizedText
+      isDirectVideoProject ? project.generationPrompt! : lyrics.normalizedText
     );
     await this.processingProgressService.heartbeat(
       project.id,
@@ -327,10 +387,14 @@ export class ProjectProcessingPipelineService {
       project.id,
       ProjectStatus.generating_scenes,
       85,
-      'Storyboard salvo. Planejando cenas e prompts visuais para cada trecho da musica.',
+      isDirectVideoProject
+        ? 'Storyboard salvo. Planejando a cena descrita pelo usuario.'
+        : 'Storyboard salvo. Planejando cenas e prompts visuais para cada trecho da musica.',
       {
         stage: 'generating_scenes',
-        message: 'Storyboard salvo. Iniciando planejamento das cenas.'
+        message: isDirectVideoProject
+          ? 'Storyboard salvo. Iniciando o planejamento da cena por prompt.'
+          : 'Storyboard salvo. Iniciando planejamento das cenas.'
       }
     );
 
@@ -393,7 +457,13 @@ export class ProjectProcessingPipelineService {
           message: `Gerando prompt da cena ${index + 1} de ${scenes.length}: ${scene.title}.`
         }
       );
-      const promptDraft = await this.scenePromptGenerationService.build(scene, storyboard);
+      const generatedPromptDraft = await this.scenePromptGenerationService.build(scene, storyboard);
+      const promptDraft = isDirectVideoProject
+        ? {
+            ...generatedPromptDraft,
+            positivePrompt: project.generationPrompt!.trim()
+          }
+        : generatedPromptDraft;
       scenePromptDrafts.push(promptDraft);
       await this.processingProgressService.heartbeat(
         project.id,
@@ -429,6 +499,7 @@ export class ProjectProcessingPipelineService {
             startSeconds: scene.startSeconds,
             endSeconds: scene.endSeconds,
             durationSeconds: scene.durationSeconds,
+            referenceImageAssetId: isImageProject ? project.sourceImageAssetId : null,
             status: SceneStatus.pending
           }
         });
@@ -442,47 +513,82 @@ export class ProjectProcessingPipelineService {
       }
     });
 
-    const persistedScenes = await this.prismaService.scene.findMany({
-      where: {
-        projectId: project.id
-      },
-      include: {
-        referenceImageAsset: true
-      },
-      orderBy: {
-        index: 'asc'
-      }
-    });
+    if (isDirectVideoProject) {
+      const persistedScenes = await this.prismaService.scene.findMany({
+        where: { projectId: project.id },
+        include: {
+          videoAsset: true,
+          referenceImageAsset: true
+        },
+        orderBy: { index: 'asc' }
+      });
 
-    await this.projectPipelineStateService.update(project.id, ProjectStatus.rendering, 95);
+      await this.projectPipelineStateService.update(
+        project.id,
+        ProjectStatus.rendering,
+        95,
+        'Cena planejada a partir da descricao. Iniciando a geracao do video.',
+        {
+          stage: 'rendering',
+          message: 'Iniciando o render automatico do video descrito pelo usuario.'
+        }
+      );
+
+      await this.projectRenderService.render({
+        organizationId: payload.organizationId,
+        projectId: project.id,
+        generationMode: project.generationMode,
+        audioPath: null,
+        durationSeconds: effectiveDurationSeconds,
+        visualCheckpointName: project.visualCheckpointName,
+        stabilityTest: project.stabilityTest,
+        wanOnly: project.wanOnly,
+        generationSeed: project.generationSeed,
+        generationCfg: project.generationCfg,
+        generationSteps: project.generationSteps,
+        generationFps: project.generationFps,
+        scenes: persistedScenes.map((scene) => ({
+          id: scene.id,
+          title: scene.title,
+          durationSeconds: scene.durationSeconds,
+          sectionType:
+            createdSections.find((section) => section.id === scene.musicSectionId)?.type ?? 'verse',
+          status: scene.status,
+          visualProvider: scene.visualProvider,
+          videoAssetStoragePath: scene.videoAsset?.storagePath ?? null,
+          referenceImageStoragePath: scene.referenceImageAsset?.storagePath ?? null,
+          referenceImageAssetId: scene.referenceImageAsset?.id ?? null,
+          referenceImageWidth: scene.referenceImageAsset?.width ?? null,
+          referenceImageHeight: scene.referenceImageAsset?.height ?? null
+        }))
+      });
+
+      return ProjectStatus.completed;
+    }
+
+    await this.projectPipelineStateService.update(
+      project.id,
+      ProjectStatus.awaiting_references,
+      93,
+      'Cenas e prompts prontos. Revise as cenas, adicione imagens de referencia se desejar e inicie a renderizacao.',
+      {
+        stage: 'awaiting_references',
+        message:
+          'Cenas e prompts persistidos. Pipeline pausado para revisao e imagens de referencia do usuario.'
+      }
+    );
     await this.processingProgressService.heartbeat(
       project.id,
-      95,
-      'Cenas salvas. Iniciando geracao de video por cena e render final do MP4.',
+      93,
+      'Cenas salvas. Aguardando revisao do usuario antes de renderizar o MP4.',
       {
-        stage: 'rendering',
-        message: 'Cenas salvas. Iniciando renderizacao final.'
+        stage: 'awaiting_references',
+        message:
+          'Aguardando o usuario adicionar imagens de referencia opcionais e iniciar a renderizacao.'
       }
     );
 
-    await this.projectRenderService.render({
-      organizationId: payload.organizationId,
-      projectId: project.id,
-      audioPath: effectiveAudioPath,
-      durationSeconds: effectiveDurationSeconds,
-      visualCheckpointName: project.visualCheckpointName,
-      scenes: persistedScenes.map((scene) => ({
-        id: scene.id,
-        title: scene.title,
-        durationSeconds: scene.durationSeconds,
-        sectionType:
-          createdSections.find((section) => section.id === scene.musicSectionId)?.type ?? 'verse',
-        status: scene.status,
-        visualProvider: scene.visualProvider,
-        videoAssetStoragePath: null,
-        referenceImageStoragePath: scene.referenceImageAsset?.storagePath ?? null
-      }))
-    });
+    return ProjectStatus.awaiting_references;
   }
 
   private truncateForActivity(value: string, maxLength: number): string {

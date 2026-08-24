@@ -12,7 +12,87 @@ describe('ProjectRenderService', () => {
     rmSync(root, { force: true, recursive: true });
   });
 
-  it('fails the scene explicitly when ComfyUI generation fails and should not fall back to a procedural clip', async () => {
+  it('rejects an empty scene list before creating an invalid FFmpeg concat file', async () => {
+    const renderFindFirst = vi.fn();
+    const service = new ProjectRenderService(
+      { render: { findFirst: renderFindFirst } } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never
+    );
+
+    await expect(
+      service.render({
+        organizationId: 'org-1',
+        projectId: 'project-1',
+        audioPath: null,
+        durationSeconds: 2,
+        visualCheckpointName: null,
+        stabilityTest: true,
+        wanOnly: true,
+        generationSeed: 123,
+        generationCfg: 4.5,
+        generationSteps: 24,
+        generationFps: 16,
+        scenes: []
+      })
+    ).rejects.toThrow('Nenhuma cena foi planejada para o projeto');
+
+    expect(renderFindFirst).not.toHaveBeenCalled();
+  });
+
+  it('rejects I2V without the original image before any T2V or procedural fallback', async () => {
+    const renderFindFirst = vi.fn();
+    const generateVideo = vi.fn();
+    const createSceneClip = vi.fn();
+    const service = new ProjectRenderService(
+      { render: { findFirst: renderFindFirst } } as never,
+      {} as never,
+      {} as never,
+      { generate: generateVideo } as never,
+      {} as never,
+      { createSceneClip } as never,
+      {} as never,
+      {} as never
+    );
+
+    await expect(
+      service.render({
+        organizationId: 'org-1',
+        projectId: 'project-1',
+        generationMode: 'image',
+        audioPath: null,
+        durationSeconds: 2,
+        visualCheckpointName: null,
+        stabilityTest: false,
+        wanOnly: true,
+        generationSeed: 123,
+        generationCfg: 4.5,
+        generationSteps: 24,
+        generationFps: 16,
+        scenes: [{
+          id: 'scene-1',
+          title: 'I2V scene',
+          durationSeconds: 2,
+          sectionType: 'intro',
+          status: 'pending',
+          visualProvider: null,
+          videoAssetStoragePath: null,
+          referenceImageStoragePath: null
+        }]
+      })
+    ).rejects.toThrow('Nenhum fallback T2V foi executado');
+
+    expect(renderFindFirst).not.toHaveBeenCalled();
+    expect(generateVideo).not.toHaveBeenCalled();
+    expect(createSceneClip).not.toHaveBeenCalled();
+  });
+
+  it('fails a Wan-only scene explicitly without image or procedural fallbacks', async () => {
     const prismaService = {
       render: {
         findFirst: vi.fn().mockResolvedValue(null),
@@ -50,6 +130,7 @@ describe('ProjectRenderService', () => {
     } as never;
 
     const createSceneClip = vi.fn();
+    const generateImage = vi.fn().mockRejectedValue(new Error('image fallback should not run'));
 
     const service = new ProjectRenderService(
       prismaService,
@@ -74,16 +155,41 @@ describe('ProjectRenderService', () => {
         generate: vi.fn().mockRejectedValue(new Error('ComfyUI video workflow rejected: missing video model'))
       } as never,
       {
-        generate: vi.fn().mockRejectedValue(new Error('ComfyUI image workflow rejected: missing checkpoint'))
+        generate: generateImage
       } as never,
       {
         createSceneClip,
         createSceneClipFromImage: vi.fn(),
+        extractLastFrame: vi.fn(),
         concatSceneClips: vi.fn(),
         muxAudio: vi.fn()
       } as never,
       {
         heartbeat: vi.fn().mockResolvedValue(undefined)
+      } as never,
+      {
+        resolve: vi.fn().mockReturnValue({
+          workflowName: 'wan-2.2-ti2v-5b',
+          positivePrompt: 'sunset over the ocean',
+          negativePrompt: 'blurry',
+          seed: 123,
+          cfg: 4.5,
+          steps: 24,
+          sampler: 'uni_pc',
+          scheduler: 'simple',
+          width: 1280,
+          height: 704,
+          fps: 16,
+          requestedFrameCount: 128,
+          frameCount: 129,
+          requestedDurationSeconds: 8,
+          effectiveDurationSeconds: 8,
+          unetName: 'wan.safetensors',
+          clipName: 'clip.safetensors',
+          clipType: 'wan',
+          vaeName: 'vae.safetensors',
+          modelShift: 8
+        })
       } as never
     );
 
@@ -94,6 +200,12 @@ describe('ProjectRenderService', () => {
         audioPath: 'storage/uploads/org-1/project-1/original.mp3',
         durationSeconds: 8,
         visualCheckpointName: null,
+        stabilityTest: false,
+        wanOnly: true,
+        generationSeed: null,
+        generationCfg: null,
+        generationSteps: null,
+        generationFps: 16,
         scenes: [
           {
             id: 'scene-1',
@@ -108,10 +220,11 @@ describe('ProjectRenderService', () => {
         ]
       })
     ).rejects.toThrow(
-      'Cena 1 (Intro Scene) falhou na geracao visual: video: ComfyUI video workflow rejected: missing video model | imagem: ComfyUI image workflow rejected: missing checkpoint.'
+      'ComfyUI video workflow rejected: missing video model'
     );
 
     expect(createSceneClip).not.toHaveBeenCalled();
+    expect(generateImage).not.toHaveBeenCalled();
     expect(prismaService.scene.update).toHaveBeenCalledWith({
       where: {
         id: 'scene-1'
@@ -131,7 +244,7 @@ describe('ProjectRenderService', () => {
     });
   });
 
-  it('reuses a completed scene clip from disk during retry instead of regenerating it', async () => {
+  it('reuses a completed scene and finalizes a prompt-based video without muxing audio', async () => {
     const reusedScenePath = resolve(
       'tests',
       'tmp',
@@ -157,6 +270,15 @@ describe('ProjectRenderService', () => {
       'org-1',
       'project-1',
       'final.mp4'
+    );
+    const continuityFramePath = resolve(
+      'tests',
+      'tmp',
+      'project-render-service',
+      'continuity-frames',
+      'org-1',
+      'project-1',
+      'scene-001-last-frame.png'
     );
 
     mkdirSync(dirname(reusedScenePath), { recursive: true });
@@ -186,6 +308,7 @@ describe('ProjectRenderService', () => {
       }
     } as never;
 
+    const muxAudio = vi.fn();
     const service = new ProjectRenderService(
       prismaService,
       {
@@ -193,12 +316,14 @@ describe('ProjectRenderService', () => {
       } as never,
       {
         getAbsolutePath: vi.fn().mockImplementation((path: string) => path),
+        buildContinuityFramePath: vi.fn().mockReturnValue(continuityFramePath),
         buildConcatListPath: vi.fn().mockReturnValue(resolve('tests', 'tmp', 'project-render-service', 'temp', 'project-1', 'concat-list.txt')),
         writeConcatList: vi.fn().mockResolvedValue(resolve('tests', 'tmp', 'project-render-service', 'temp', 'project-1', 'concat-list.txt')),
         buildIntermediateVideoPath: vi.fn().mockReturnValue(intermediatePath),
-        ensureParentDirectory: vi.fn()
-          .mockResolvedValueOnce(intermediatePath)
-          .mockResolvedValueOnce(finalPath),
+        ensureParentDirectory: vi.fn().mockImplementation(async (path: string) => {
+          mkdirSync(dirname(path), { recursive: true });
+          return path;
+        }),
         buildFinalRenderPath: vi.fn().mockReturnValue(finalPath)
       } as never,
       {
@@ -210,26 +335,36 @@ describe('ProjectRenderService', () => {
       {
         createSceneClip: vi.fn(),
         createSceneClipFromImage: vi.fn(),
+        extractLastFrame: vi.fn().mockImplementation(async (_videoPath: string, outputPath: string) => {
+          mkdirSync(dirname(outputPath), { recursive: true });
+          writeFileSync(outputPath, Buffer.from('last-frame'));
+        }),
         concatSceneClips: vi.fn().mockImplementation(async (_listPath: string, outputPath: string) => {
           mkdirSync(dirname(outputPath), { recursive: true });
           writeFileSync(outputPath, Buffer.from('intermediate'));
         }),
-        muxAudio: vi.fn().mockImplementation(async (_videoPath: string, _audioPath: string, outputPath: string) => {
-          mkdirSync(dirname(outputPath), { recursive: true });
-          writeFileSync(outputPath, Buffer.from('final'));
-        })
+        muxAudio
       } as never,
       {
         heartbeat: vi.fn().mockResolvedValue(undefined)
+      } as never,
+      {
+        resolve: vi.fn()
       } as never
     );
 
     await service.render({
       organizationId: 'org-1',
       projectId: 'project-1',
-      audioPath: 'storage/uploads/org-1/project-1/original.mp3',
+      audioPath: null,
       durationSeconds: 8,
       visualCheckpointName: null,
+      stabilityTest: true,
+      wanOnly: true,
+      generationSeed: 123,
+      generationCfg: 4.5,
+      generationSteps: 24,
+      generationFps: 16,
       scenes: [
         {
           id: 'scene-1',
@@ -246,5 +381,131 @@ describe('ProjectRenderService', () => {
 
     expect(prismaService.scenePrompt.findUnique).not.toHaveBeenCalled();
     expect(prismaService.scene.update).not.toHaveBeenCalled();
+    expect(muxAudio).not.toHaveBeenCalled();
+    expect(prismaService.asset.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        type: 'render',
+        storagePath: finalPath
+      })
+    });
+  });
+
+  it('persists requested and calculated FPS/frame values on the render attempt', async () => {
+    const createAttempt = vi.fn().mockImplementation(({ data }) => ({ id: 'attempt-1', ...data }));
+    const service = new ProjectRenderService(
+      {
+        sceneRenderAttempt: {
+          findFirst: vi.fn().mockResolvedValue(null),
+          create: createAttempt
+        }
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never
+    );
+
+    await (service as any).createSceneRenderAttempt(
+      {
+        projectId: 'project-1',
+        generationMode: 'prompt',
+        visualCheckpointName: null,
+        stabilityTest: false,
+        wanOnly: true,
+        scenes: []
+      },
+      { id: 'scene-1', title: 'Scene', referenceImageStoragePath: null },
+      0,
+      {
+        workflowName: 'wan-2.2-ti2v-5b',
+        positivePrompt: 'motion',
+        negativePrompt: 'blur',
+        seed: 123,
+        cfg: 4.5,
+        steps: 24,
+        sampler: 'uni_pc',
+        scheduler: 'simple',
+        width: 1280,
+        height: 704,
+        fps: 24,
+        requestedFrameCount: 120,
+        frameCount: 121,
+        requestedDurationSeconds: 5,
+        effectiveDurationSeconds: 5,
+        unetName: 'wan.safetensors',
+        clipName: 'clip.safetensors',
+        clipType: 'wan',
+        vaeName: 'vae.safetensors',
+        modelShift: 8
+      }
+    );
+
+    expect(createAttempt).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        fps: 24,
+        expectedFrameCount: 121,
+        steps: 24,
+        metadata: expect.objectContaining({
+          requestedFps: 24,
+          calculatedFps: 24,
+          requestedFrameCount: 120,
+          calculatedFrameCount: 121,
+          effectiveFrameCount: null,
+          videoValidationStatus: 'pending'
+        })
+      })
+    });
+  });
+
+  it('persists the FPS, frames and duration measured from the generated MP4', async () => {
+    const update = vi.fn().mockResolvedValue(undefined);
+    const service = new ProjectRenderService(
+      {
+        sceneRenderAttempt: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: 'attempt-1',
+            fps: 24,
+            expectedFrameCount: 121,
+            effectiveDurationSeconds: 5,
+            metadata: { requestedFps: 24, requestedFrameCount: 120 }
+          }),
+          update
+        }
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        probe: vi.fn().mockResolvedValue({
+          fps: 24,
+          frameCount: 121,
+          durationSeconds: 5.041667
+        })
+      } as never
+    );
+
+    await (service as any).verifyGeneratedVideo('attempt-1', 'scene.mp4');
+
+    expect(update).toHaveBeenCalledWith({
+      where: { id: 'attempt-1' },
+      data: {
+        effectiveDurationSeconds: 5.041667,
+        metadata: expect.objectContaining({
+          effectiveFps: 24,
+          effectiveFrameCount: 121,
+          probedDurationSeconds: 5.041667,
+          videoValidationStatus: 'matched',
+          videoValidationWarnings: []
+        })
+      }
+    });
   });
 });

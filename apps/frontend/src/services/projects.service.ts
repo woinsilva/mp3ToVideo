@@ -1,10 +1,13 @@
 import { apiService } from '@/services/api.service';
 import type {
+  CreateProjectInput,
   ProjectRender,
   ProjectScene,
   ProjectStatusResponse,
   ProjectSummary,
-  TrackUploadResult
+  ProjectVisualStoryboard,
+  TrackUploadResult,
+  FrameInterpolationStatus
 } from '@/types/project.types';
 
 class ProjectsService {
@@ -12,25 +15,26 @@ class ProjectsService {
     return apiService.request<ProjectSummary[]>('/projects', {}, token);
   }
 
-  create(
-    title: string,
-    clipDurationSeconds: number | null,
-    sceneDurationSeconds: number | null,
-    visualCheckpointName: string | null,
-    manualLyricsText: string | null,
-    token: string
-  ) {
+  create(input: CreateProjectInput, token: string) {
     return apiService.request<ProjectSummary>(
       '/projects',
       {
         method: 'POST',
-        body: JSON.stringify({
-          title,
-          clipDurationSeconds,
-          sceneDurationSeconds,
-          visualCheckpointName,
-          manualLyricsText
-        })
+        body: JSON.stringify(input)
+      },
+      token
+    );
+  }
+
+  uploadSourceImage(projectId: string, file: File, token: string) {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    return apiService.request<ProjectSummary>(
+      `/projects/${projectId}/source-image`,
+      {
+        method: 'POST',
+        body: formData
       },
       token
     );
@@ -105,6 +109,29 @@ class ProjectsService {
     return apiService.request<ProjectScene[]>(`/projects/${projectId}/scenes`, {}, token);
   }
 
+  visualStoryboard(projectId: string, token: string) {
+    return apiService.request<ProjectVisualStoryboard>(
+      `/projects/${projectId}/visual-storyboard`,
+      {},
+      token
+    );
+  }
+
+  regenerateVisualStoryboard(projectId: string, instruction: string, token: string) {
+    return apiService.request<ProjectVisualStoryboard>(
+      `/projects/${projectId}/visual-storyboard/regenerate`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ instruction })
+      },
+      token
+    );
+  }
+
+  downloadVisualStoryboardImage(projectId: string, token: string) {
+    return apiService.download(`/projects/${projectId}/visual-storyboard/image`, token);
+  }
+
   uploadSceneReferenceImage(projectId: string, sceneId: string, file: File, token: string) {
     const formData = new FormData();
     formData.append('file', file);
@@ -129,12 +156,34 @@ class ProjectsService {
     );
   }
 
+  startRender(projectId: string, token: string) {
+    return apiService.request<ProjectSummary>(
+      `/projects/${projectId}/start-render`,
+      {
+        method: 'POST'
+      },
+      token
+    );
+  }
+
   render(projectId: string, token: string) {
     return apiService.request<ProjectRender>(`/projects/${projectId}/render`, {}, token);
   }
 
   download(projectId: string, token: string) {
     return apiService.download(`/projects/${projectId}/download`, token);
+  }
+
+  interpolation(projectId: string, token: string) {
+    return apiService.request<FrameInterpolationStatus>(`/projects/${projectId}/interpolation`, {}, token);
+  }
+
+  requestInterpolation(projectId: string, token: string) {
+    return apiService.request(`/projects/${projectId}/interpolation`, { method: 'POST' }, token);
+  }
+
+  downloadInterpolation(projectId: string, token: string) {
+    return apiService.download(`/projects/${projectId}/interpolation/download`, token);
   }
 }
 

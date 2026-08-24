@@ -10,8 +10,15 @@ export class ApiRequestError extends Error {
   }
 }
 
-class ApiService {
+type UnauthorizedHandler = () => void;
+
+export class ApiService {
   private readonly baseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';
+  private unauthorizedHandler: UnauthorizedHandler | null = null;
+
+  setUnauthorizedHandler(handler: UnauthorizedHandler): void {
+    this.unauthorizedHandler = handler;
+  }
 
   async request<T>(
     path: string,
@@ -34,6 +41,7 @@ class ApiService {
     });
 
     if (!response.ok) {
+      this.handleUnauthorized(response.status, token);
       throw new ApiRequestError(await this.extractError(response), response.status);
     }
 
@@ -57,10 +65,17 @@ class ApiService {
     });
 
     if (!response.ok) {
+      this.handleUnauthorized(response.status, token);
       throw new ApiRequestError(await this.extractError(response), response.status);
     }
 
     return response.blob();
+  }
+
+  private handleUnauthorized(status: number, token?: string): void {
+    if (status === 401 && token) {
+      this.unauthorizedHandler?.();
+    }
   }
 
   private async extractError(response: Response): Promise<string> {

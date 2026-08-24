@@ -11,6 +11,7 @@ import type { Job } from 'bullmq';
 import { PrismaService } from '../database/prisma.service';
 import { ProjectProcessingPipelineService } from '../services/project-processing-pipeline.service';
 import { ProcessingProgressService } from '../services/processing-progress.service';
+import { FrameInterpolationSchedulerService } from '../services/frame-interpolation-scheduler.service';
 
 interface ProcessingActivityInput {
   stage: string;
@@ -28,7 +29,9 @@ export class ProjectProcessor {
     @Inject(ProcessingProgressService)
     private readonly processingProgressService: ProcessingProgressService,
     @Inject(ProjectProcessingPipelineService)
-    private readonly pipelineService: ProjectProcessingPipelineService
+    private readonly pipelineService: ProjectProcessingPipelineService,
+    @Inject(FrameInterpolationSchedulerService)
+    private readonly interpolationScheduler: FrameInterpolationSchedulerService
   ) {}
 
   async process(job: Pick<Job<ProjectProcessingJobPayload>, 'id' | 'data'>): Promise<void> {
@@ -60,7 +63,31 @@ export class ProjectProcessor {
     });
 
     try {
-      await this.pipelineService.run(job.data);
+      const pipelineResultStatus = await this.pipelineService.run(job.data);
+
+      if (pipelineResultStatus === ProjectStatus.awaiting_references) {
+        await this.upsertProcessingJob(
+          job.data.projectId,
+          bullJobId,
+          ProcessingJobStatus.completed,
+          93,
+          null,
+          'Cenas prontas. Aguardando revisao e imagens de referencia antes do render.',
+          {
+            stage: 'awaiting_references',
+            message:
+              'Cenas e prompts prontos. O usuario pode revisar, adicionar referencias e iniciar o render.'
+          }
+        );
+        await this.updateProject(job.data.projectId, {
+          status: ProjectStatus.awaiting_references,
+          errorMessage: null
+        });
+        console.log(
+          `[worker] paused project processing for references projectId=${job.data.projectId} bullJobId=${bullJobId}`
+        );
+        return;
+      }
 
       await this.upsertProcessingJob(
         job.data.projectId,
@@ -78,6 +105,12 @@ export class ProjectProcessor {
         status: ProjectStatus.completed,
         errorMessage: null
       });
+      try {
+        await this.interpolationScheduler?.scheduleIfEnabled(job.data.projectId);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown interpolation scheduling error';
+        console.error(`[worker] original render completed, but RIFE scheduling failed projectId=${job.data.projectId}: ${message}`);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown processing error';
       console.error(

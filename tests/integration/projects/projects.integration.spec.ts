@@ -192,6 +192,138 @@ describe('Projects integration', () => {
     });
   });
 
+  it('creates and immediately queues a reproducible Wan stability baseline from a prompt', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/projects')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({
+        title: 'Wan stability baseline',
+        generationMode: 'prompt',
+        generationPrompt: 'A woman standing naturally in a quiet forest at golden hour.',
+        clipDurationSeconds: 7,
+        stabilityTest: true,
+        wanOnly: true,
+        generationSeed: 424242,
+        generationCfg: 3.5,
+        generationSteps: 28,
+        generationFps: 24
+      })
+      .expect(201);
+
+    expect(response.body).toMatchObject({
+      generationMode: 'prompt',
+      clipDurationSeconds: 7,
+      stabilityTest: true,
+      wanOnly: true,
+      generationSeed: 424242,
+      generationCfg: 3.5,
+      generationSteps: 28,
+      generationFps: 24,
+      status: 'queued'
+    });
+
+    const project = await prisma.project.findUnique({ where: { id: response.body.id } });
+    expect(project).toMatchObject({
+      stabilityTest: true,
+      wanOnly: true,
+      generationSeed: 424242,
+      generationCfg: 3.5,
+      generationSteps: 28,
+      generationFps: 24
+    });
+  });
+
+  it('rejects unsupported native generation FPS values', async () => {
+    await request(app.getHttpServer())
+      .post('/projects')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({
+        title: 'Unsupported FPS',
+        generationMode: 'prompt',
+        generationPrompt: 'A cinematic scene with subtle natural movement.',
+        clipDurationSeconds: 5,
+        generationFps: 30
+      })
+      .expect(400);
+  });
+
+  it('persists a valid source image and queues an image-to-video project', async () => {
+    const createResponse = await request(app.getHttpServer())
+      .post('/projects')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({
+        title: 'Image to video baseline',
+        generationMode: 'image',
+        generationPrompt: 'The subject walks slowly toward the fixed camera.',
+        clipDurationSeconds: 3,
+        stabilityTest: true,
+        wanOnly: true,
+        generationSeed: 777,
+        generationCfg: 3.5,
+        generationSteps: 24,
+        generationFps: 16
+      })
+      .expect(201);
+
+    expect(createResponse.body.status).toBe('draft');
+
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAQAAABoKxmiAAAADUlEQVR42mNk+M/wHwAF/gL+AvwNAAAAAElFTkSuQmCC',
+      'base64'
+    );
+    const uploadResponse = await request(app.getHttpServer())
+      .post(`/projects/${createResponse.body.id}/source-image`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .attach('file', png, { filename: 'reference.png', contentType: 'image/png' })
+      .expect(201);
+
+    expect(uploadResponse.body).toMatchObject({
+      generationMode: 'image',
+      hasSourceImage: true,
+      status: 'queued',
+      sourceImage: {
+        mimeType: 'image/png',
+        width: 2,
+        height: 1
+      }
+    });
+
+    const project = await prisma.project.findUnique({
+      where: { id: createResponse.body.id },
+      include: { sourceImageAsset: true }
+    });
+    expect(project?.sourceImageAsset).toMatchObject({
+      type: 'source_image',
+      mimeType: 'image/png',
+      width: 2,
+      height: 1
+    });
+    uploadedFilePath = project?.sourceImageAsset?.storagePath ?? '';
+    expect(existsSync(resolve(uploadedFilePath))).toBe(true);
+  });
+
+  it('rejects a file that only pretends to be a supported source image', async () => {
+    const createResponse = await request(app.getHttpServer())
+      .post('/projects')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({
+        title: 'Invalid image project',
+        generationMode: 'image',
+        generationPrompt: 'The subject moves naturally toward the camera.',
+        clipDurationSeconds: 2
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/projects/${createResponse.body.id}/source-image`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .attach('file', Buffer.from('not-an-image'), {
+        filename: 'fake.png',
+        contentType: 'image/png'
+      })
+      .expect(400);
+  });
+
   it('uploads an MP3 track, stores it on disk and preserves manual lyrics when provided', async () => {
     const createResponse = await request(app.getHttpServer())
       .post('/projects')

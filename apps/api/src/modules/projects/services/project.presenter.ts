@@ -10,7 +10,8 @@ import type {
   Render,
   Scene,
   SceneRenderAttempt,
-  ScenePrompt
+  ScenePrompt,
+  Asset
 } from '@prisma/client';
 
 export interface ProcessingActivityEntry {
@@ -41,10 +42,29 @@ export class ProjectPresenter {
   private static readonly quietThresholdMs = 7 * 60_000;
   private static readonly longRunningThresholdMs = 10 * 60_000;
 
-  summary(project: Project) {
+  summary(project: Project & { sourceImageAsset?: Asset | null }) {
     return {
       id: project.id,
       title: project.title,
+      generationMode: project.generationMode,
+      generationPrompt: project.generationPrompt,
+      stabilityTest: project.stabilityTest,
+      wanOnly: project.wanOnly,
+      generationSeed: project.generationSeed,
+      generationCfg: project.generationCfg,
+      generationSteps: project.generationSteps,
+      generationFps: project.generationFps,
+      frameInterpolationMode: project.frameInterpolationMode,
+      sourceImageAssetId: project.sourceImageAssetId,
+      hasSourceImage: Boolean(project.sourceImageAssetId),
+      sourceImage: project.sourceImageAsset
+        ? {
+            id: project.sourceImageAsset.id,
+            mimeType: project.sourceImageAsset.mimeType,
+            width: project.sourceImageAsset.width,
+            height: project.sourceImageAsset.height
+          }
+        : null,
       clipDurationSeconds: project.clipDurationSeconds,
       sceneDurationSeconds: project.sceneDurationSeconds,
       visualCheckpointName: project.visualCheckpointName,
@@ -58,11 +78,31 @@ export class ProjectPresenter {
   summaryWithLyrics(
     project: Project & {
       lyrics?: Lyrics | null;
+      sourceImageAsset?: Asset | null;
     }
   ) {
     return {
       id: project.id,
       title: project.title,
+      generationMode: project.generationMode,
+      generationPrompt: project.generationPrompt,
+      stabilityTest: project.stabilityTest,
+      wanOnly: project.wanOnly,
+      generationSeed: project.generationSeed,
+      generationCfg: project.generationCfg,
+      generationSteps: project.generationSteps,
+      generationFps: project.generationFps,
+      frameInterpolationMode: project.frameInterpolationMode,
+      sourceImageAssetId: project.sourceImageAssetId,
+      hasSourceImage: Boolean(project.sourceImageAssetId),
+      sourceImage: project.sourceImageAsset
+        ? {
+            id: project.sourceImageAsset.id,
+            mimeType: project.sourceImageAsset.mimeType,
+            width: project.sourceImageAsset.width,
+            height: project.sourceImageAsset.height
+          }
+        : null,
       clipDurationSeconds: project.clipDurationSeconds,
       sceneDurationSeconds: project.sceneDurationSeconds,
       visualCheckpointName: project.visualCheckpointName,
@@ -106,7 +146,7 @@ export class ProjectPresenter {
       projectId: project.id,
       status: project.status,
       progress: processingJob?.progress ?? this.defaultProgress(project.status),
-      currentStep: this.currentStep(project.status),
+      currentStep: this.currentStep(project.status, project.generationMode),
       detailMessage: processingJob?.detailMessage ?? null,
       activityLog: this.activityLog(processingJob?.activityLog),
       lyrics: project.lyrics
@@ -200,6 +240,8 @@ export class ProjectPresenter {
         return 55;
       case 'generating_scenes':
         return 85;
+      case 'awaiting_references':
+        return 93;
       case 'rendering':
         return 95;
       case 'completed':
@@ -211,10 +253,12 @@ export class ProjectPresenter {
     }
   }
 
-  private currentStep(status: ProjectStatus): string {
+  private currentStep(status: ProjectStatus, generationMode: string): string {
     switch (status) {
       case 'draft':
-        return 'Aguardando upload do audio';
+        return generationMode === 'image'
+          ? 'Aguardando upload da imagem'
+          : 'Aguardando upload do audio';
       case 'uploaded':
         return 'Upload concluido';
       case 'queued':
@@ -227,6 +271,8 @@ export class ProjectPresenter {
         return 'Montando storyboard';
       case 'generating_scenes':
         return 'Gerando cenas';
+      case 'awaiting_references':
+        return 'Aguardando revisao das cenas';
       case 'rendering':
         return 'Renderizando video final';
       case 'completed':
@@ -314,6 +360,10 @@ export class ProjectPresenter {
   }
 
   private attemptSummary(attempt: SceneRenderAttempt) {
+    const metadata =
+      attempt.metadata && typeof attempt.metadata === 'object' && !Array.isArray(attempt.metadata)
+        ? attempt.metadata as Record<string, unknown>
+        : {};
     const elapsedSeconds = Math.floor(
       ((attempt.finishedAt ?? new Date()).getTime() - attempt.startedAt.getTime()) / 1000
     );
@@ -325,8 +375,49 @@ export class ProjectPresenter {
       elapsedSeconds,
       lastHeartbeatAt: attempt.lastHeartbeatAt?.toISOString() ?? null,
       lastExternalHeartbeatAt: attempt.firstExternalSeenAt?.toISOString() ?? null,
-      canRetryAttempt: this.canRetryAttempt(attempt)
+      canRetryAttempt: this.canRetryAttempt(attempt),
+      provider: attempt.provider,
+      sourceType: attempt.sourceType,
+      hasReferenceImage: attempt.hasReferenceImage,
+      referenceImageAssetId:
+        typeof metadata.referenceImageAssetId === 'string'
+          ? metadata.referenceImageAssetId
+          : null,
+      workflowName: attempt.workflowName,
+      positivePrompt: attempt.positivePrompt,
+      negativePrompt: attempt.negativePrompt,
+      seed: attempt.seed,
+      cfg: attempt.cfg,
+      steps: attempt.steps,
+      sampler: attempt.sampler,
+      scheduler: attempt.scheduler,
+      width: attempt.width,
+      height: attempt.height,
+      fps: attempt.fps,
+      requestedFps: this.metadataNumber(metadata, 'requestedFps') ?? attempt.fps,
+      effectiveFps: this.metadataNumber(metadata, 'effectiveFps'),
+      requestedFrameCount: this.metadataNumber(metadata, 'requestedFrameCount'),
+      calculatedFrameCount:
+        this.metadataNumber(metadata, 'calculatedFrameCount') ?? attempt.expectedFrameCount,
+      effectiveFrameCount: this.metadataNumber(metadata, 'effectiveFrameCount'),
+      frameCount: attempt.expectedFrameCount,
+      requestedDurationSeconds: attempt.requestedDurationSeconds ?? attempt.durationSeconds,
+      effectiveDurationSeconds: attempt.effectiveDurationSeconds ?? attempt.durationSeconds,
+      calculatedDurationSeconds: this.metadataNumber(metadata, 'calculatedDurationSeconds'),
+      videoValidationStatus:
+        typeof metadata.videoValidationStatus === 'string'
+          ? metadata.videoValidationStatus
+          : null,
+      videoValidationWarnings: Array.isArray(metadata.videoValidationWarnings)
+        ? metadata.videoValidationWarnings.filter((value): value is string => typeof value === 'string')
+        : [],
+      unetName: attempt.unetName
     };
+  }
+
+  private metadataNumber(metadata: Record<string, unknown>, key: string): number | null {
+    const value = metadata[key];
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
   }
 
   private canRetryAttempt(attempt: SceneRenderAttempt): boolean {

@@ -52,31 +52,6 @@ services:
       - -c
       - 'curl -fsS http://ollama:11434/api/pull -d "{\"model\":\"$${OLLAMA_MODEL}\",\"stream\":false}"'
 
-  comfyui:
-    profiles: ["comfyui"]
-    container_name: video-comfyui
-    build:
-      context: .
-      dockerfile: infra/docker/comfyui.Dockerfile
-      args:
-        COMFYUI_GIT_REF: ${COMFYUI_GIT_REF:-master}
-        PIP_EXTRA_INDEX_URL: ${COMFYUI_PYTORCH_INDEX_URL:-https://download.pytorch.org/whl/cu130}
-        APT_EXTRA_PACKAGES: ${COMFYUI_APT_EXTRA_PACKAGES:-}
-    restart: unless-stopped
-    ports:
-      - "${COMFYUI_PORT:-8188}:8188"
-    gpus: all
-    environment:
-      CLI_ARGS: ${COMFYUI_CLI_ARGS:---listen 0.0.0.0}
-      PIP_EXTRA_PACKAGES: ${COMFYUI_PIP_EXTRA_PACKAGES:-}
-    volumes:
-      - ${COMFYUI_MODELS_HOST_PATH:-./storage/comfyui/models}:/comfyui/models
-      - ${COMFYUI_INPUT_HOST_PATH:-./storage/comfyui/input}:/comfyui/input
-      - ${COMFYUI_OUTPUT_HOST_PATH:-./storage/comfyui/output}:/comfyui/output
-      - ${COMFYUI_CUSTOM_NODES_HOST_PATH:-./storage/comfyui/custom_nodes}:/comfyui/custom_nodes
-      - ${COMFYUI_USER_HOST_PATH:-./storage/comfyui/user}:/comfyui/user
-      - ${COMFYUI_TEMP_HOST_PATH:-./storage/comfyui/temp}:/comfyui/temp
-
 volumes:
   postgres_data:
   redis_data:

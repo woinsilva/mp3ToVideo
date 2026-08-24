@@ -1,4 +1,4 @@
-import { stat, writeFile } from 'node:fs/promises';
+import { copyFile, stat, writeFile } from 'node:fs/promises';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -6,7 +6,8 @@ import {
   AssetType,
   RenderStatus,
   SceneRenderAttemptStatus,
-  SceneStatus
+  SceneStatus,
+  ProjectGenerationMode
 } from '@prisma/client';
 import type { ScenePrompt } from '@prisma/client';
 
@@ -23,6 +24,11 @@ import {
   SceneVideoGenerationService,
   type SceneVideoResult
 } from './scene-video-generation.service';
+import {
+  type ResolvedVideoGenerationSettings,
+  VideoGenerationSettingsService
+} from './video-generation-settings.service';
+import { VideoMetadataProbeService } from './video-metadata-probe.service';
 
 interface RenderSceneInput {
   id: string;
@@ -33,14 +39,24 @@ interface RenderSceneInput {
   visualProvider: string | null;
   videoAssetStoragePath: string | null;
   referenceImageStoragePath: string | null;
+  referenceImageAssetId?: string | null;
+  referenceImageWidth?: number | null;
+  referenceImageHeight?: number | null;
 }
 
 interface RenderProjectInput {
   organizationId: string;
   projectId: string;
-  audioPath: string;
+  generationMode?: ProjectGenerationMode;
+  audioPath: string | null;
   durationSeconds: number;
   visualCheckpointName: string | null;
+  stabilityTest: boolean;
+  wanOnly: boolean;
+  generationSeed: number | null;
+  generationCfg: number | null;
+  generationSteps: number | null;
+  generationFps: number;
   scenes: RenderSceneInput[];
 }
 
@@ -48,6 +64,14 @@ interface SceneVideoAttemptOutcome {
   result: SceneVideoResult | null;
   errorMessage: string | null;
   restarted: boolean;
+  attemptId: string | null;
+}
+
+interface SceneReferenceInput {
+  path: string | null;
+  sourceType: string;
+  hasManualReferenceImage: boolean;
+  hasContinuityFrame: boolean;
 }
 
 @Injectable()
@@ -68,10 +92,29 @@ export class ProjectRenderService {
     @Inject(FfmpegRenderingService)
     private readonly ffmpegRenderingService: FfmpegRenderingService,
     @Inject(ProcessingProgressService)
-    private readonly processingProgressService: ProcessingProgressService
+    private readonly processingProgressService: ProcessingProgressService,
+    @Inject(VideoGenerationSettingsService)
+    private readonly videoGenerationSettingsService: VideoGenerationSettingsService,
+    @Inject(VideoMetadataProbeService)
+    private readonly videoMetadataProbeService: VideoMetadataProbeService
   ) {}
 
   async render(input: RenderProjectInput): Promise<void> {
+    if (input.scenes.length === 0) {
+      throw new Error(
+        'Nenhuma cena foi planejada para o projeto. O render foi interrompido antes da concatenacao.'
+      );
+    }
+
+    if (
+      input.generationMode === ProjectGenerationMode.image &&
+      input.scenes.some((scene) => !scene.referenceImageStoragePath)
+    ) {
+      throw new Error(
+        'A imagem original obrigatoria nao foi vinculada a cena Image-to-Video. Nenhum fallback T2V foi executado.'
+      );
+    }
+
     const existingRender = await this.prismaService.render.findFirst({
       where: {
         projectId: input.projectId
@@ -101,6 +144,7 @@ export class ProjectRenderService {
 
     try {
       const sceneClipPaths: string[] = [];
+      let previousContinuityFramePath: string | null = null;
 
       for (const [index, scene] of input.scenes.entries()) {
         const reusableSceneClipPath =
@@ -113,6 +157,11 @@ export class ProjectRenderService {
           (await this.pathExists(this.renderStorageService.getAbsolutePath(reusableSceneClipPath)))
         ) {
           sceneClipPaths.push(reusableSceneClipPath);
+          previousContinuityFramePath = await this.extractContinuityFrame(
+            input,
+            index,
+            this.renderStorageService.getAbsolutePath(reusableSceneClipPath)
+          );
           await this.processingProgressService.heartbeat(
             input.projectId,
             this.sceneRenderProgress(index + 1, input.scenes.length),
@@ -153,6 +202,24 @@ export class ProjectRenderService {
         let visualProvider = 'procedural';
         let videoGenerationError: string | null = null;
         let imageGenerationError: string | null = null;
+        const sceneReference = this.resolveSceneReference(input, scene, previousContinuityFramePath);
+
+        if (sceneReference.hasContinuityFrame) {
+          await this.processingProgressService.heartbeat(
+            input.projectId,
+            this.sceneRenderProgress(index, input.scenes.length),
+            `Cena ${index + 1} usara o ultimo frame da cena anterior como referencia de continuidade.`,
+            {
+              stage: 'rendering',
+              message:
+                `Cena ${index + 1} usara continuidade visual da cena anterior` +
+                (sceneReference.hasManualReferenceImage
+                  ? ' e mantera a referencia manual registrada para revisao.'
+                  : '.'),
+              provider: 'continuity-frame'
+            }
+          );
+        }
 
         if (!scenePrompt && !this.shouldAllowProceduralFallback()) {
           const message = `Cena ${index + 1} falhou: prompt da cena nao encontrado para gerar o video no ComfyUI.`;
@@ -161,21 +228,30 @@ export class ProjectRenderService {
         }
 
         let generatedSceneVideo: SceneVideoResult | null = null;
+        let generatedSceneAttemptId: string | null = null;
         if (scenePrompt) {
           const videoAttemptOutcome = await this.generateSceneVideoWithAttempts(
             input,
             scene,
             scenePrompt,
-            index
+            index,
+            sceneReference
           );
 
           generatedSceneVideo = videoAttemptOutcome.result;
+          generatedSceneAttemptId = videoAttemptOutcome.attemptId;
           videoGenerationError = videoAttemptOutcome.errorMessage;
         }
 
         if (generatedSceneVideo) {
           visualProvider = generatedSceneVideo.provider;
           await writeFile(sceneClipAbsolutePath, generatedSceneVideo.buffer);
+          if (generatedSceneAttemptId) {
+            await this.verifyGeneratedVideo(
+              generatedSceneAttemptId,
+              sceneClipAbsolutePath
+            );
+          }
           await this.processingProgressService.heartbeat(
             input.projectId,
             this.sceneRenderProgress(index + 1, input.scenes.length),
@@ -190,6 +266,14 @@ export class ProjectRenderService {
             `Scene ${index + 1}/${input.scenes.length} [${scene.title}]: provider=${generatedSceneVideo.provider}`
           );
         } else {
+          if (input.wanOnly) {
+            const message =
+              videoGenerationError ??
+              `Cena ${index + 1} nao foi gerada pelo ComfyUI/Wan; nenhum fallback foi permitido.`;
+            await this.failScene(input.projectId, scene.id, message, index, input.scenes.length);
+            throw new Error(message);
+          }
+
           let generatedSceneImage = null;
           if (scenePrompt) {
             try {
@@ -301,6 +385,11 @@ export class ProjectRenderService {
         }
 
         const sceneClipSize = Number((await stat(sceneClipAbsolutePath)).size);
+        previousContinuityFramePath = await this.extractContinuityFrame(
+          input,
+          index,
+          sceneClipAbsolutePath
+        );
         const sceneAsset = await this.prismaService.asset.create({
           data: {
             organizationId: input.organizationId,
@@ -367,18 +456,26 @@ export class ProjectRenderService {
       const finalRenderAbsolutePath =
         await this.renderStorageService.ensureParentDirectory(finalRenderPath);
 
-      await this.ffmpegRenderingService.muxAudio(
-        intermediateVideoAbsolutePath,
-        this.renderStorageService.getAbsolutePath(input.audioPath),
-        finalRenderAbsolutePath
-      );
+      if (input.audioPath) {
+        await this.ffmpegRenderingService.muxAudio(
+          intermediateVideoAbsolutePath,
+          this.renderStorageService.getAbsolutePath(input.audioPath),
+          finalRenderAbsolutePath
+        );
+      } else {
+        await copyFile(intermediateVideoAbsolutePath, finalRenderAbsolutePath);
+      }
       await this.processingProgressService.heartbeat(
         input.projectId,
         99,
-        'Faixa de audio sincronizada. Finalizando o MP4 de saida.',
+        input.audioPath
+          ? 'Faixa de audio sincronizada. Finalizando o MP4 de saida.'
+          : 'Video sem trilha de audio finalizado. Preparando o MP4 de saida.',
         {
           stage: 'rendering',
-          message: 'Sincronizando a faixa de audio com o video final.'
+          message: input.audioPath
+            ? 'Sincronizando a faixa de audio com o video final.'
+            : 'Finalizando o video gerado a partir da descricao.'
         }
       );
 
@@ -422,32 +519,48 @@ export class ProjectRenderService {
     input: RenderProjectInput,
     scene: RenderSceneInput,
     scenePrompt: ScenePrompt,
-    sceneIndex: number
+    sceneIndex: number,
+    reference: SceneReferenceInput
   ): Promise<SceneVideoAttemptOutcome> {
     if (this.configService.get<string>('visual.provider', 'procedural') !== 'comfyui') {
       return {
         result: null,
         errorMessage: null,
-        restarted: false
+        restarted: false,
+        attemptId: null
       };
     }
 
     let restarted = false;
 
     for (;;) {
-      const attempt = await this.createSceneRenderAttempt(input, scene, sceneIndex);
+      const settings = this.videoGenerationSettingsService.resolve(
+        scenePrompt,
+        scene.durationSeconds,
+        {
+          stabilityTest: input.stabilityTest,
+          imageToVideo: input.generationMode === ProjectGenerationMode.image,
+          seed: input.generationSeed,
+          cfg: input.generationCfg,
+          steps: input.generationSteps,
+          fps: input.generationFps,
+          ...this.resolveReferenceResolution(scene)
+        }
+      );
+      const attempt = await this.createSceneRenderAttempt(
+        input,
+        scene,
+        sceneIndex,
+        settings,
+        reference
+      );
 
       try {
         const result = await this.sceneVideoGenerationService.generate({
           sceneId: scene.id,
-          positivePrompt: scenePrompt.positivePrompt,
-          negativePrompt: scenePrompt.negativePrompt,
-          width: this.configService.get<number>('visual.comfyuiWidth', 640),
-          height: this.configService.get<number>('visual.comfyuiHeight', 360),
-          durationSeconds: scene.durationSeconds,
-          referenceImagePath: scene.referenceImageStoragePath
-            ? this.renderStorageService.getAbsolutePath(scene.referenceImageStoragePath)
-            : null,
+          ...settings,
+          durationSeconds: settings.requestedDurationSeconds,
+          referenceImagePath: reference.path,
           onSubmitted: (promptId) => this.markSceneRenderAttemptSubmitted(attempt.id, promptId),
           onHeartbeat: (heartbeat) =>
             this.heartbeatSceneRenderAttempt(input, scene, sceneIndex, attempt.id, heartbeat),
@@ -463,7 +576,8 @@ export class ProjectRenderService {
         return {
           result,
           errorMessage: null,
-          restarted
+          restarted,
+          attemptId: attempt.id
         };
       } catch (error) {
         if (error instanceof ComfyUiGenerationCancelledError) {
@@ -511,7 +625,8 @@ export class ProjectRenderService {
         return {
           result: null,
           errorMessage: message,
-          restarted
+          restarted,
+          attemptId: attempt.id
         };
       }
     }
@@ -520,7 +635,9 @@ export class ProjectRenderService {
   private async createSceneRenderAttempt(
     input: RenderProjectInput,
     scene: RenderSceneInput,
-    sceneIndex: number
+    sceneIndex: number,
+    settings: ResolvedVideoGenerationSettings,
+    reference?: SceneReferenceInput
   ) {
     const latestAttempt = await this.prismaService.sceneRenderAttempt.findFirst({
       where: {
@@ -531,40 +648,141 @@ export class ProjectRenderService {
       }
     });
     const attemptNumber = (latestAttempt?.attemptNumber ?? 0) + 1;
-    const fps = this.configService.get<number>('visual.comfyuiVideoFps', 24);
-    const expectedFrameCount = Math.max(1, Math.round(scene.durationSeconds * fps) + 1);
-
     return this.prismaService.sceneRenderAttempt.create({
       data: {
         projectId: input.projectId,
         sceneId: scene.id,
         attemptNumber,
         provider: 'comfyui-video',
+        workflowName: settings.workflowName,
         status: SceneRenderAttemptStatus.queued,
-        sourceType: scene.referenceImageStoragePath ? 'reference-image' : 'prompt',
-        hasReferenceImage: Boolean(scene.referenceImageStoragePath),
-        width: this.configService.get<number>('visual.comfyuiWidth', 640),
-        height: this.configService.get<number>('visual.comfyuiHeight', 360),
-        fps,
-        durationSeconds: scene.durationSeconds,
-        expectedFrameCount,
-        steps: this.configService.get<number>('visual.comfyuiSteps', 20),
-        cfg: this.configService.get<number>('visual.comfyuiCfg', 5),
-        sampler: this.configService.get<string>('visual.comfyuiSampler', 'uni_pc'),
-        scheduler: this.configService.get<string>('visual.comfyuiScheduler', 'simple'),
+        positivePrompt: settings.positivePrompt,
+        negativePrompt: settings.negativePrompt,
+        seed: settings.seed,
+        sourceType: reference?.sourceType ?? (scene.referenceImageStoragePath ? 'reference-image' : 'prompt'),
+        hasReferenceImage: Boolean(reference?.path ?? scene.referenceImageStoragePath),
+        width: settings.width,
+        height: settings.height,
+        fps: settings.fps,
+        durationSeconds: settings.requestedDurationSeconds,
+        requestedDurationSeconds: settings.requestedDurationSeconds,
+        effectiveDurationSeconds: settings.effectiveDurationSeconds,
+        expectedFrameCount: settings.frameCount,
+        steps: settings.steps,
+        cfg: settings.cfg,
+        sampler: settings.sampler,
+        scheduler: settings.scheduler,
         checkpointName: input.visualCheckpointName,
-        unetName: this.configService.get<string>('visual.comfyuiVideoUnetName') ?? null,
-        clipName: this.configService.get<string>('visual.comfyuiVideoClipName') ?? null,
-        clipType: this.configService.get<string>('visual.comfyuiVideoClipType') ?? null,
-        vaeName: this.configService.get<string>('visual.comfyuiVideoVaeName') ?? null,
-        modelShift: this.configService.get<number>('visual.comfyuiVideoModelShift', 8),
+        unetName: settings.unetName,
+        clipName: settings.clipName,
+        clipType: settings.clipType,
+        vaeName: settings.vaeName,
+        modelShift: settings.modelShift,
         metadata: {
           sceneIndex,
           sceneTitle: scene.title,
-          totalScenes: input.scenes.length
+          totalScenes: input.scenes.length,
+          hasManualReferenceImage: reference?.hasManualReferenceImage ?? Boolean(scene.referenceImageStoragePath),
+          hasContinuityFrame: reference?.hasContinuityFrame ?? false,
+          stabilityTest: input.stabilityTest,
+          wanOnly: input.wanOnly,
+          referenceImageAssetId: scene.referenceImageAssetId ?? null,
+          referenceImageStoragePath: scene.referenceImageStoragePath,
+          generationMode: input.generationMode ?? ProjectGenerationMode.music,
+          requestedFps: settings.fps,
+          calculatedFps: settings.fps,
+          effectiveFps: null,
+          requestedFrameCount: settings.requestedFrameCount,
+          calculatedFrameCount: settings.frameCount,
+          effectiveFrameCount: null,
+          calculatedDurationSeconds: settings.effectiveDurationSeconds,
+          probedDurationSeconds: null,
+          videoValidationStatus: 'pending',
+          videoValidationWarnings: []
         }
       }
     });
+  }
+
+  private async verifyGeneratedVideo(attemptId: string, videoPath: string): Promise<void> {
+    const attempt = await this.prismaService.sceneRenderAttempt.findUnique({
+      where: { id: attemptId }
+    });
+    if (!attempt) return;
+
+    const existingMetadata =
+      attempt.metadata && typeof attempt.metadata === 'object' && !Array.isArray(attempt.metadata)
+        ? attempt.metadata as Record<string, unknown>
+        : {};
+
+    try {
+      const actual = await this.videoMetadataProbeService.probe(videoPath);
+      const warnings: string[] = [];
+      const missingMetrics = [
+        actual.frameCount === null ? 'frames' : null,
+        actual.fps === null ? 'FPS' : null,
+        actual.durationSeconds === null ? 'duracao' : null
+      ].filter((value): value is string => value !== null);
+      if (missingMetrics.length > 0) {
+        warnings.push(`FFprobe nao retornou: ${missingMetrics.join(', ')}`);
+      }
+      if (
+        actual.frameCount !== null &&
+        attempt.expectedFrameCount !== null &&
+        actual.frameCount !== attempt.expectedFrameCount
+      ) {
+        warnings.push(`Frame count divergente: Wan=${attempt.expectedFrameCount}, MP4=${actual.frameCount}`);
+      }
+      if (actual.fps !== null && attempt.fps !== null && Math.abs(actual.fps - attempt.fps) > 0.01) {
+        warnings.push(`FPS divergente: solicitado=${attempt.fps}, MP4=${actual.fps}`);
+      }
+      if (
+        actual.durationSeconds !== null &&
+        attempt.effectiveDurationSeconds !== null &&
+        Math.abs(actual.durationSeconds - attempt.effectiveDurationSeconds) > Math.max(0.1, 1 / (attempt.fps ?? 16))
+      ) {
+        warnings.push(
+          `Duracao divergente: calculada=${attempt.effectiveDurationSeconds}s, MP4=${actual.durationSeconds}s`
+        );
+      }
+
+      await this.prismaService.sceneRenderAttempt.update({
+        where: { id: attemptId },
+        data: {
+          effectiveDurationSeconds: actual.durationSeconds ?? attempt.effectiveDurationSeconds,
+          metadata: {
+            ...existingMetadata,
+            effectiveFps: actual.fps,
+            effectiveFrameCount: actual.frameCount,
+            probedDurationSeconds: actual.durationSeconds,
+            videoValidationStatus:
+              missingMetrics.length > 0
+                ? 'unavailable'
+                : warnings.length === 0
+                  ? 'matched'
+                  : 'diverged',
+            videoValidationWarnings: warnings
+          }
+        }
+      });
+
+      if (warnings.length > 0) {
+        this.logger.warn(`Video validation attempt=${attemptId}: ${warnings.join(' | ')}`);
+      }
+    } catch (error) {
+      const warning = `FFprobe indisponivel: ${this.toErrorMessage(error)}`;
+      this.logger.warn(`Video validation attempt=${attemptId}: ${warning}`);
+      await this.prismaService.sceneRenderAttempt.update({
+        where: { id: attemptId },
+        data: {
+          metadata: {
+            ...existingMetadata,
+            videoValidationStatus: 'unavailable',
+            videoValidationWarnings: [warning]
+          }
+        }
+      });
+    }
   }
 
   private async markSceneRenderAttemptSubmitted(
@@ -682,6 +900,85 @@ export class ProjectRenderService {
         errorMessage: errorMessage ?? null
       }
     });
+  }
+
+  private resolveSceneReference(
+    input: RenderProjectInput,
+    scene: RenderSceneInput,
+    previousContinuityFramePath: string | null
+  ): SceneReferenceInput {
+    if (previousContinuityFramePath) {
+      return {
+        path: previousContinuityFramePath,
+        sourceType: scene.referenceImageStoragePath
+          ? 'continuity-frame-with-manual-reference'
+          : 'continuity-frame',
+        hasManualReferenceImage: Boolean(scene.referenceImageStoragePath),
+        hasContinuityFrame: true
+      };
+    }
+
+    return {
+      path: scene.referenceImageStoragePath
+        ? this.renderStorageService.getAbsolutePath(scene.referenceImageStoragePath)
+        : null,
+      sourceType: scene.referenceImageStoragePath
+        ? input.generationMode === ProjectGenerationMode.image
+          ? 'project-source-image'
+          : 'reference-image'
+        : 'prompt',
+      hasManualReferenceImage: Boolean(scene.referenceImageStoragePath),
+      hasContinuityFrame: false
+    };
+  }
+
+  private resolveReferenceResolution(
+    scene: RenderSceneInput
+  ): { width?: number; height?: number } {
+    if (
+      !scene.referenceImageWidth ||
+      !scene.referenceImageHeight ||
+      scene.referenceImageWidth >= scene.referenceImageHeight
+    ) {
+      return {};
+    }
+
+    const configuredWidth = this.configService.get<number>('visual.comfyuiWidth', 1280);
+    const configuredHeight = this.configService.get<number>('visual.comfyuiHeight', 704);
+
+    return {
+      width: Math.min(configuredWidth, configuredHeight),
+      height: Math.max(configuredWidth, configuredHeight)
+    };
+  }
+
+  private async extractContinuityFrame(
+    input: RenderProjectInput,
+    sceneIndex: number,
+    sceneClipAbsolutePath: string
+  ): Promise<string | null> {
+    const continuityFramePath = this.renderStorageService.buildContinuityFramePath(
+      input.organizationId,
+      input.projectId,
+      sceneIndex
+    );
+    const continuityFrameAbsolutePath =
+      await this.renderStorageService.ensureParentDirectory(continuityFramePath);
+
+    try {
+      await this.ffmpegRenderingService.extractLastFrame(
+        sceneClipAbsolutePath,
+        continuityFrameAbsolutePath
+      );
+
+      return continuityFrameAbsolutePath;
+    } catch (error) {
+      this.logger.warn(
+        `Could not extract continuity frame for project=${input.projectId} ` +
+          `scene=${sceneIndex + 1}: ${this.toErrorMessage(error)}`
+      );
+      return null;
+    }
   }
 
   private resolveSceneColor(sectionType: string, index: number): string {

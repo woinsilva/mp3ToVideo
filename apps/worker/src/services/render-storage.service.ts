@@ -54,6 +54,18 @@ export class RenderStorageService {
     ).replace(/\\/g, '/');
   }
 
+  buildContinuityFramePath(organizationId: string, projectId: string, sceneIndex: number): string {
+    const root = this.configService.get<string>('storage.root', './storage');
+
+    return join(
+      root,
+      'continuity-frames',
+      organizationId,
+      projectId,
+      `scene-${String(sceneIndex + 1).padStart(3, '0')}-last-frame.png`
+    ).replace(/\\/g, '/');
+  }
+
   buildConcatListPath(projectId: string): string {
     const root = this.configService.get<string>('storage.root', './storage');
 
@@ -77,6 +89,16 @@ export class RenderStorageService {
     const root = this.configService.get<string>('storage.root', './storage');
 
     return join(root, 'renders', organizationId, projectId, 'final.mp4').replace(/\\/g, '/');
+  }
+
+  buildInterpolatedRenderPath(organizationId: string, projectId: string, jobId: string): string {
+    const root = this.configService.get<string>('storage.root', './storage');
+    return join(root, 'renders', organizationId, projectId, `rife-2x-${jobId}.mp4`).replace(/\\/g, '/');
+  }
+
+  buildInterpolationTempDirectory(jobId: string): string {
+    const root = this.configService.get<string>('storage.root', './storage');
+    return join(root, 'temp', 'frame-interpolation', jobId).replace(/\\/g, '/');
   }
 
   async ensureParentDirectory(relativePath: string): Promise<string> {

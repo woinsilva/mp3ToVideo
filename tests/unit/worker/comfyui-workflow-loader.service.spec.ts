@@ -3,6 +3,18 @@ import { describe, expect, it, vi } from 'vitest';
 import { ComfyUiWorkflowLoaderService } from '../../../apps/worker/src/services/comfyui-workflow-loader.service';
 
 describe('ComfyUiWorkflowLoaderService', () => {
+  const generationParameters = {
+    fps: 16,
+    steps: 24,
+    cfg: 4.5,
+    sampler: 'uni_pc',
+    scheduler: 'simple',
+    unetName: 'wan-unet.safetensors',
+    clipName: 'wan-clip.safetensors',
+    clipType: 'wan',
+    vaeName: 'wan-vae.safetensors',
+    modelShift: 8
+  };
   function createService() {
     const configService = {
       get: vi.fn().mockImplementation((key: string, defaultValue?: unknown) => {
@@ -34,6 +46,7 @@ describe('ComfyUiWorkflowLoaderService', () => {
       height: 704,
       length: 121,
       seed: 123456789,
+      ...generationParameters,
       filenamePrefix: 'test-video'
     });
 
@@ -44,6 +57,9 @@ describe('ComfyUiWorkflowLoaderService', () => {
     expect(workflow['55'].inputs.height).toBe(704);
     expect(workflow['55'].inputs.length).toBe(121);
     expect(workflow['3'].inputs.seed).toBe(123456789);
+    expect(workflow['3'].inputs.cfg).toBe(4.5);
+    expect(workflow['3'].inputs.steps).toBe(24);
+    expect(workflow['57'].inputs.fps).toBe(16);
     expect(workflow['58'].inputs.filename_prefix).toBe('test-video');
   });
 
@@ -57,6 +73,7 @@ describe('ComfyUiWorkflowLoaderService', () => {
       height: 704,
       length: 121,
       seed: 987654321,
+      ...generationParameters,
       filenamePrefix: 'test-video',
       referenceImageFilename: 'scene-reference.png'
     });

@@ -10,5 +10,15 @@ export const envValidationSchema = Joi.object({
   DATABASE_PROVIDER: Joi.string().valid('postgresql', 'sqlite').default('postgresql'),
   REDIS_HOST: Joi.string().default('localhost'),
   REDIS_PORT: Joi.number().default(6379),
+  SCENE_VISUAL_PROVIDER: Joi.string().valid('procedural', 'comfyui').default('procedural'),
+  COMFYUI_BASE_URL: Joi.string().uri({ scheme: ['http', 'https'] }).default('http://localhost:8188'),
+  COMFYUI_HEALTH_TIMEOUT_MS: Joi.number().integer().positive().default(5000),
+  COMFYUI_CHECKPOINT_NAME: Joi.string().allow('').default(''),
+  COMFYUI_STORYBOARD_WIDTH: Joi.number().integer().positive().default(1536),
+  COMFYUI_STORYBOARD_HEIGHT: Joi.number().integer().positive().default(864),
+  COMFYUI_STORYBOARD_STEPS: Joi.number().integer().positive().default(24),
+  COMFYUI_STORYBOARD_CFG: Joi.number().positive().default(5),
+  COMFYUI_STORYBOARD_SAMPLER: Joi.string().default('uni_pc'),
+  COMFYUI_STORYBOARD_SCHEDULER: Joi.string().default('simple'),
   DATABASE_URL: Joi.string().default('postgresql://postgres:postgres@localhost:5432/video_saas')
 });
