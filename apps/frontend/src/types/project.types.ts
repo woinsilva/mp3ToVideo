@@ -241,6 +241,27 @@ export interface ChildrenClipPlanStatus {
   } | null;
 }
 
+export type ChildrenClipShotAssetRole = 'background' | 'foreground' | 'prop' | 'character_pose' | 'storyboard_frame';
+
+export interface ChildrenClipShotAsset {
+  id: string;
+  role: ChildrenClipShotAssetRole;
+  origin: 'generated' | 'uploaded';
+  status: 'draft' | 'queued' | 'generating' | 'ready_for_review' | 'approved' | 'failed';
+  versionNumber: number;
+  label: string | null;
+  generationPrompt: string | null;
+  seed: number | null;
+  errorMessage: string | null;
+  asset: { id: string; mimeType: string; width: number | null; height: number | null; sizeBytes: number } | null;
+  job: { status: 'queued' | 'active' | 'completed' | 'failed' | 'retrying'; progress: number; detailMessage: string | null; errorMessage: string | null; activityLog: Array<{ stage: string; message: string; progress: number; timestamp: string }> | null } | null;
+}
+
+export interface ChildrenClipProductionAssetsStatus {
+  shots: Array<ChildrenClipShot & { assets: ChildrenClipShotAsset[] }>;
+  summary: { totalShots: number; approvedBackgrounds: number; readyForAnimation: boolean };
+}
+
 export interface TrackUploadResult {
   projectId: string;
   trackId: string;

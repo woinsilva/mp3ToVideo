@@ -119,6 +119,28 @@ export class LocalStorageService {
     return relativePath.replace(/\\/g, '/');
   }
 
+  async saveChildrenClipShotAsset(
+    organizationId: string,
+    projectId: string,
+    shotId: string,
+    shotAssetId: string,
+    role: string,
+    originalFileName: string,
+    buffer: Buffer
+  ): Promise<string> {
+    const root = this.configService.get<string>('storage.root', './storage');
+    const extension = extname(originalFileName).toLowerCase() || '.png';
+    const safeRole = role.replace(/[^a-z0-9_-]/gi, '-').toLowerCase();
+    const relativePath = join(
+      root, 'children-clips', organizationId, projectId, 'shots', shotId, 'assets',
+      `${safeRole}-${shotAssetId}${extension}`
+    );
+    const absolutePath = this.getAbsolutePath(relativePath);
+    await mkdir(dirname(absolutePath), { recursive: true });
+    await writeFile(absolutePath, buffer);
+    return relativePath.replace(/\\/g, '/');
+  }
+
   async saveStoryboardImage(
     organizationId: string,
     projectId: string,

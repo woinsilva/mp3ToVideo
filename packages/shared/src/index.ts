@@ -8,6 +8,7 @@ export const CHILDREN_CLIP_QUEUE_NAME = 'children-clip-production';
 export const CHILDREN_CLIP_CHARACTER_GENERATE_JOB_NAME = 'children-clip.character.generate';
 export const CHILDREN_CLIP_AUDIO_ANALYZE_JOB_NAME = 'children-clip.audio.analyze';
 export const CHILDREN_CLIP_PLAN_GENERATE_JOB_NAME = 'children-clip.plan.generate';
+export const CHILDREN_CLIP_ASSET_GENERATE_JOB_NAME = 'children-clip.asset.generate';
 
 export interface ProjectProcessingJobPayload {
   projectId: string;
@@ -40,4 +41,11 @@ export interface ChildrenClipPlanGenerationJobPayload {
   organizationId: string;
   requestedByUserId: string;
   revisionInstruction?: string | null;
+}
+
+export interface ChildrenClipAssetGenerationJobPayload {
+  projectId: string;
+  organizationId: string;
+  requestedByUserId: string;
+  shotAssetId: string;
 }

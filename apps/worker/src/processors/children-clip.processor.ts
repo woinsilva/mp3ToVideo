@@ -2,8 +2,8 @@ import { stat, writeFile } from 'node:fs/promises';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AssetType, CharacterAssetRole, CharacterVersionStatus, Prisma, ProcessingJobStatus } from '@prisma/client';
-import type { ChildrenClipAudioAnalysisJobPayload, ChildrenClipCharacterGenerationJobPayload, ChildrenClipPlanGenerationJobPayload } from '@video/shared';
+import { AssetType, CharacterAssetRole, CharacterVersionStatus, ChildrenClipShotAssetStatus, Prisma, ProcessingJobStatus } from '@prisma/client';
+import type { ChildrenClipAssetGenerationJobPayload, ChildrenClipAudioAnalysisJobPayload, ChildrenClipCharacterGenerationJobPayload, ChildrenClipPlanGenerationJobPayload } from '@video/shared';
 import type { Job } from 'bullmq';
 
 import { PrismaService } from '../database/prisma.service';
@@ -37,6 +37,110 @@ export class ChildrenClipProcessor {
     @Inject(MusicStructureService) private readonly musicStructure: MusicStructureService,
     @Inject(ChildrenClipPlanningService) private readonly planning: ChildrenClipPlanningService
   ) {}
+
+  async processAssetGeneration(job: Job<ChildrenClipAssetGenerationJobPayload>) {
+    const { projectId, organizationId, shotAssetId } = job.data;
+    const bullJobId = String(job.id);
+    const shotAsset = await this.prisma.childrenClipShotAsset.findFirst({
+      where: { id: shotAssetId, shot: { projectId, project: { organizationId, deletedAt: null } } },
+      include: {
+        shot: {
+          include: {
+            project: { include: { childrenClip: true, childrenClipPlan: true } }
+          }
+        }
+      }
+    });
+    if (!shotAsset?.generationPrompt) throw new Error(`Shot asset ${shotAssetId} is not ready for generation`);
+    if (shotAsset.shot.project.childrenClipPlan?.status !== 'approved') {
+      throw new Error('O plano de producao deixou de estar aprovado');
+    }
+
+    const seed = shotAsset.seed ?? Math.floor(Math.random() * 2_147_483_646);
+    const checkpointName = this.config.get<string>('visual.characterCheckpointName', '').trim();
+    const aspectRatio = shotAsset.shot.project.childrenClip?.aspectRatio ?? 'landscape_16_9';
+    const dimensions = aspectRatio === 'portrait_9_16'
+      ? { width: 768, height: 1344 }
+      : aspectRatio === 'square_1_1'
+        ? { width: 1024, height: 1024 }
+        : { width: 1344, height: 768 };
+    const steps = this.config.get<number>('visual.characterSteps', 30);
+    const cfg = this.config.get<number>('visual.characterCfg', 6.5);
+    const sampler = this.config.get<string>('visual.characterSampler', 'dpmpp_2m');
+    const scheduler = this.config.get<string>('visual.characterScheduler', 'karras');
+    const loraName = this.config.get<string>('visual.characterLoraName', '').trim();
+    const loraStrength = this.config.get<number>('visual.characterLoraStrength', 1);
+    const isBackground = shotAsset.role === 'background';
+    const visualBible = shotAsset.shot.project.childrenClipPlan?.visualBible;
+    const positivePrompt = [
+      'original polished 2D children animation, flat vector illustration, clean bold outlines, simple cel shading, production-ready separated visual asset',
+      isBackground ? 'empty environment background plate, no characters, wide composition with clear foreground middle ground and background layers' : `isolated ${shotAsset.role} visual asset`,
+      shotAsset.generationPrompt,
+      visualBible ? `art direction: ${JSON.stringify(visualBible)}` : null
+    ].filter(Boolean).join(', ');
+    const negativePrompt = [
+      shotAsset.negativePrompt,
+      'photorealistic, realistic skin, 3d render, text, letters, logo, watermark, signature, scary, violence, weapon, malformed, low quality',
+      isBackground ? 'person, people, child, character, animal, creature, mascot' : null
+    ].filter(Boolean).join(', ');
+
+    await this.prisma.$transaction([
+      this.prisma.childrenClipShotAsset.update({
+        where: { id: shotAssetId },
+        data: { status: 'generating', bullJobId, seed, errorMessage: null, generationStartedAt: new Date(), generationEndedAt: null }
+      }),
+      this.prisma.childrenClip.update({ where: { projectId }, data: { productionStatus: 'generating_assets' } })
+    ]);
+    try {
+      await this.assetProgress(job, 8, 'STARTING', 'Worker iniciou a producao do asset da tomada.');
+      await this.assetProgress(job, 18, 'LOADING_MODEL', `Carregando checkpoint ${checkpointName}.`);
+      await this.assetProgress(job, 25, 'GENERATING', `Gerando ${shotAsset.role} em ${dimensions.width}x${dimensions.height}.`);
+      const result = await this.comfyUi.generateStillImage({
+        positivePrompt, negativePrompt, checkpointName, ...dimensions, steps, cfg, sampler, scheduler, seed,
+        filenamePrefix: `children-clips/shot-${shotAsset.shot.index + 1}-${shotAsset.role}-v${shotAsset.versionNumber}`,
+        loraName: loraName || null, loraStrength
+      });
+      await this.assetProgress(job, 82, 'SAVING_ASSET', 'Imagem gerada. Salvando a versao para revisao.');
+      const storagePath = this.storage.buildChildrenClipShotAssetPath(
+        organizationId, projectId, shotAsset.shotId, shotAssetId, shotAsset.role
+      );
+      const absolutePath = await this.storage.ensureParentDirectory(storagePath);
+      await writeFile(absolutePath, result.buffer);
+      const sizeBytes = Number((await stat(absolutePath)).size);
+      await this.prisma.$transaction(async (tx) => {
+        const asset = await tx.asset.create({
+          data: {
+            organizationId, projectId, type: AssetType.image, mimeType: 'image/png', storagePath, sizeBytes,
+            width: dimensions.width, height: dimensions.height,
+            metadata: { source: 'comfyui', shotAssetId, shotId: shotAsset.shotId, role: shotAsset.role, promptId: result.promptId, checkpointName, seed, steps, cfg, sampler, scheduler, loraName: loraName || null, loraStrength, positivePrompt, negativePrompt }
+          }
+        });
+        await tx.childrenClipShotAsset.update({
+          where: { id: shotAssetId },
+          data: {
+            assetId: asset.id, status: ChildrenClipShotAssetStatus.ready_for_review,
+            generationEndedAt: new Date(), errorMessage: null,
+            generationMetadata: { provider: result.provider, promptId: result.promptId, checkpointName, ...dimensions, seed, steps, cfg, sampler, scheduler, loraName: loraName || null, loraStrength, positivePrompt, negativePrompt }
+          }
+        });
+      });
+      await this.assetProgress(job, 100, 'READY_FOR_REVIEW', 'Asset da tomada pronto para revisao.', ProcessingJobStatus.completed);
+      this.logger.log(`Shot asset generated project=${projectId} shotAsset=${shotAssetId}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const willRetry = job.attemptsMade + 1 < (job.opts.attempts ?? 1);
+      await this.prisma.childrenClipShotAsset.update({
+        where: { id: shotAssetId },
+        data: { status: willRetry ? 'queued' : 'failed', errorMessage: message, generationEndedAt: willRetry ? null : new Date() }
+      });
+      await this.assetProgress(
+        job, 0, willRetry ? 'RETRYING' : 'FAILED',
+        willRetry ? `Tentativa falhou; o BullMQ tentara novamente: ${message}` : `Falha ao gerar asset: ${message}`,
+        willRetry ? ProcessingJobStatus.retrying : ProcessingJobStatus.failed, message
+      );
+      throw error;
+    }
+  }
 
   async processPlanGeneration(job: Job<ChildrenClipPlanGenerationJobPayload>) {
     const { projectId, organizationId, revisionInstruction } = job.data;
@@ -525,6 +629,19 @@ export class ChildrenClipProcessor {
 
   private async planProgress(
     job: Job<ChildrenClipPlanGenerationJobPayload>,
+    progress: number,
+    stage: string,
+    message: string,
+    status: ProcessingJobStatus = ProcessingJobStatus.active,
+    errorMessage: string | null = null
+  ) {
+    await job.updateProgress({ progress, stage, message });
+    await this.progress(String(job.id), progress, stage, message, status, errorMessage);
+    this.logger.log(`[${String(job.id)}] ${stage} ${progress}%: ${message}`);
+  }
+
+  private async assetProgress(
+    job: Job<ChildrenClipAssetGenerationJobPayload>,
     progress: number,
     stage: string,
     message: string,

@@ -129,6 +129,24 @@ deterministicas, evitando que uma variacao de JSON interrompa o pipeline.
 O modo de raciocinio do Qwen/Ollama fica desativado para estas respostas estruturadas; isso reduz a
 latencia sem remover validacao, fallback ou os heartbeats exibidos durante a espera.
 
+### Producao de assets por tomada
+
+Com o plano aprovado, o estudio libera a etapa 4. Cada tomada pode receber fundos, primeiro plano,
+objetos, poses enviadas e quadros de storyboard. Fundos ausentes podem ser enfileirados em lote;
+novas geracoes e uploads sempre criam uma versao, sem substituir a versao aprovada.
+
+O job `children-clip.asset.generate` usa o ComfyUI nativo do Windows, registra prompt positivo e
+negativo, checkpoint, LoRA, seed, sampler, scheduler, dimensoes e `promptId`. Fundos sao solicitados
+sem personagens e preparados como placas para composicao em camadas. O worker publica os estados
+`QUEUED`, `STARTING`, `LOADING_MODEL`, `GENERATING`, `SAVING_ASSET`, `READY_FOR_REVIEW`, `RETRYING`
+e `FAILED` no BullMQ e no `ProcessingJob`.
+
+O usuario ve preview autenticado, progresso e erro por versao, pode reenfileirar falhas, enviar uma
+imagem propria e aprovar uma versao por funcao e tomada. A animacao somente fica liberada quando
+todas as tomadas possuem um fundo aprovado. Geracao textual de pose nao e tratada como preservacao
+de identidade; poses de personagem exigem upload nesta etapa ate o workflow com referencia ficar
+disponivel.
+
 RIFE fica disponivel apenas para tomadas generativas que realmente precisem de interpolacao. Animacao 2D sera renderizada diretamente no FPS final.
 
 ## Modelo de dados

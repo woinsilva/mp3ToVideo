@@ -4,9 +4,11 @@ import {
   CHILDREN_CLIP_CHARACTER_GENERATE_JOB_NAME,
   CHILDREN_CLIP_AUDIO_ANALYZE_JOB_NAME,
   CHILDREN_CLIP_PLAN_GENERATE_JOB_NAME,
+  CHILDREN_CLIP_ASSET_GENERATE_JOB_NAME,
   CHILDREN_CLIP_QUEUE_NAME,
   type ChildrenClipAudioAnalysisJobPayload,
   type ChildrenClipPlanGenerationJobPayload,
+  type ChildrenClipAssetGenerationJobPayload,
   type ChildrenClipCharacterGenerationJobPayload
 } from '@video/shared';
 import { Queue } from 'bullmq';
@@ -14,7 +16,7 @@ import type { ConnectionOptions } from 'bullmq';
 
 @Injectable()
 export class ChildrenClipQueueService implements OnModuleDestroy {
-  private readonly queue: Queue<ChildrenClipCharacterGenerationJobPayload | ChildrenClipAudioAnalysisJobPayload | ChildrenClipPlanGenerationJobPayload>;
+  private readonly queue: Queue<ChildrenClipCharacterGenerationJobPayload | ChildrenClipAudioAnalysisJobPayload | ChildrenClipPlanGenerationJobPayload | ChildrenClipAssetGenerationJobPayload>;
 
   constructor(@Inject(ConfigService) configService: ConfigService) {
     const connection: ConnectionOptions = {
@@ -60,6 +62,16 @@ export class ChildrenClipQueueService implements OnModuleDestroy {
   ): Promise<{ bullJobId: string }> {
     const job = await this.queue.add(CHILDREN_CLIP_PLAN_GENERATE_JOB_NAME, payload, {
       jobId: `plan-${payload.projectId}-${Date.now()}`,
+      delay: 500
+    });
+    return { bullJobId: String(job.id) };
+  }
+
+  async enqueueShotAsset(
+    payload: ChildrenClipAssetGenerationJobPayload
+  ): Promise<{ bullJobId: string }> {
+    const job = await this.queue.add(CHILDREN_CLIP_ASSET_GENERATE_JOB_NAME, payload, {
+      jobId: `asset-${payload.shotAssetId}-${Date.now()}`,
       delay: 500
     });
     return { bullJobId: String(job.id) };

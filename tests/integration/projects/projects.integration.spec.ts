@@ -370,6 +370,31 @@ describe('Projects integration', () => {
       .expect(201)
       .expect(({ body }) => expect(body.plan.status).toBe('approved'));
 
+    const shotAssetResponse = await request(app.getHttpServer())
+      .post(`/projects/${projectResponse.body.id}/children-clip/production-assets/shots/${shots[0].id}/upload`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .field('role', 'background')
+      .attach('file', png, { filename: 'horta.png', contentType: 'image/png' })
+      .expect(201);
+    const shotAsset = shotAssetResponse.body.shots[0].assets[0];
+    expect(shotAsset).toMatchObject({
+      role: 'background', origin: 'uploaded', status: 'ready_for_review', versionNumber: 1,
+      asset: { mimeType: 'image/png', width: 2, height: 1 }
+    });
+    await request(app.getHttpServer())
+      .post(`/projects/${projectResponse.body.id}/children-clip/production-assets/${shotAsset.id}/approve`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.shots[0].assets[0].status).toBe('approved');
+        expect(body.summary).toMatchObject({ totalShots: 2, approvedBackgrounds: 1, readyForAnimation: false });
+      });
+    await request(app.getHttpServer())
+      .get(`/projects/${projectResponse.body.id}/children-clip/production-assets/${shotAsset.id}/file`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .expect(200)
+      .expect('Content-Type', /image\/png/);
+
     const assetId = listResponse.body[0].versions[0].assets[0].id;
     await request(app.getHttpServer())
       .get(`/projects/${projectResponse.body.id}/children-clip/characters/${characterId}/versions/${versionId}/assets/${assetId}`)

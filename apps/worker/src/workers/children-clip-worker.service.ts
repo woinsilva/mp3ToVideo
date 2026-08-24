@@ -4,10 +4,12 @@ import {
   CHILDREN_CLIP_CHARACTER_GENERATE_JOB_NAME,
   CHILDREN_CLIP_AUDIO_ANALYZE_JOB_NAME,
   CHILDREN_CLIP_PLAN_GENERATE_JOB_NAME,
+  CHILDREN_CLIP_ASSET_GENERATE_JOB_NAME,
   CHILDREN_CLIP_QUEUE_NAME,
   type ChildrenClipAudioAnalysisJobPayload,
   type ChildrenClipCharacterGenerationJobPayload,
   type ChildrenClipPlanGenerationJobPayload
+  , type ChildrenClipAssetGenerationJobPayload
 } from '@video/shared';
 import { Worker, type ConnectionOptions, type Job } from 'bullmq';
 
@@ -16,7 +18,7 @@ import { ChildrenClipProcessor } from '../processors/children-clip.processor';
 @Injectable()
 export class ChildrenClipWorkerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ChildrenClipWorkerService.name);
-  private readonly worker: Worker<ChildrenClipCharacterGenerationJobPayload | ChildrenClipAudioAnalysisJobPayload | ChildrenClipPlanGenerationJobPayload>;
+  private readonly worker: Worker<ChildrenClipCharacterGenerationJobPayload | ChildrenClipAudioAnalysisJobPayload | ChildrenClipPlanGenerationJobPayload | ChildrenClipAssetGenerationJobPayload>;
 
   constructor(
     @Inject(ConfigService) config: ConfigService,
@@ -26,7 +28,7 @@ export class ChildrenClipWorkerService implements OnModuleInit, OnModuleDestroy 
       host: config.get<string>('redis.host', 'localhost'),
       port: config.get<number>('redis.port', 6379)
     };
-    this.worker = new Worker<ChildrenClipCharacterGenerationJobPayload | ChildrenClipAudioAnalysisJobPayload | ChildrenClipPlanGenerationJobPayload>(
+    this.worker = new Worker<ChildrenClipCharacterGenerationJobPayload | ChildrenClipAudioAnalysisJobPayload | ChildrenClipPlanGenerationJobPayload | ChildrenClipAssetGenerationJobPayload>(
       CHILDREN_CLIP_QUEUE_NAME,
       async (job) => {
         if (job.name === CHILDREN_CLIP_CHARACTER_GENERATE_JOB_NAME) {
@@ -37,6 +39,9 @@ export class ChildrenClipWorkerService implements OnModuleInit, OnModuleDestroy 
         }
         if (job.name === CHILDREN_CLIP_PLAN_GENERATE_JOB_NAME) {
           return this.processor.processPlanGeneration(job as Job<ChildrenClipPlanGenerationJobPayload>);
+        }
+        if (job.name === CHILDREN_CLIP_ASSET_GENERATE_JOB_NAME) {
+          return this.processor.processAssetGeneration(job as Job<ChildrenClipAssetGenerationJobPayload>);
         }
         throw new Error(`Unsupported children clip job: ${job.name}`);
       },

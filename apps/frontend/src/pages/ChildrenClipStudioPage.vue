@@ -200,6 +200,42 @@
           </div>
         </template>
       </section>
+
+      <section v-if="planStatus?.plan?.status === 'approved'" class="surface-card studio-width plan-panel production-assets-panel">
+        <div class="panel-heading">
+          <div><p class="page-eyebrow">Etapa 4</p><h3>Cenarios e assets das tomadas</h3><p>Gere fundos sem personagens, envie elementos próprios e aprove cada versão antes da animação.</p></div>
+          <span v-if="productionAssets" class="version-status" :class="{ 'version-status--approved': productionAssets.summary.readyForAnimation }">{{ productionAssets.summary.approvedBackgrounds }}/{{ productionAssets.summary.totalShots }} fundos aprovados</span>
+        </div>
+        <div class="production-assets-actions">
+          <button class="app-button" type="button" :disabled="generatingBackgrounds" @click="generateMissingBackgrounds">{{ generatingBackgrounds ? 'Enfileirando...' : 'Gerar fundos que faltam' }}</button>
+          <span v-if="productionAssets?.summary.readyForAnimation" class="approved-copy"><v-icon icon="mdi-check-decagram" /> Assets mínimos prontos para animação</span>
+        </div>
+
+        <div v-if="productionAssets" class="production-shot-list">
+          <article v-for="shot in productionAssets.shots" :key="shot.id" class="shot-asset-card">
+            <header><div><strong>{{ shot.index + 1 }}. {{ shot.title }}</strong><small>{{ formatTimePrecise(shot.startSeconds) }} - {{ formatTimePrecise(shot.endSeconds) }}</small></div><span>{{ shot.assets.length }} versão(ões)</span></header>
+            <p>{{ shot.environment }}</p>
+            <div v-if="shot.assets.length" class="shot-assets-grid">
+              <figure v-for="asset in shot.assets" :key="asset.id" :class="{ 'shot-asset--approved': asset.status === 'approved' }">
+                <img v-if="shotAssetUrls[asset.id]" :src="shotAssetUrls[asset.id]" :alt="asset.label || asset.role" />
+                <div v-else-if="asset.status === 'queued' || asset.status === 'generating'" class="asset-loading"><v-progress-circular indeterminate size="28" /></div>
+                <div v-else class="asset-loading"><v-icon icon="mdi-image-off-outline" /></div>
+                <figcaption><strong>{{ shotAssetRoleLabel(asset.role) }} · v{{ asset.versionNumber }}</strong><span class="version-status" :class="`version-status--${asset.status}`">{{ shotAssetStatusLabel(asset.status) }}</span></figcaption>
+                <div v-if="asset.status === 'queued' || asset.status === 'generating'" class="asset-job-progress"><v-progress-linear :model-value="asset.job?.progress || 0" color="warning" /><small>{{ asset.job?.detailMessage || 'Aguardando worker...' }} ({{ asset.job?.progress || 0 }}%)</small></div>
+                <v-alert v-if="asset.errorMessage || asset.job?.errorMessage" density="compact" type="error" variant="tonal">{{ asset.errorMessage || asset.job?.errorMessage }}</v-alert>
+                <div class="version-actions"><button v-if="asset.status === 'ready_for_review'" class="app-button" type="button" @click="approveShotAsset(asset.id)">Aprovar</button><button v-if="asset.status === 'failed'" class="app-button app-button--secondary" type="button" @click="retryShotAsset(asset.id)">Tentar novamente</button><span v-if="asset.status === 'approved'" class="approved-copy"><v-icon icon="mdi-lock-check" /> Aprovado</span></div>
+              </figure>
+            </div>
+            <details class="supplementary-assets"><summary>Gerar nova versão ou enviar asset</summary><div class="shot-asset-form">
+              <select v-model="shotAssetRoles[shot.id]" class="auth-input"><option value="background">Fundo</option><option value="foreground">Primeiro plano</option><option value="prop">Objeto</option><option value="storyboard_frame">Quadro de storyboard</option><option value="character_pose">Pose de personagem (somente upload)</option></select>
+              <textarea v-model="shotAssetPrompts[shot.id]" class="auth-input auth-input--textarea" rows="2" :placeholder="shot.backgroundPrompt" />
+              <button v-if="shotAssetRoles[shot.id] !== 'character_pose'" class="app-button app-button--secondary" type="button" @click="generateShotAsset(shot.id)">Gerar versão</button>
+              <input class="auth-input" type="file" accept="image/jpeg,image/png,image/webp" @change="onShotAssetFileSelected(shot.id, $event)" />
+              <button class="app-button app-button--secondary" type="button" :disabled="!shotAssetFiles[shot.id]" @click="uploadShotAsset(shot.id)">Enviar imagem</button>
+            </div></details>
+          </article>
+        </div>
+      </section>
     </template>
   </AppLayout>
 </template>
@@ -210,13 +246,14 @@ import AppLayout from '@/layouts/AppLayout.vue';
 import { projectsService } from '@/services/projects.service';
 import { useAuthStore } from '@/stores/auth.store';
 import { useProjectsStore } from '@/stores/projects.store';
-import type { CharacterAssetRole, ChildrenClipAudioStatus, ChildrenClipCharacter, ChildrenClipCharacterVersion, ChildrenClipPlanStatus, ChildrenClipShot } from '@/types/project.types';
+import type { CharacterAssetRole, ChildrenClipAudioStatus, ChildrenClipCharacter, ChildrenClipCharacterVersion, ChildrenClipPlanStatus, ChildrenClipProductionAssetsStatus, ChildrenClipShot, ChildrenClipShotAsset, ChildrenClipShotAssetRole } from '@/types/project.types';
 
 @Component({ components: { AppLayout } })
 export default class ChildrenClipStudioPage extends Vue {
   characters: ChildrenClipCharacter[] = [];
   audioStatus: ChildrenClipAudioStatus | null = null;
   planStatus: ChildrenClipPlanStatus | null = null;
+  productionAssets: ChildrenClipProductionAssetsStatus | null = null;
   visualBibleJson = '';
   narrativeJson = '';
   planRevision = '';
@@ -236,6 +273,11 @@ export default class ChildrenClipStudioPage extends Vue {
   pollTimer: ReturnType<typeof setInterval> | null = null;
   replacementTrack: File | null = null;
   replacingTrack = false;
+  generatingBackgrounds = false;
+  shotAssetUrls: Record<string, string> = {};
+  shotAssetRoles: Record<string, ChildrenClipShotAssetRole> = {};
+  shotAssetPrompts: Record<string, string> = {};
+  shotAssetFiles: Record<string, File | null> = {};
 
   get authStore(): any { return useAuthStore(); }
   get projectsStore(): any { return useProjectsStore(); }
@@ -253,6 +295,7 @@ export default class ChildrenClipStudioPage extends Vue {
       const project = await this.projectsStore.fetchProject(this.projectId, this.authStore.token);
       if (project.generationMode !== 'children_clip') { void this.$router.replace({ name: 'project-detail', params: { id: project.id } }); return; }
       await Promise.all([this.loadAudioAnalysis(), this.loadCharacters(), this.loadPlan()]);
+      if (this.planStatus?.plan?.status === 'approved') await this.loadProductionAssets();
       this.pollTimer = setInterval(() => void this.pollIfNeeded(), 4000);
     } catch (error) { this.captureError(error, 'Falha ao carregar o estudio'); }
   }
@@ -260,6 +303,7 @@ export default class ChildrenClipStudioPage extends Vue {
   beforeUnmount() {
     if (this.pollTimer) clearInterval(this.pollTimer);
     Object.values(this.assetUrls).forEach((url) => URL.revokeObjectURL(url));
+    Object.values(this.shotAssetUrls).forEach((url) => URL.revokeObjectURL(url));
   }
 
   async loadCharacters() {
@@ -278,6 +322,15 @@ export default class ChildrenClipStudioPage extends Vue {
     this.planStatus = await projectsService.getChildrenClipProductionPlan(this.projectId, this.authStore.token);
     if (this.planStatus.plan && !this.visualBibleJson) this.visualBibleJson = JSON.stringify(this.planStatus.plan.visualBible || {}, null, 2);
     if (this.planStatus.plan && !this.narrativeJson) this.narrativeJson = JSON.stringify(this.planStatus.plan.narrative || {}, null, 2);
+  }
+
+  async loadProductionAssets() {
+    if (!this.authStore.token) return;
+    this.productionAssets = await projectsService.getChildrenClipProductionAssets(this.projectId, this.authStore.token);
+    for (const shot of this.productionAssets.shots) {
+      if (!this.shotAssetRoles[shot.id]) this.shotAssetRoles = { ...this.shotAssetRoles, [shot.id]: 'background' };
+    }
+    await this.loadShotAssetUrls();
   }
 
   async pollIfNeeded() {
@@ -300,6 +353,9 @@ export default class ChildrenClipStudioPage extends Vue {
         }
       } catch (error) { this.captureError(error, 'Falha ao atualizar planejamento'); }
     }
+    if (this.productionAssets?.shots.some((shot) => shot.assets.some((asset) => ['queued', 'generating'].includes(asset.status)))) {
+      try { await this.loadProductionAssets(); } catch (error) { this.captureError(error, 'Falha ao atualizar assets das tomadas'); }
+    }
   }
 
   async loadAssetUrls() {
@@ -308,6 +364,15 @@ export default class ChildrenClipStudioPage extends Vue {
       if (this.assetUrls[asset.id]) continue;
       const blob = await projectsService.downloadChildrenClipCharacterAsset(this.projectId, character.id, version.id, asset.id, this.authStore.token);
       this.assetUrls = { ...this.assetUrls, [asset.id]: URL.createObjectURL(blob) };
+    }
+  }
+
+  async loadShotAssetUrls() {
+    if (!this.authStore.token || !this.productionAssets) return;
+    for (const shot of this.productionAssets.shots) for (const asset of shot.assets) {
+      if (!asset.asset || this.shotAssetUrls[asset.id]) continue;
+      const blob = await projectsService.downloadChildrenClipShotAsset(this.projectId, asset.id, this.authStore.token);
+      this.shotAssetUrls = { ...this.shotAssetUrls, [asset.id]: URL.createObjectURL(blob) };
     }
   }
 
@@ -414,8 +479,27 @@ export default class ChildrenClipStudioPage extends Vue {
   }
   async approvePlan() {
     if (!this.authStore.token) return;
-    try { this.planStatus = await projectsService.approveChildrenClipProductionPlan(this.projectId, this.authStore.token); await this.projectsStore.fetchProject(this.projectId, this.authStore.token); } catch (error) { this.captureError(error, 'Falha ao aprovar plano'); }
+    try { this.planStatus = await projectsService.approveChildrenClipProductionPlan(this.projectId, this.authStore.token); await Promise.all([this.projectsStore.fetchProject(this.projectId, this.authStore.token), this.loadProductionAssets()]); } catch (error) { this.captureError(error, 'Falha ao aprovar plano'); }
   }
+  onShotAssetFileSelected(shotId: string, event: Event) { this.shotAssetFiles = { ...this.shotAssetFiles, [shotId]: (event.target as HTMLInputElement).files?.[0] ?? null }; }
+  async generateMissingBackgrounds() {
+    if (!this.authStore.token) return;
+    this.generatingBackgrounds = true;
+    try { this.productionAssets = await projectsService.generateMissingChildrenClipBackgrounds(this.projectId, this.authStore.token); } catch (error) { this.captureError(error, 'Falha ao enfileirar os fundos'); } finally { this.generatingBackgrounds = false; }
+  }
+  async generateShotAsset(shotId: string) {
+    if (!this.authStore.token) return;
+    const role = (this.shotAssetRoles[shotId] || 'background') as Exclude<ChildrenClipShotAssetRole, 'character_pose'>;
+    try { this.productionAssets = await projectsService.generateChildrenClipShotAsset(this.projectId, shotId, role, this.shotAssetPrompts[shotId] || null, this.authStore.token); } catch (error) { this.captureError(error, 'Falha ao gerar nova versao do asset'); }
+  }
+  async uploadShotAsset(shotId: string) {
+    if (!this.authStore.token || !this.shotAssetFiles[shotId]) return;
+    try { this.productionAssets = await projectsService.uploadChildrenClipShotAsset(this.projectId, shotId, this.shotAssetFiles[shotId]!, this.shotAssetRoles[shotId] || 'background', this.authStore.token); this.shotAssetFiles = { ...this.shotAssetFiles, [shotId]: null }; await this.loadShotAssetUrls(); } catch (error) { this.captureError(error, 'Falha ao enviar asset'); }
+  }
+  async approveShotAsset(assetId: string) { if (!this.authStore.token) return; try { this.productionAssets = await projectsService.approveChildrenClipShotAsset(this.projectId, assetId, this.authStore.token); } catch (error) { this.captureError(error, 'Falha ao aprovar asset'); } }
+  async retryShotAsset(assetId: string) { if (!this.authStore.token) return; try { this.productionAssets = await projectsService.retryChildrenClipShotAsset(this.projectId, assetId, this.authStore.token); } catch (error) { this.captureError(error, 'Falha ao reiniciar geracao do asset'); } }
+  shotAssetRoleLabel(role: ChildrenClipShotAssetRole) { return ({ background: 'Fundo', foreground: 'Primeiro plano', prop: 'Objeto', character_pose: 'Pose de personagem', storyboard_frame: 'Storyboard' })[role]; }
+  shotAssetStatusLabel(status: ChildrenClipShotAsset['status']) { return ({ draft: 'Rascunho', queued: 'Enfileirado', generating: 'Gerando', ready_for_review: 'Revisar', approved: 'Aprovado', failed: 'Falhou' })[status]; }
   formatTime(seconds: number) { const safe = Math.max(0, seconds); return `${Math.floor(safe / 60)}:${String(Math.floor(safe % 60)).padStart(2, '0')}`; }
   formatTimePrecise(seconds: number) { const safe = Math.max(0, seconds); return `${this.formatTime(safe)}.${Math.floor((safe % 1) * 10)}`; }
   captureError(error: unknown, fallback: string) { this.errorMessage = error instanceof Error ? error.message : fallback; }
@@ -500,5 +584,19 @@ export default class ChildrenClipStudioPage extends Vue {
 .supplementary-assets { margin-top: 14px; }
 .supplementary-assets summary { color: #4b648a; cursor: pointer; font-weight: 700; }
 .supplementary-assets__form { display: grid; grid-template-columns: 180px 1fr auto; gap: 10px; margin-top: 10px; }
-@media (max-width: 700px) { .setup-grid, .character-form, .audio-metrics, .replace-track, .plan-json-grid, .shot-form { grid-template-columns: 1fr; } .character-form__wide, .shot-form__wide { grid-column: auto; } .character-panel, .character-card, .audio-panel, .plan-panel { padding: 18px; } .supplementary-assets__form { grid-template-columns: 1fr; } .shot-card summary { align-items: flex-start; flex-direction: column; } }
+.production-assets-actions { display: flex; align-items: center; gap: 16px; margin: 18px 0; }
+.production-shot-list { display: grid; gap: 16px; }
+.shot-asset-card { padding: 16px; border: 1px solid #dfe3e8; border-radius: 14px; background: #fafbfc; }
+.shot-asset-card > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.shot-asset-card > header div { display: grid; gap: 3px; }
+.shot-asset-card small, .shot-asset-card > header > span, .shot-asset-card > p { color: #65676b; }
+.shot-assets-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin: 14px 0; }
+.shot-assets-grid figure { overflow: hidden; margin: 0; padding-bottom: 12px; border: 1px solid #dfe3e8; border-radius: 12px; background: #fff; }
+.shot-assets-grid figure.shot-asset--approved { border-color: #67ae7d; box-shadow: 0 0 0 2px #dff3e5; }
+.shot-assets-grid img, .shot-assets-grid .asset-loading { width: 100%; aspect-ratio: 16 / 9; object-fit: contain; background: #f0f2f5; }
+.shot-assets-grid figcaption { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px 0; }
+.shot-assets-grid .version-actions, .shot-assets-grid .v-alert, .asset-job-progress { margin-right: 12px; margin-left: 12px; }
+.asset-job-progress { display: grid; gap: 5px; color: #65676b; }
+.shot-asset-form { display: grid; grid-template-columns: 180px 1fr auto; gap: 10px; margin-top: 12px; align-items: end; }
+@media (max-width: 700px) { .setup-grid, .character-form, .audio-metrics, .replace-track, .plan-json-grid, .shot-form { grid-template-columns: 1fr; } .character-form__wide, .shot-form__wide { grid-column: auto; } .character-panel, .character-card, .audio-panel, .plan-panel { padding: 18px; } .supplementary-assets__form, .shot-asset-form { grid-template-columns: 1fr; } .shot-card summary { align-items: flex-start; flex-direction: column; } }
 </style>

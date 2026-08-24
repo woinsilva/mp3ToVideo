@@ -74,6 +74,20 @@ export class RenderStorageService {
     ).replace(/\\/g, '/');
   }
 
+  buildChildrenClipShotAssetPath(
+    organizationId: string,
+    projectId: string,
+    shotId: string,
+    shotAssetId: string,
+    role: string
+  ): string {
+    const root = this.configService.get<string>('storage.root', './storage');
+    return join(
+      root, 'children-clips', organizationId, projectId, 'shots', shotId, 'assets',
+      `${role}-${shotAssetId}.png`
+    ).replace(/\\/g, '/');
+  }
+
   buildContinuityFramePath(organizationId: string, projectId: string, sceneIndex: number): string {
     const root = this.configService.get<string>('storage.root', './storage');
 

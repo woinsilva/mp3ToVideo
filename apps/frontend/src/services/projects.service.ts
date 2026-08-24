@@ -5,6 +5,8 @@ import type {
   ChildrenClipCharacterVersion,
   ChildrenClipAudioStatus,
   ChildrenClipPlanStatus,
+  ChildrenClipProductionAssetsStatus,
+  ChildrenClipShotAssetRole,
   ChildrenClipShot,
   CreateChildrenClipCharacterInput,
   CreateProjectInput,
@@ -276,6 +278,38 @@ class ProjectsService {
 
   approveChildrenClipProductionPlan(projectId: string, token: string) {
     return apiService.request<ChildrenClipPlanStatus>(`/projects/${projectId}/children-clip/production-plan/approve`, { method: 'POST' }, token);
+  }
+
+  getChildrenClipProductionAssets(projectId: string, token: string) {
+    return apiService.request<ChildrenClipProductionAssetsStatus>(`/projects/${projectId}/children-clip/production-assets`, {}, token);
+  }
+
+  generateMissingChildrenClipBackgrounds(projectId: string, token: string) {
+    return apiService.request<ChildrenClipProductionAssetsStatus>(`/projects/${projectId}/children-clip/production-assets/generate-missing-backgrounds`, { method: 'POST' }, token);
+  }
+
+  generateChildrenClipShotAsset(projectId: string, shotId: string, role: Exclude<ChildrenClipShotAssetRole, 'character_pose'>, prompt: string | null, token: string) {
+    return apiService.request<ChildrenClipProductionAssetsStatus>(`/projects/${projectId}/children-clip/production-assets/shots/${shotId}/generate`, {
+      method: 'POST', body: JSON.stringify({ role, prompt: prompt?.trim() || undefined })
+    }, token);
+  }
+
+  uploadChildrenClipShotAsset(projectId: string, shotId: string, file: File, role: ChildrenClipShotAssetRole, token: string) {
+    const form = new FormData();
+    form.append('file', file); form.append('role', role);
+    return apiService.request<ChildrenClipProductionAssetsStatus>(`/projects/${projectId}/children-clip/production-assets/shots/${shotId}/upload`, { method: 'POST', body: form }, token);
+  }
+
+  approveChildrenClipShotAsset(projectId: string, shotAssetId: string, token: string) {
+    return apiService.request<ChildrenClipProductionAssetsStatus>(`/projects/${projectId}/children-clip/production-assets/${shotAssetId}/approve`, { method: 'POST' }, token);
+  }
+
+  retryChildrenClipShotAsset(projectId: string, shotAssetId: string, token: string) {
+    return apiService.request<ChildrenClipProductionAssetsStatus>(`/projects/${projectId}/children-clip/production-assets/${shotAssetId}/retry`, { method: 'POST' }, token);
+  }
+
+  downloadChildrenClipShotAsset(projectId: string, shotAssetId: string, token: string) {
+    return apiService.download(`/projects/${projectId}/children-clip/production-assets/${shotAssetId}/file`, token);
   }
 }
 
