@@ -86,6 +86,8 @@ export interface GenerateStillImageInput {
   loraName?: string | null;
   loraStrength?: number;
   onGpuWaiting?: (owner: string | null) => Promise<void>;
+  referenceImagePath?: string | null;
+  denoise?: number;
 }
 
 export interface ComfyUiHeartbeat {
@@ -140,6 +142,9 @@ export class ComfyUiClientService {
         `size=${input.width}x${input.height}, steps=${input.steps}, cfg=${input.cfg}, seed=${input.seed}`
     );
 
+    const referenceImageFilename = input.referenceImagePath
+      ? await this.uploadInputImage(input.referenceImagePath, `still-${input.seed}`)
+      : null;
     const modelSource: [string, number] = input.loraName ? ['10', 0] : ['4', 0];
     const clipSource: [string, number] = input.loraName ? ['10', 1] : ['4', 1];
     const workflow: Record<string, unknown> = {
@@ -147,7 +152,10 @@ export class ComfyUiClientService {
         class_type: 'CheckpointLoaderSimple',
         inputs: { ckpt_name: input.checkpointName }
       },
-      '5': {
+      '5': referenceImageFilename ? {
+        class_type: 'VAEEncode',
+        inputs: { pixels: ['12', 0], vae: ['4', 2] }
+      } : {
         class_type: 'EmptyLatentImage',
         inputs: { width: input.width, height: input.height, batch_size: 1 }
       },
@@ -167,7 +175,7 @@ export class ComfyUiClientService {
           cfg: input.cfg,
           sampler_name: input.sampler,
           scheduler: input.scheduler,
-          denoise: 1,
+          denoise: referenceImageFilename ? input.denoise ?? 0.45 : 1,
           model: modelSource,
           positive: ['6', 0],
           negative: ['7', 0],
@@ -183,6 +191,13 @@ export class ComfyUiClientService {
         inputs: { filename_prefix: input.filenamePrefix, images: ['8', 0] }
       }
     };
+    if (referenceImageFilename) {
+      workflow['11'] = { class_type: 'LoadImage', inputs: { image: referenceImageFilename } };
+      workflow['12'] = {
+        class_type: 'ImageScale',
+        inputs: { image: ['11', 0], upscale_method: 'lanczos', width: input.width, height: input.height, crop: 'center' }
+      };
+    }
     if (input.loraName) {
       workflow['10'] = {
         class_type: 'LoraLoader',

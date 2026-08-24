@@ -123,7 +123,14 @@
               <v-alert v-if="version.errorMessage" type="error" variant="tonal">{{ version.errorMessage }}</v-alert>
 
               <div v-if="version.assets.length" class="asset-grid">
-                <figure v-for="asset in version.assets" :key="asset.id"><img v-if="assetUrls[asset.id]" :src="assetUrls[asset.id]" :alt="asset.label || asset.role" /><div v-else class="asset-loading"><v-progress-circular indeterminate size="26" /></div><figcaption>{{ asset.label || roleLabel(asset.role) }}</figcaption></figure>
+                <figure v-for="asset in version.assets" :key="asset.id">
+                  <img v-if="assetUrls[asset.id]" :src="assetUrls[asset.id]" :alt="asset.label || asset.role" />
+                  <div v-else-if="asset.status === 'queued' || asset.status === 'generating'" class="asset-loading"><v-progress-circular indeterminate size="26" /></div>
+                  <div v-else class="asset-loading"><v-icon icon="mdi-image-off-outline" /></div>
+                  <figcaption>{{ asset.label || roleLabel(asset.role) }} · {{ characterAssetStatusLabel(asset.status) }}</figcaption>
+                  <v-alert v-if="asset.errorMessage" density="compact" type="error" variant="tonal">{{ asset.errorMessage }}</v-alert>
+                  <div class="version-actions"><button v-if="asset.status === 'ready_for_review'" class="app-button app-button--secondary" type="button" @click="approveCharacterAsset(character.id, version.id, asset.id)">Aprovar asset</button><button v-if="asset.status === 'failed' && asset.origin === 'generated'" class="app-button app-button--secondary" type="button" @click="retryCharacterAsset(character.id, version.id, asset.id)">Tentar novamente</button></div>
+                </figure>
               </div>
 
               <div class="version-actions">
@@ -138,6 +145,7 @@
                   <select v-model="assetRoles[version.id]" class="auth-input"><option value="front_view">Vista frontal</option><option value="side_view">Vista lateral</option><option value="back_view">Vista traseira</option><option value="portrait">Retrato</option><option value="expression">Expressao</option><option value="pose">Pose</option><option value="mouth_shape">Forma de boca</option><option value="eye_state">Estado dos olhos</option><option value="source_reference">Referencia original</option></select>
                   <input v-model="assetLabels[version.id]" class="auth-input" :placeholder="assetRoles[version.id] === 'mouth_shape' ? 'A, E, O, U ou closed' : 'Nome da pose/expressão (opcional)'" />
                   <input class="auth-input" type="file" accept="image/jpeg,image/png,image/webp" @change="onVersionFileSelected(version.id, $event)" />
+                  <button v-if="version.status === 'approved' && assetRoles[version.id] !== 'source_reference'" class="app-button app-button--secondary" type="button" :disabled="!(assetLabels[version.id] || '').trim()" @click="generateSupplementary(character.id, version.id)">Gerar com referência</button>
                   <button class="app-button app-button--secondary" type="button" :disabled="!versionFiles[version.id]" @click="uploadSupplementary(character.id, version.id)">Enviar</button>
                 </div>
               </details>
@@ -438,7 +446,7 @@ export default class ChildrenClipStudioPage extends Vue {
         if (this.audioStatus?.analysis?.status === 'completed') await Promise.all([this.projectsStore.fetchProject(this.projectId, this.authStore.token), this.loadPlan()]);
       } catch (error) { this.captureError(error, 'Falha ao atualizar analise da musica'); }
     }
-    if (this.characters.some((item) => item.versions.some((version) => ['queued', 'generating'].includes(version.status)))) {
+    if (this.characters.some((item) => item.versions.some((version) => ['queued', 'generating'].includes(version.status) || version.assets.some((asset) => ['queued', 'generating'].includes(asset.status))))) {
       try { await this.loadCharacters(); } catch (error) { this.captureError(error, 'Falha ao atualizar personagens'); }
     }
     if (this.planStatus?.plan && ['queued', 'generating'].includes(this.planStatus.plan.status)) {
@@ -465,7 +473,7 @@ export default class ChildrenClipStudioPage extends Vue {
   async loadAssetUrls() {
     if (!this.authStore.token) return;
     for (const character of this.characters) for (const version of character.versions) for (const asset of version.assets) {
-      if (this.assetUrls[asset.id]) continue;
+      if (!asset.assetId || this.assetUrls[asset.id]) continue;
       const blob = await projectsService.downloadChildrenClipCharacterAsset(this.projectId, character.id, version.id, asset.id, this.authStore.token);
       this.assetUrls = { ...this.assetUrls, [asset.id]: URL.createObjectURL(blob) };
     }
@@ -561,6 +569,20 @@ export default class ChildrenClipStudioPage extends Vue {
       await this.loadCharacters();
     } catch (error) { this.captureError(error, 'Falha ao enviar imagem complementar'); }
   }
+  async generateSupplementary(characterId: string, versionId: string) {
+    if (!this.authStore.token) return;
+    const role = this.assetRoles[versionId] ?? 'pose';
+    const label = (this.assetLabels[versionId] || '').trim();
+    if (!label) { this.errorMessage = 'Descreva a pose, expressão, ângulo ou forma que deseja gerar.'; return; }
+    if (role === 'mouth_shape' && !['a', 'e', 'o', 'u', 'closed', 'rest'].includes(label.toLowerCase())) { this.errorMessage = 'Informe A, E, O, U ou closed para a boca.'; return; }
+    try {
+      await projectsService.generateChildrenClipCharacterAsset(this.projectId, characterId, versionId, role, label, null, this.authStore.token);
+      this.assetLabels = { ...this.assetLabels, [versionId]: '' };
+      await this.loadCharacters();
+    } catch (error) { this.captureError(error, 'Falha ao gerar asset complementar'); }
+  }
+  async retryCharacterAsset(characterId: string, versionId: string, characterAssetId: string) { if (!this.authStore.token) return; try { await projectsService.retryChildrenClipCharacterAsset(this.projectId, characterId, versionId, characterAssetId, this.authStore.token); await this.loadCharacters(); } catch (error) { this.captureError(error, 'Falha ao reiniciar asset do personagem'); } }
+  async approveCharacterAsset(characterId: string, versionId: string, characterAssetId: string) { if (!this.authStore.token) return; try { await projectsService.approveChildrenClipCharacterAsset(this.projectId, characterId, versionId, characterAssetId, this.authStore.token); await this.loadCharacters(); } catch (error) { this.captureError(error, 'Falha ao aprovar asset do personagem'); } }
   async attachLibraryCharacter() {
     if (!this.authStore.token || !this.libraryCharacterId) return;
     this.attachingLibraryCharacter = true;
@@ -576,6 +598,7 @@ export default class ChildrenClipStudioPage extends Vue {
   statusLabel(status: ChildrenClipCharacterVersion['status']) { return ({ draft: 'Rascunho', queued: 'Enfileirada', generating: 'Gerando', ready_for_review: 'Revisar', approved: 'Aprovada', rejected: 'Rejeitada', failed: 'Falhou' })[status]; }
   originLabel(origin: ChildrenClipCharacterVersion['origin']) { return ({ generated: 'Gerada', uploaded: 'Enviada', hybrid: 'Hibrida' })[origin]; }
   roleLabel(role: CharacterAssetRole) { return ({ primary_reference: 'Referencia principal', front_view: 'Vista frontal', side_view: 'Vista lateral', back_view: 'Vista traseira', portrait: 'Retrato', expression: 'Expressao', pose: 'Pose', mouth_shape: 'Forma de boca', eye_state: 'Olhos', source_reference: 'Referencia original' })[role]; }
+  characterAssetStatusLabel(status: ChildrenClipCharacter['versions'][number]['assets'][number]['status']) { return ({ draft: 'Rascunho', queued: 'Enfileirado', generating: 'Gerando', ready_for_review: 'Revisar', approved: 'Aprovado', rejected: 'Rejeitado', failed: 'Falhou' })[status]; }
   async generatePlan() {
     if (!this.authStore.token) return;
     try { this.planStatus = await projectsService.generateChildrenClipProductionPlan(this.projectId, this.planRevision.trim() || null, this.authStore.token); this.planRevision = ''; } catch (error) { this.captureError(error, 'Falha ao iniciar planejamento'); }
@@ -721,7 +744,7 @@ export default class ChildrenClipStudioPage extends Vue {
 .supplementary-assets summary { color: #4b648a; cursor: pointer; font-weight: 700; }
 .supplementary-assets__form { display: grid; grid-template-columns: 180px 1fr auto; gap: 10px; margin-top: 10px; }
 .library-character-form { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(180px, 1fr) auto; gap: 12px; margin-top: 18px; }
-.supplementary-assets__form { grid-template-columns: 170px minmax(180px, 1fr) minmax(180px, 1fr) auto; }
+.supplementary-assets__form { grid-template-columns: 150px minmax(170px, 1fr) minmax(170px, 1fr) auto auto; }
 .production-assets-actions { display: flex; align-items: center; gap: 16px; margin: 18px 0; }
 .production-shot-list { display: grid; gap: 16px; }
 .shot-asset-card { padding: 16px; border: 1px solid #dfe3e8; border-radius: 14px; background: #fafbfc; }

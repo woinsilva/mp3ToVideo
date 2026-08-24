@@ -167,6 +167,21 @@ enum CharacterAssetRole {
   source_reference
 }
 
+enum CharacterAssetOrigin {
+  generated
+  uploaded
+}
+
+enum CharacterAssetStatus {
+  draft
+  queued
+  generating
+  ready_for_review
+  approved
+  rejected
+  failed
+}
+
 enum FrameInterpolationMode {
   off
   rife_2x
@@ -778,16 +793,28 @@ model CharacterVersion {
 model CharacterAsset {
   id                 String             @id @default(cuid())
   characterVersionId String
-  assetId            String
+  assetId            String?
   role               CharacterAssetRole
+  origin             CharacterAssetOrigin @default(uploaded)
+  status             CharacterAssetStatus @default(approved)
   label              String?
   sortOrder          Int                @default(0)
+  generationPrompt   String?
+  negativePrompt     String?
+  seed               Int?
+  bullJobId          String?
+  generationMetadata Json?
+  errorMessage       String?
+  generationStartedAt DateTime?
+  generationEndedAt  DateTime?
+  approvedAt         DateTime?
   createdAt          DateTime           @default(now())
   characterVersion   CharacterVersion   @relation(fields: [characterVersionId], references: [id], onDelete: Cascade)
-  asset              Asset              @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  asset              Asset?             @relation(fields: [assetId], references: [id], onDelete: Cascade)
 
   @@unique([characterVersionId, assetId])
   @@index([characterVersionId, role])
+  @@index([bullJobId])
   @@index([assetId])
 }
 

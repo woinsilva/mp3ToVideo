@@ -51,6 +51,12 @@ O formulario deve aceitar nome, descricao fisica, idade aparente, especie, roupa
 
 O usuario pode enviar uma imagem principal e referencias adicionais de angulos, expressoes, poses e bocas. Se apenas uma imagem for fornecida, o sistema pode gerar os complementos preservando a referencia, sempre exigindo aprovacao.
 
+Depois de aprovar a identidade, o usuario escolhe o tipo e descreve uma vista, pose, expressao,
+estado dos olhos ou forma de boca. O worker envia a imagem principal ao ComfyUI nativo e executa
+img2img com denoise limitado, prompt de invariantes, seed e LoRA registrados. Cada resultado possui
+estado proprio (`QUEUED`, `WAITING_GPU`, `GENERATING`, `READY_FOR_REVIEW`, `FAILED`), preview,
+aprovacao e retry; apenas complementos aprovados entram no render 2D.
+
 Personagens aprovados com escopo de organizacao aparecem na biblioteca dos demais projetos. O
 vinculo reutiliza a mesma versao imutavel, permite definir outro papel narrativo e nao duplica nem
 regenera os arquivos.

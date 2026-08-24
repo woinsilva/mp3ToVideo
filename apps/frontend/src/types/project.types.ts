@@ -89,12 +89,18 @@ export type CharacterAssetRole =
 
 export interface ChildrenClipCharacterAsset {
   id: string;
+  assetId: string | null;
   role: CharacterAssetRole;
+  origin: 'generated' | 'uploaded';
+  status: 'draft' | 'queued' | 'generating' | 'ready_for_review' | 'approved' | 'rejected' | 'failed';
   label: string | null;
-  mimeType: string;
+  mimeType: string | null;
   width: number | null;
   height: number | null;
   createdAt: string;
+  errorMessage: string | null;
+  bullJobId: string | null;
+  generationMetadata: Record<string, unknown> | null;
 }
 
 export interface ChildrenClipCharacterVersion {

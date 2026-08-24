@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { CharacterAssetRole, CharacterVersionStatus, Prisma, ProcessingJobStatus } from '@prisma/client';
+import { CharacterAssetOrigin, CharacterAssetRole, CharacterAssetStatus, CharacterVersionStatus, Prisma, ProcessingJobStatus } from '@prisma/client';
 import {
   CHILDREN_CLIP_CHARACTER_GENERATE_JOB_NAME,
   CHILDREN_CLIP_QUEUE_NAME
@@ -12,6 +12,7 @@ import type { CreateCharacterDto } from '../dtos/create-character.dto';
 import type { CreateCharacterVersionDto } from '../dtos/create-character-version.dto';
 import type { UploadCharacterAssetDto } from '../dtos/upload-character-asset.dto';
 import type { AttachLibraryCharacterDto } from '../dtos/attach-library-character.dto';
+import type { GenerateCharacterAssetDto } from '../dtos/generate-character-asset.dto';
 import { LocalStorageService } from './local-storage.service';
 
 @Injectable()
@@ -262,6 +263,8 @@ export class ChildrenClipCharactersService {
           characterVersionId: versionId,
           assetId: asset.id,
           role: input.role as CharacterAssetRole,
+          origin: CharacterAssetOrigin.uploaded,
+          status: CharacterAssetStatus.ready_for_review,
           label,
           sortOrder: await tx.characterAsset.count({ where: { characterVersionId: versionId } })
         }
@@ -278,6 +281,75 @@ export class ChildrenClipCharactersService {
       });
     });
 
+    return this.getVersion(projectId, characterId, versionId, organizationId);
+  }
+
+  async generateAsset(
+    projectId: string,
+    characterId: string,
+    versionId: string,
+    organizationId: string,
+    requestedByUserId: string,
+    input: GenerateCharacterAssetDto
+  ) {
+    const version = await this.getOwnedVersion(projectId, characterId, versionId, organizationId);
+    if (version.status !== CharacterVersionStatus.approved) {
+      throw new BadRequestException('Aprove a identidade principal antes de gerar complementos');
+    }
+    const label = input.label.trim();
+    this.assertAssetLabel(input.role, label);
+    const hasReference = await this.prisma.characterAsset.count({
+      where: { characterVersionId: versionId, assetId: { not: null }, status: CharacterAssetStatus.approved }
+    });
+    if (!hasReference) throw new BadRequestException('O personagem precisa de uma referencia aprovada');
+    const record = await this.prisma.characterAsset.create({
+      data: {
+        characterVersionId: versionId,
+        role: input.role as CharacterAssetRole,
+        origin: CharacterAssetOrigin.generated,
+        status: CharacterAssetStatus.draft,
+        label,
+        generationPrompt: input.prompt?.trim() || `${input.role}: ${label}`,
+        sortOrder: await this.prisma.characterAsset.count({ where: { characterVersionId: versionId } })
+      }
+    });
+    await this.enqueueAssetGeneration(projectId, organizationId, requestedByUserId, characterId, versionId, record.id);
+    return this.getVersion(projectId, characterId, versionId, organizationId);
+  }
+
+  async retryAssetGeneration(
+    projectId: string,
+    characterId: string,
+    versionId: string,
+    characterAssetId: string,
+    organizationId: string,
+    requestedByUserId: string
+  ) {
+    const record = await this.getOwnedCharacterAsset(projectId, characterId, versionId, characterAssetId, organizationId);
+    if (record.origin !== CharacterAssetOrigin.generated || !record.generationPrompt) {
+      throw new BadRequestException('Somente assets gerados podem ser reenfileirados');
+    }
+    if (record.status === CharacterAssetStatus.queued || record.status === CharacterAssetStatus.generating) {
+      throw new BadRequestException('A geracao deste asset ja esta em andamento');
+    }
+    await this.enqueueAssetGeneration(projectId, organizationId, requestedByUserId, characterId, versionId, record.id);
+    return this.getVersion(projectId, characterId, versionId, organizationId);
+  }
+
+  async approveAsset(projectId: string, characterId: string, versionId: string, characterAssetId: string, organizationId: string) {
+    const record = await this.getOwnedCharacterAsset(projectId, characterId, versionId, characterAssetId, organizationId);
+    if (!record.assetId || (record.status !== CharacterAssetStatus.ready_for_review && record.status !== CharacterAssetStatus.approved)) {
+      throw new BadRequestException('O asset precisa estar pronto para revisao');
+    }
+    await this.prisma.$transaction([
+      this.prisma.characterAsset.updateMany({
+        where: { characterVersionId: versionId, role: record.role, label: record.label, status: CharacterAssetStatus.approved, id: { not: record.id } },
+        data: { status: CharacterAssetStatus.ready_for_review, approvedAt: null }
+      }),
+      this.prisma.characterAsset.update({
+        where: { id: record.id }, data: { status: CharacterAssetStatus.approved, approvedAt: new Date(), errorMessage: null }
+      })
+    ]);
     return this.getVersion(projectId, characterId, versionId, organizationId);
   }
 
@@ -316,6 +388,10 @@ export class ChildrenClipCharactersService {
         where: { id: versionId },
         data: { status: CharacterVersionStatus.approved }
       }),
+      this.prisma.characterAsset.updateMany({
+        where: { characterVersionId: versionId, assetId: { not: null }, status: { in: [CharacterAssetStatus.ready_for_review, CharacterAssetStatus.approved] } },
+        data: { status: CharacterAssetStatus.approved, approvedAt: new Date() }
+      }),
       this.prisma.character.update({
         where: { id: characterId },
         data: { approvedVersionId: versionId }
@@ -352,10 +428,10 @@ export class ChildrenClipCharactersService {
   ) {
     await this.getOwnedVersion(projectId, characterId, versionId, organizationId);
     const link = await this.prisma.characterAsset.findFirst({
-      where: { characterVersionId: versionId, assetId },
+      where: { characterVersionId: versionId, OR: [{ id: assetId }, { assetId }] },
       include: { asset: true }
     });
-    if (!link) throw new NotFoundException('Character asset not found');
+    if (!link?.asset) throw new NotFoundException('Character asset not found');
     return {
       fileName: `character-${characterId}-${link.role}.${link.asset.mimeType.split('/')[1] ?? 'png'}`,
       absolutePath: this.storage.getAbsolutePath(link.asset.storagePath),
@@ -410,6 +486,33 @@ export class ChildrenClipCharactersService {
     ]);
   }
 
+  private async enqueueAssetGeneration(
+    projectId: string,
+    organizationId: string,
+    requestedByUserId: string,
+    characterId: string,
+    characterVersionId: string,
+    characterAssetId: string
+  ) {
+    const queued = await this.queue.enqueueCharacterGeneration({
+      projectId, organizationId, requestedByUserId, characterId, characterVersionId, characterAssetId
+    });
+    await this.prisma.$transaction([
+      this.prisma.characterAsset.update({
+        where: { id: characterAssetId },
+        data: { status: CharacterAssetStatus.queued, bullJobId: queued.bullJobId, errorMessage: null, generationStartedAt: null, generationEndedAt: null }
+      }),
+      this.prisma.processingJob.create({
+        data: {
+          projectId, queueName: CHILDREN_CLIP_QUEUE_NAME, jobName: CHILDREN_CLIP_CHARACTER_GENERATE_JOB_NAME,
+          bullJobId: queued.bullJobId, status: ProcessingJobStatus.queued, progress: 0,
+          detailMessage: 'Asset complementar do personagem enfileirado.',
+          activityLog: [{ stage: 'QUEUED', message: 'Asset complementar do personagem enfileirado.', characterId, characterVersionId, characterAssetId, progress: 0, timestamp: new Date().toISOString() }]
+        }
+      })
+    ]);
+  }
+
   private async getOwnedChildrenClip(projectId: string, organizationId: string) {
     const project = await this.prisma.project.findFirst({
       where: { id: projectId, organizationId, deletedAt: null, generationMode: 'children_clip' },
@@ -435,6 +538,13 @@ export class ChildrenClipCharactersService {
     });
     if (!version) throw new NotFoundException('Character version not found');
     return version;
+  }
+
+  private async getOwnedCharacterAsset(projectId: string, characterId: string, versionId: string, characterAssetId: string, organizationId: string) {
+    await this.getOwnedVersion(projectId, characterId, versionId, organizationId);
+    const record = await this.prisma.characterAsset.findFirst({ where: { id: characterAssetId, characterVersionId: versionId } });
+    if (!record) throw new NotFoundException('Asset do personagem nao encontrado');
+    return record;
   }
 
   private async getVersion(projectId: string, characterId: string, versionId: string, organizationId: string) {
@@ -475,15 +585,27 @@ export class ChildrenClipCharactersService {
       generationStartedAt: version.generationStartedAt,
       generationCompletedAt: version.generationCompletedAt,
       assets: (version.assets ?? []).map((item: any) => ({
-        id: item.asset.id,
+        id: item.id,
+        assetId: item.asset?.id ?? null,
         role: item.role,
+        origin: item.origin,
+        status: item.status,
         label: item.label,
-        mimeType: item.asset.mimeType,
-        width: item.asset.width,
-        height: item.asset.height,
-        createdAt: item.asset.createdAt
+        mimeType: item.asset?.mimeType ?? null,
+        width: item.asset?.width ?? null,
+        height: item.asset?.height ?? null,
+        errorMessage: item.errorMessage,
+        bullJobId: item.bullJobId,
+        generationMetadata: item.generationMetadata,
+        createdAt: item.createdAt
       }))
     };
+  }
+
+  private assertAssetLabel(role: string, label: string) {
+    if (role === 'mouth_shape' && !['a', 'e', 'o', 'u', 'closed', 'rest'].includes(label.toLowerCase())) {
+      throw new BadRequestException('Formas de boca precisam do rotulo A, E, O, U, closed ou rest');
+    }
   }
 
   private buildGenerationPrompt(name: string, description: string, invariants: string[], visualStyle: string) {

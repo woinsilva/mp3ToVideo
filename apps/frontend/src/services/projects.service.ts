@@ -247,6 +247,20 @@ class ProjectsService {
     }, token);
   }
 
+  generateChildrenClipCharacterAsset(projectId: string, characterId: string, versionId: string, role: CharacterAssetRole, label: string, prompt: string | null, token: string) {
+    return apiService.request<ChildrenClipCharacterVersion>(`/projects/${projectId}/children-clip/characters/${characterId}/versions/${versionId}/assets/generate`, {
+      method: 'POST', body: JSON.stringify({ role, label, prompt })
+    }, token);
+  }
+
+  retryChildrenClipCharacterAsset(projectId: string, characterId: string, versionId: string, characterAssetId: string, token: string) {
+    return apiService.request<ChildrenClipCharacterVersion>(`/projects/${projectId}/children-clip/characters/${characterId}/versions/${versionId}/assets/${characterAssetId}/retry`, { method: 'POST' }, token);
+  }
+
+  approveChildrenClipCharacterAsset(projectId: string, characterId: string, versionId: string, characterAssetId: string, token: string) {
+    return apiService.request<ChildrenClipCharacterVersion>(`/projects/${projectId}/children-clip/characters/${characterId}/versions/${versionId}/assets/${characterAssetId}/approve`, { method: 'POST' }, token);
+  }
+
   approveChildrenClipCharacterVersion(projectId: string, characterId: string, versionId: string, token: string) {
     return apiService.request<ChildrenClipCharacterVersion>(`/projects/${projectId}/children-clip/characters/${characterId}/versions/${versionId}/approve`, { method: 'POST' }, token);
   }

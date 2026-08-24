@@ -20,6 +20,7 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import type { AuthenticatedUser } from '../../auth/types/authenticated-user.type';
 import { CreateCharacterDto } from '../dtos/create-character.dto';
 import { AttachLibraryCharacterDto } from '../dtos/attach-library-character.dto';
+import { GenerateCharacterAssetDto } from '../dtos/generate-character-asset.dto';
 import { CreateCharacterVersionDto } from '../dtos/create-character-version.dto';
 import { UploadCharacterAssetDto } from '../dtos/upload-character-asset.dto';
 import { ChildrenClipCharactersService } from '../services/children-clip-characters.service';
@@ -119,6 +120,39 @@ export class ChildrenClipCharactersController {
       input,
       file
     );
+  }
+
+  @Post(':characterId/versions/:versionId/assets/generate')
+  generateAsset(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('projectId') projectId: string,
+    @Param('characterId') characterId: string,
+    @Param('versionId') versionId: string,
+    @Body() input: GenerateCharacterAssetDto
+  ) {
+    return this.characters.generateAsset(projectId, characterId, versionId, user.organizationId, user.userId, input);
+  }
+
+  @Post(':characterId/versions/:versionId/assets/:characterAssetId/retry')
+  retryAsset(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('projectId') projectId: string,
+    @Param('characterId') characterId: string,
+    @Param('versionId') versionId: string,
+    @Param('characterAssetId') characterAssetId: string
+  ) {
+    return this.characters.retryAssetGeneration(projectId, characterId, versionId, characterAssetId, user.organizationId, user.userId);
+  }
+
+  @Post(':characterId/versions/:versionId/assets/:characterAssetId/approve')
+  approveAsset(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('projectId') projectId: string,
+    @Param('characterId') characterId: string,
+    @Param('versionId') versionId: string,
+    @Param('characterAssetId') characterAssetId: string
+  ) {
+    return this.characters.approveAsset(projectId, characterId, versionId, characterAssetId, user.organizationId);
   }
 
   @Post(':characterId/versions/:versionId/approve')

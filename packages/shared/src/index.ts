@@ -31,6 +31,7 @@ export interface ChildrenClipCharacterGenerationJobPayload {
   requestedByUserId: string;
   characterId: string;
   characterVersionId: string;
+  characterAssetId?: string;
 }
 
 export interface ChildrenClipAudioAnalysisJobPayload {

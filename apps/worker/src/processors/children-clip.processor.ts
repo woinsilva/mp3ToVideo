@@ -2,7 +2,7 @@ import { readFile, stat, writeFile } from 'node:fs/promises';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AssetType, CharacterAssetRole, CharacterVersionStatus, ChildrenClipShotAssetStatus, Prisma, ProcessingJobStatus, type ScenePrompt } from '@prisma/client';
+import { AssetType, CharacterAssetRole, CharacterAssetStatus, CharacterVersionStatus, ChildrenClipShotAssetStatus, Prisma, ProcessingJobStatus, type ScenePrompt } from '@prisma/client';
 import type { ChildrenClipAssetGenerationJobPayload, ChildrenClipAudioAnalysisJobPayload, ChildrenClipCharacterGenerationJobPayload, ChildrenClipPlanGenerationJobPayload } from '@video/shared';
 import type { ChildrenClipShotRenderJobPayload } from '@video/shared';
 import type { ChildrenClipFinalRenderJobPayload, ChildrenClipHeroShotJobPayload } from '@video/shared';
@@ -193,7 +193,7 @@ export class ChildrenClipProcessor {
                 childrenClipLyricCues: { orderBy: { lineIndex: 'asc' } },
                 characterLinks: {
                   orderBy: { sortOrder: 'asc' },
-                  include: { character: true, selectedVersion: { include: { assets: { include: { asset: true } } } } }
+                  include: { character: true, selectedVersion: { include: { assets: { where: { status: 'approved', assetId: { not: null } }, include: { asset: true } } } } }
                 }
               }
             }
@@ -233,11 +233,11 @@ export class ChildrenClipProcessor {
           ?? version.assets.find((item) => item.role === 'pose')?.asset
           ?? version.assets.find((item) => item.role === 'primary_reference')?.asset;
         if (!pose) continue;
-        const mouths = version.assets.filter((item) => item.role === 'mouth_shape');
+        const mouths = version.assets.filter((item) => item.role === 'mouth_shape' && item.status === 'approved' && item.asset);
         const mouthSources = new Map<string, string>();
         for (const mouth of mouths) {
           const key = (mouth.label || '').trim().toLowerCase();
-          if (key) mouthSources.set(key, await this.assetDataUrl(mouth.asset.storagePath, mouth.asset.mimeType));
+          if (key && mouth.asset) mouthSources.set(key, await this.assetDataUrl(mouth.asset.storagePath, mouth.asset.mimeType));
         }
         const width = characterLinks.length === 1 ? 42 : Math.min(34, 72 / characterLinks.length);
         const x = characterLinks.length === 1 ? 29 : 8 + index * (84 / characterLinks.length);
@@ -671,6 +671,7 @@ export class ChildrenClipProcessor {
   }
 
   async processCharacterGeneration(job: Job<ChildrenClipCharacterGenerationJobPayload>) {
+    if (job.data.characterAssetId) return this.processSupplementaryCharacterAsset(job);
     const { projectId, organizationId, characterId, characterVersionId } = job.data;
     const bullJobId = String(job.id);
     const version = await this.prisma.characterVersion.findFirst({
@@ -804,6 +805,8 @@ export class ChildrenClipProcessor {
             characterVersionId,
             assetId: asset.id,
             role: CharacterAssetRole.primary_reference,
+            origin: 'generated',
+            status: 'ready_for_review',
             label: 'Ficha gerada pelo sistema',
             sortOrder: await tx.characterAsset.count({ where: { characterVersionId } })
           }
@@ -853,6 +856,100 @@ export class ChildrenClipProcessor {
         willRetry ? ProcessingJobStatus.retrying : ProcessingJobStatus.failed,
         message
       );
+      throw error;
+    }
+  }
+
+  private async processSupplementaryCharacterAsset(job: Job<ChildrenClipCharacterGenerationJobPayload>) {
+    const { projectId, organizationId, characterId, characterVersionId, characterAssetId } = job.data;
+    const record = await this.prisma.characterAsset.findFirst({
+      where: {
+        id: characterAssetId,
+        characterVersionId,
+        characterVersion: { characterId, character: { organizationId, projectLinks: { some: { projectId } } } }
+      },
+      include: {
+        characterVersion: {
+          include: {
+            character: true,
+            assets: { where: { assetId: { not: null }, status: 'approved' }, include: { asset: true }, orderBy: { sortOrder: 'asc' } }
+          }
+        }
+      }
+    });
+    if (!record?.generationPrompt || !characterAssetId) throw new Error('Asset complementar de personagem nao esta pronto para geracao');
+    const referenceLink = record.characterVersion.assets.find((item) => item.role === 'primary_reference' && item.asset)
+      ?? record.characterVersion.assets.find((item) => item.asset);
+    if (!referenceLink?.asset) throw new Error('A geracao complementar precisa de uma referencia de personagem aprovada');
+    const checkpointName = this.config.get<string>('visual.characterCheckpointName', '').trim();
+    const width = this.config.get<number>('visual.characterWidth', 1024);
+    const height = this.config.get<number>('visual.characterHeight', 1024);
+    const seed = record.seed ?? Math.floor(Math.random() * 2_147_483_646);
+    const loraName = this.config.get<string>('visual.characterLoraName', '').trim();
+    const roleDirection: Record<string, string> = {
+      front_view: 'full body front view, neutral production pose', side_view: 'full body strict side profile view',
+      back_view: 'full body back view', portrait: 'clean head and shoulders portrait',
+      expression: `facial expression: ${record.label}`, pose: `full body action pose: ${record.label}`,
+      mouth_shape: `isolated close-up mouth sprite pronouncing ${record.label}, transparent or plain background`,
+      eye_state: `clean face detail with eyes ${record.label}`
+    };
+    const positivePrompt = [
+      'preserve exactly the same original children animation character identity, species, face, colors, outfit and proportions from the reference image',
+      roleDirection[record.role] ?? record.role,
+      record.generationPrompt,
+      record.characterVersion.description
+    ].filter(Boolean).join(', ');
+    const negativePrompt = [
+      record.negativePrompt,
+      'different character, changed species, changed clothes, changed colors, photorealistic, 3d, text, watermark, duplicate body, extra limbs, malformed'
+    ].filter(Boolean).join(', ');
+    await this.prisma.characterAsset.update({
+      where: { id: characterAssetId },
+      data: { status: CharacterAssetStatus.generating, seed, errorMessage: null, generationStartedAt: new Date(), generationEndedAt: null }
+    });
+    try {
+      await this.characterProgress(job, 10, 'STARTING', `Worker iniciou ${record.role} (${record.label}).`);
+      const result = await this.comfyUi.generateStillImage({
+        positivePrompt, negativePrompt, checkpointName, width, height,
+        steps: this.config.get<number>('visual.characterSteps', 30),
+        cfg: this.config.get<number>('visual.characterCfg', 6.5),
+        sampler: this.config.get<string>('visual.characterSampler', 'dpmpp_2m'),
+        scheduler: this.config.get<string>('visual.characterScheduler', 'karras'),
+        seed, filenamePrefix: `children-clips/character-${characterId}-${record.role}-${characterAssetId}`,
+        loraName: loraName || null, loraStrength: this.config.get<number>('visual.characterLoraStrength', 1),
+        referenceImagePath: this.storage.getAbsolutePath(referenceLink.asset.storagePath),
+        denoise: record.role === 'mouth_shape' || record.role === 'eye_state' ? 0.3 : 0.48,
+        onGpuWaiting: (owner) => this.characterProgress(job, 22, 'WAITING_GPU', `Asset do personagem aguardando a GPU${owner ? `, ocupada por ${owner.split(':')[0]}` : ''}.`)
+      });
+      await this.characterProgress(job, 78, 'SAVING_ASSET', 'Imagem complementar gerada. Salvando para revisao.');
+      const storagePath = this.storage.buildCharacterAssetPath(organizationId, projectId, characterId, record.characterVersion.versionNumber, `${record.role}-${characterAssetId}`);
+      const absolutePath = await this.storage.ensureParentDirectory(storagePath);
+      await writeFile(absolutePath, result.buffer);
+      const sizeBytes = Number((await stat(absolutePath)).size);
+      await this.prisma.$transaction(async (tx) => {
+        const asset = await tx.asset.create({
+          data: {
+            organizationId, projectId, type: AssetType.image, mimeType: 'image/png', storagePath, sizeBytes, width, height,
+            metadata: { source: 'comfyui-reference-img2img', characterId, characterVersionId, characterAssetId, role: record.role, label: record.label, promptId: result.promptId, seed, positivePrompt, negativePrompt }
+          }
+        });
+        await tx.characterAsset.update({
+          where: { id: characterAssetId },
+          data: {
+            assetId: asset.id, status: CharacterAssetStatus.ready_for_review, generationEndedAt: new Date(), errorMessage: null,
+            generationMetadata: { provider: result.provider, promptId: result.promptId, seed, denoise: record.role === 'mouth_shape' || record.role === 'eye_state' ? 0.3 : 0.48, referenceAssetId: referenceLink.asset!.id, positivePrompt, negativePrompt }
+          }
+        });
+      });
+      await this.characterProgress(job, 100, 'READY_FOR_REVIEW', 'Asset complementar pronto para revisao.', ProcessingJobStatus.completed);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const willRetry = job.attemptsMade + 1 < (job.opts.attempts ?? 1);
+      await this.prisma.characterAsset.update({
+        where: { id: characterAssetId },
+        data: { status: willRetry ? CharacterAssetStatus.queued : CharacterAssetStatus.failed, errorMessage: message, generationEndedAt: willRetry ? null : new Date() }
+      });
+      await this.characterProgress(job, 0, willRetry ? 'RETRYING' : 'FAILED', willRetry ? `Geracao complementar falhou; o BullMQ tentara novamente: ${message}` : `Falha no asset complementar: ${message}`, willRetry ? ProcessingJobStatus.retrying : ProcessingJobStatus.failed, message);
       throw error;
     }
   }

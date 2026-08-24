@@ -68,6 +68,7 @@ describe('Projects integration', () => {
   let sampleWavPath: string;
 
   beforeEach(async () => {
+    uploadedFilePath = '';
     const database = await createTestDatabase();
     prisma = database.client;
     databaseFilePath = database.filePath;
@@ -340,6 +341,15 @@ describe('Projects integration', () => {
       .expect(201)
       .expect(({ body }) => expect(body.assets.some((asset: { role: string; label: string }) => asset.role === 'mouth_shape' && asset.label === 'A')).toBe(true));
 
+    const generatedPose = await request(app.getHttpServer())
+      .post(`/projects/${projectResponse.body.id}/children-clip/characters/${characterId}/versions/${versionId}/assets/generate`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ role: 'pose', label: 'dançando com os braços levantados' })
+      .expect(201);
+    expect(generatedPose.body.assets.some((asset: { role: string; origin: string; status: string }) =>
+      asset.role === 'pose' && asset.origin === 'generated' && asset.status === 'queued'
+    )).toBe(true);
+
     const secondProject = await request(app.getHttpServer())
       .post('/projects')
       .set('Authorization', `Bearer ${authToken}`)
@@ -466,9 +476,10 @@ describe('Projects integration', () => {
         });
       });
 
-    const assetId = listResponse.body[0].versions[0].assets[0].id;
+    const characterAssetId = listResponse.body[0].versions[0].assets[0].id;
+    const assetId = listResponse.body[0].versions[0].assets[0].assetId;
     await request(app.getHttpServer())
-      .get(`/projects/${projectResponse.body.id}/children-clip/characters/${characterId}/versions/${versionId}/assets/${assetId}`)
+      .get(`/projects/${projectResponse.body.id}/children-clip/characters/${characterId}/versions/${versionId}/assets/${characterAssetId}`)
       .set('Authorization', `Bearer ${authToken}`)
       .expect(200)
       .expect('Content-Type', /image\/png/);
