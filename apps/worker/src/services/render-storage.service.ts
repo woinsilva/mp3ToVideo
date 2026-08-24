@@ -101,6 +101,21 @@ export class RenderStorageService {
     ).replace(/\\/g, '/');
   }
 
+  buildChildrenClipHeroShotPath(organizationId: string, projectId: string, shotId: string, attemptNumber: number): string {
+    const root = this.configService.get<string>('storage.root', './storage');
+    return join(root, 'children-clips', organizationId, projectId, 'shots', shotId, 'renders', `wan-attempt-${attemptNumber}.mp4`).replace(/\\/g, '/');
+  }
+
+  buildChildrenClipFinalRenderPath(organizationId: string, projectId: string, versionNumber: number): string {
+    const root = this.configService.get<string>('storage.root', './storage');
+    return join(root, 'children-clips', organizationId, projectId, 'final', `children-clip-v${versionNumber}.mp4`).replace(/\\/g, '/');
+  }
+
+  buildChildrenClipCompositionTempPath(projectId: string, finalRenderId: string, name: string): string {
+    const root = this.configService.get<string>('storage.root', './storage');
+    return join(root, 'temp', 'children-clips', projectId, finalRenderId, name).replace(/\\/g, '/');
+  }
+
   buildContinuityFramePath(organizationId: string, projectId: string, sceneIndex: number): string {
     const root = this.configService.get<string>('storage.root', './storage');
 

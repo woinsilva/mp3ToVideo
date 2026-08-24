@@ -7,6 +7,7 @@ import type {
   ChildrenClipPlanStatus,
   ChildrenClipProductionAssetsStatus,
   ChildrenClipAnimationStatus,
+  ChildrenClipOutputStatus,
   ChildrenClipShotAssetRole,
   ChildrenClipShot,
   CreateChildrenClipCharacterInput,
@@ -331,6 +332,38 @@ class ProjectsService {
 
   downloadChildrenClipShotRender(projectId: string, attemptId: string, token: string) {
     return apiService.download(`/projects/${projectId}/children-clip/animation/attempts/${attemptId}/file`, token);
+  }
+
+  getChildrenClipOutput(projectId: string, token: string) {
+    return apiService.request<ChildrenClipOutputStatus>(`/projects/${projectId}/children-clip/output`, {}, token);
+  }
+
+  generateChildrenClipHeroShot(projectId: string, shotId: string, token: string) {
+    return apiService.request<ChildrenClipOutputStatus>(`/projects/${projectId}/children-clip/output/shots/${shotId}/wan`, { method: 'POST' }, token);
+  }
+
+  retryChildrenClipHeroShot(projectId: string, attemptId: string, token: string) {
+    return apiService.request<ChildrenClipOutputStatus>(`/projects/${projectId}/children-clip/output/hero-attempts/${attemptId}/retry`, { method: 'POST' }, token);
+  }
+
+  approveChildrenClipHeroShot(projectId: string, attemptId: string, token: string) {
+    return apiService.request<ChildrenClipOutputStatus>(`/projects/${projectId}/children-clip/output/hero-attempts/${attemptId}/approve`, { method: 'POST' }, token);
+  }
+
+  renderChildrenClipFinal(projectId: string, token: string) {
+    return apiService.request<ChildrenClipOutputStatus>(`/projects/${projectId}/children-clip/output/final`, { method: 'POST' }, token);
+  }
+
+  retryChildrenClipFinal(projectId: string, finalRenderId: string, token: string) {
+    return apiService.request<ChildrenClipOutputStatus>(`/projects/${projectId}/children-clip/output/final/${finalRenderId}/retry`, { method: 'POST' }, token);
+  }
+
+  downloadChildrenClipHeroShot(projectId: string, attemptId: string, token: string) {
+    return apiService.download(`/projects/${projectId}/children-clip/output/hero-attempts/${attemptId}/file`, token);
+  }
+
+  downloadChildrenClipFinal(projectId: string, finalRenderId: string, token: string) {
+    return apiService.download(`/projects/${projectId}/children-clip/output/final/${finalRenderId}/file`, token);
   }
 }
 

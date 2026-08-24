@@ -395,6 +395,16 @@ describe('Projects integration', () => {
       .expect(200)
       .expect('Content-Type', /image\/png/);
 
+    await prisma.childrenClipShot.update({ where: { id: shots[0].id }, data: { renderMode: 'hybrid' } });
+    await request(app.getHttpServer())
+      .post(`/projects/${projectResponse.body.id}/children-clip/output/shots/${shots[0].id}/wan`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.heroShots[0].latestAttempt).toMatchObject({ status: 'queued', progress: 0, stage: 'QUEUED' });
+        expect(body.readyForFinal).toBe(false);
+      });
+
     await request(app.getHttpServer())
       .post(`/projects/${projectResponse.body.id}/children-clip/animation/shots/${shots[0].id}/render`)
       .set('Authorization', `Bearer ${authToken}`)

@@ -12,6 +12,7 @@ import { ChildrenClipAudioAnalysisService } from './services/children-clip-audio
 import { ChildrenClipLyricsAlignmentService } from './services/children-clip-lyrics-alignment.service';
 import { ChildrenClipPlanningService } from './services/children-clip-planning.service';
 import { ChildrenClip2dRendererService } from './services/children-clip-2d-renderer.service';
+import { ChildrenClipCompositionService } from './services/children-clip-composition.service';
 import { AudioExcerptService } from './services/audio-excerpt.service';
 import { ComfyUiClientService } from './services/comfyui-client.service';
 import { ComfyUiWorkflowLoaderService } from './services/comfyui-workflow-loader.service';
@@ -64,6 +65,7 @@ import { ChildrenClipWorkerService } from './workers/children-clip-worker.servic
     ChildrenClipLyricsAlignmentService,
     ChildrenClipPlanningService,
     ChildrenClip2dRendererService,
+    ChildrenClipCompositionService,
     AudioExcerptService,
     ComfyUiWorkflowLoaderService,
     ComfyUiClientService,

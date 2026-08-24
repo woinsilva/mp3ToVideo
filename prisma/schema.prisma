@@ -113,6 +113,24 @@ enum ChildrenClipShotRenderStatus {
   failed
 }
 
+enum ChildrenClipHeroShotStatus {
+  queued
+  generating
+  validating
+  ready_for_review
+  approved
+  failed
+}
+
+enum ChildrenClipFinalRenderStatus {
+  queued
+  compositing
+  encoding
+  validating
+  completed
+  failed
+}
+
 enum CharacterScope {
   project
   organization
@@ -291,6 +309,7 @@ model Project {
   childrenClipPlan          ChildrenClipPlan?
   childrenClipShots         ChildrenClipShot[]
   characterLinks            ProjectCharacter[]
+  childrenClipFinalRenders  ChildrenClipFinalRender[]
   originatedCharacters      Character[]                @relation("CharacterOriginProject")
   sourceImageAsset          Asset?                     @relation("ProjectSourceImageAsset", fields: [sourceImageAssetId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
@@ -445,28 +464,30 @@ model ScenePrompt {
 }
 
 model Asset {
-  id                     String                         @id @default(cuid())
-  organizationId         String
-  projectId              String
-  type                   AssetType
-  mimeType               String
-  storagePath            String
-  sizeBytes              Int
-  width                  Int?
-  height                 Int?
-  metadata               Json?
-  createdAt              DateTime                       @default(now())
-  updatedAt              DateTime                       @updatedAt
-  organization           Organization                   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  project                Project                        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  render                 Render?
-  storyboardVisualFor    Storyboard[]                   @relation("StoryboardVisualAsset")
-  sceneVideoFor          Scene[]                        @relation("SceneVideoAsset")
-  sceneReferenceImageFor Scene[]                        @relation("SceneReferenceImageAsset")
-  sourceImageFor         Project?                       @relation("ProjectSourceImageAsset")
-  characterAssets        CharacterAsset[]
-  childrenClipShotAsset  ChildrenClipShotAsset?
-  childrenClipShotRender ChildrenClipShotRenderAttempt?
+  id                      String                         @id @default(cuid())
+  organizationId          String
+  projectId               String
+  type                    AssetType
+  mimeType                String
+  storagePath             String
+  sizeBytes               Int
+  width                   Int?
+  height                  Int?
+  metadata                Json?
+  createdAt               DateTime                       @default(now())
+  updatedAt               DateTime                       @updatedAt
+  organization            Organization                   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project                 Project                        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  render                  Render?
+  storyboardVisualFor     Storyboard[]                   @relation("StoryboardVisualAsset")
+  sceneVideoFor           Scene[]                        @relation("SceneVideoAsset")
+  sceneReferenceImageFor  Scene[]                        @relation("SceneReferenceImageAsset")
+  sourceImageFor          Project?                       @relation("ProjectSourceImageAsset")
+  characterAssets         CharacterAsset[]
+  childrenClipShotAsset   ChildrenClipShotAsset?
+  childrenClipShotRender  ChildrenClipShotRenderAttempt?
+  childrenClipHeroShot    ChildrenClipHeroShotAttempt?
+  childrenClipFinalRender ChildrenClipFinalRender?
 
   @@index([organizationId, projectId, type])
 }
@@ -582,6 +603,7 @@ model ChildrenClipShot {
   musicSection        MusicSection?                   @relation(fields: [musicSectionId], references: [id], onDelete: SetNull)
   assets              ChildrenClipShotAsset[]
   renderAttempts      ChildrenClipShotRenderAttempt[]
+  heroShotAttempts    ChildrenClipHeroShotAttempt[]
 
   @@unique([projectId, index])
   @@index([projectId, startSeconds])
@@ -640,6 +662,59 @@ model ChildrenClipShotRenderAttempt {
 
   @@unique([shotId, attemptNumber])
   @@index([shotId, status])
+  @@index([bullJobId])
+}
+
+model ChildrenClipHeroShotAttempt {
+  id                  String                     @id @default(cuid())
+  shotId              String
+  assetId             String?                    @unique
+  attemptNumber       Int
+  status              ChildrenClipHeroShotStatus @default(queued)
+  bullJobId           String?
+  promptId            String?
+  seed                Int
+  fps                 Int
+  width               Int
+  height              Int
+  frameCount          Int
+  generationManifest  Json?
+  progress            Int                        @default(0)
+  stage               String?
+  errorMessage        String?
+  generationStartedAt DateTime?
+  generationEndedAt   DateTime?
+  approvedAt          DateTime?
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
+  shot                ChildrenClipShot           @relation(fields: [shotId], references: [id], onDelete: Cascade)
+  asset               Asset?                     @relation(fields: [assetId], references: [id], onDelete: SetNull)
+
+  @@unique([shotId, attemptNumber])
+  @@index([shotId, status])
+  @@index([bullJobId])
+}
+
+model ChildrenClipFinalRender {
+  id                String                        @id @default(cuid())
+  projectId         String
+  assetId           String?                       @unique
+  versionNumber     Int
+  status            ChildrenClipFinalRenderStatus @default(queued)
+  bullJobId         String?
+  progress          Int                           @default(0)
+  stage             String?
+  renderManifest    Json?
+  errorMessage      String?
+  renderStartedAt   DateTime?
+  renderCompletedAt DateTime?
+  createdAt         DateTime                      @default(now())
+  updatedAt         DateTime                      @updatedAt
+  project           Project                       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  asset             Asset?                        @relation(fields: [assetId], references: [id], onDelete: SetNull)
+
+  @@unique([projectId, versionNumber])
+  @@index([projectId, status])
   @@index([bullJobId])
 }
 

@@ -165,6 +165,24 @@ duracao. Falhas mantem erro e historico, o retry cria outra tentativa, e a inter
 preview autenticado e o manifesto reproduzivel. O Chromium necessario e preparado automaticamente
 na primeira execucao e reutilizado nas seguintes.
 
+### Tomadas Wan, composicao e saida
+
+Tomadas `wan` exigem uma versao Wan aprovada; tomadas `hybrid` sempre preservam a base 2D e usam
+Wan somente quando o usuario gerar e aprovar uma tomada especial. O job `children-clip.shot.wan`
+usa como entrada um fundo ou storyboard aprovado, fixa seed e configuracao Wan, registra o
+`promptId` e os heartbeats do ComfyUI nativo e valida o MP4 antes de libera-lo para revisao.
+
+Quando todas as tomadas possuem uma fonte valida, `children-clip.final.render` seleciona Wan
+aprovado ou 2D conforme a regra da tomada. Cada clip e reencodado para o FPS, dimensoes, duracao e
+pixel format finais; somente depois os clips normalizados sao concatenados. Essa normalizacao evita
+o erro de concat causado por streams incompativeis e impede que audio silencioso de uma tomada
+substitua a musica.
+
+A composicao mapeia explicitamente o video concatenado e a faixa original do projeto, codifica o
+audio em AAC, aplica `faststart` e valida com FFprobe: audio presente, H.264, dimensoes, FPS, frames
+e duracao alinhada a analise musical. Cada versao final possui manifesto, progresso, erro/retry,
+preview autenticado e download proprio; resultados anteriores nao sao sobrescritos.
+
 RIFE fica disponivel apenas para tomadas generativas que realmente precisem de interpolacao. Animacao 2D sera renderizada diretamente no FPS final.
 
 ## Modelo de dados

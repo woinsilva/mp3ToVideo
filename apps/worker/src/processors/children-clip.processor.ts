@@ -2,9 +2,10 @@ import { readFile, stat, writeFile } from 'node:fs/promises';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AssetType, CharacterAssetRole, CharacterVersionStatus, ChildrenClipShotAssetStatus, Prisma, ProcessingJobStatus } from '@prisma/client';
+import { AssetType, CharacterAssetRole, CharacterVersionStatus, ChildrenClipShotAssetStatus, Prisma, ProcessingJobStatus, type ScenePrompt } from '@prisma/client';
 import type { ChildrenClipAssetGenerationJobPayload, ChildrenClipAudioAnalysisJobPayload, ChildrenClipCharacterGenerationJobPayload, ChildrenClipPlanGenerationJobPayload } from '@video/shared';
 import type { ChildrenClipShotRenderJobPayload } from '@video/shared';
+import type { ChildrenClipFinalRenderJobPayload, ChildrenClipHeroShotJobPayload } from '@video/shared';
 import { buildMouthFrames, type CharacterLayer, type TimedWord } from '@video/children-clip-renderer';
 import type { Job } from 'bullmq';
 
@@ -18,6 +19,9 @@ import { MusicStructureService } from '../services/music-structure.service';
 import { ChildrenClipPlanningService, type CreativePlanResponse } from '../services/children-clip-planning.service';
 import { ChildrenClip2dRendererService } from '../services/children-clip-2d-renderer.service';
 import { VideoMetadataProbeService } from '../services/video-metadata-probe.service';
+import { SceneVideoGenerationService } from '../services/scene-video-generation.service';
+import { VideoGenerationSettingsService } from '../services/video-generation-settings.service';
+import { ChildrenClipCompositionService } from '../services/children-clip-composition.service';
 
 interface OptimizedCharacterPrompt {
   positivePrompt: string;
@@ -42,7 +46,130 @@ export class ChildrenClipProcessor {
     @Inject(ChildrenClipPlanningService) private readonly planning: ChildrenClipPlanningService
     , @Inject(ChildrenClip2dRendererService) private readonly renderer2d: ChildrenClip2dRendererService
     , @Inject(VideoMetadataProbeService) private readonly videoProbe: VideoMetadataProbeService
+    , @Inject(SceneVideoGenerationService) private readonly sceneVideo: SceneVideoGenerationService
+    , @Inject(VideoGenerationSettingsService) private readonly videoSettings: VideoGenerationSettingsService
+    , @Inject(ChildrenClipCompositionService) private readonly composition: ChildrenClipCompositionService
   ) {}
+
+  async processHeroShot(job: Job<ChildrenClipHeroShotJobPayload>) {
+    const { projectId, organizationId, heroAttemptId } = job.data;
+    const attempt = await this.prisma.childrenClipHeroShotAttempt.findFirst({
+      where: { id: heroAttemptId, shot: { projectId, project: { organizationId, deletedAt: null } } },
+      include: { shot: { include: { assets: { where: { status: 'approved' }, include: { asset: true } }, project: { include: { childrenClip: true, childrenClipPlan: true } } } } }
+    });
+    if (!attempt) throw new Error(`Hero shot attempt ${heroAttemptId} not found`);
+    const reference = attempt.shot.assets.find((item) => item.role === 'storyboard_frame' && item.asset)?.asset ?? attempt.shot.assets.find((item) => item.role === 'background' && item.asset)?.asset;
+    if (!reference) throw new Error('A tomada Wan precisa de um fundo ou storyboard aprovado como referencia');
+    const prompt = {
+      positivePrompt: [attempt.shot.description, attempt.shot.characterAction, attempt.shot.environment, 'original safe children animation, preserve the supplied visual identity and composition, smooth subtle motion'].filter(Boolean).join('. '),
+      negativePrompt: 'photorealistic, scary, violence, text, watermark, morphing, identity change, extra limbs, deformed anatomy, scene transition, camera shake'
+    } as ScenePrompt;
+    const settings = this.videoSettings.resolve(prompt, attempt.shot.durationSeconds, {
+      seed: attempt.seed, fps: attempt.fps, width: attempt.width, height: attempt.height,
+      cfg: attempt.shot.project.generationCfg, steps: attempt.shot.project.generationSteps,
+      imageToVideo: true, stabilityTest: true
+    });
+    let submittedPromptId: string | null = null;
+    await this.prisma.$transaction([
+      this.prisma.childrenClipHeroShotAttempt.update({ where: { id: heroAttemptId }, data: { status: 'generating', progress: 3, stage: 'STARTING', errorMessage: null, generationStartedAt: new Date(), generationEndedAt: null } }),
+      this.prisma.childrenClip.update({ where: { projectId }, data: { productionStatus: 'generating_hero_shots' } })
+    ]);
+    try {
+      await this.heroProgress(job, heroAttemptId, 3, 'STARTING', 'Worker iniciou a tomada especial Wan.');
+      await this.heroProgress(job, heroAttemptId, 10, 'PREPARING_REFERENCE', 'Preparando o asset aprovado como referencia de identidade.');
+      const result = await this.sceneVideo.generate({
+        ...settings, sceneId: attempt.shotId, positivePrompt: settings.positivePrompt,
+        negativePrompt: settings.negativePrompt, width: settings.width, height: settings.height,
+        durationSeconds: settings.effectiveDurationSeconds,
+        referenceImagePath: this.storage.getAbsolutePath(reference.storagePath),
+        onSubmitted: async (promptId) => {
+          submittedPromptId = promptId;
+          await this.prisma.childrenClipHeroShotAttempt.update({ where: { id: heroAttemptId }, data: { promptId, stage: 'SUBMITTED', progress: 18 } });
+          await this.heroProgress(job, heroAttemptId, 18, 'SUBMITTED', `Workflow Wan enviado ao ComfyUI (${promptId}).`);
+        },
+        onHeartbeat: async (heartbeat) => {
+          const progress = Math.min(78, 20 + heartbeat.pollCount);
+          await this.heroProgress(job, heroAttemptId, progress, heartbeat.state === 'waiting' ? 'WAITING_EXTERNAL' : 'CONFIRMED_EXTERNAL_ACTIVE', `ComfyUI processando a tomada Wan ha ${Math.round(heartbeat.elapsedMs / 1000)}s.`);
+        }
+      });
+      if (!result) throw new Error('O provider Wan nao retornou um video');
+      await this.heroProgress(job, heroAttemptId, 82, 'SAVING_VIDEO', 'Salvando a tomada Wan versionada.');
+      const outputPath = this.storage.buildChildrenClipHeroShotPath(organizationId, projectId, attempt.shotId, attempt.attemptNumber);
+      const absolutePath = await this.storage.ensureParentDirectory(outputPath);
+      await writeFile(absolutePath, result.buffer);
+      await this.prisma.childrenClipHeroShotAttempt.update({ where: { id: heroAttemptId }, data: { status: 'validating', progress: 90, stage: 'VALIDATING' } });
+      await this.heroProgress(job, heroAttemptId, 90, 'VALIDATING', 'Validando o video retornado pelo Wan.');
+      const metadata = await this.videoProbe.probe(absolutePath);
+      if (!metadata.frameCount || !metadata.durationSeconds || !metadata.width || !metadata.height) throw new Error('O video Wan retornado e invalido ou incompleto');
+      const sizeBytes = Number((await stat(absolutePath)).size);
+      const manifest = { provider: result.provider, promptId: submittedPromptId, referenceAssetId: reference.id, ...settings, validation: metadata };
+      await this.prisma.$transaction(async (tx) => {
+        const asset = await tx.asset.create({ data: { organizationId, projectId, type: 'video_scene', mimeType: 'video/mp4', storagePath: outputPath, sizeBytes, width: metadata.width, height: metadata.height, metadata: manifest as unknown as Prisma.InputJsonValue } });
+        await tx.childrenClipHeroShotAttempt.update({ where: { id: heroAttemptId }, data: { assetId: asset.id, status: 'ready_for_review', progress: 100, stage: 'READY_FOR_REVIEW', generationManifest: manifest as unknown as Prisma.InputJsonValue, generationEndedAt: new Date(), errorMessage: null } });
+      });
+      await this.heroProgress(job, heroAttemptId, 100, 'READY_FOR_REVIEW', 'Tomada Wan pronta para revisao.', ProcessingJobStatus.completed);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const willRetry = job.attemptsMade + 1 < (job.opts.attempts ?? 1);
+      await this.prisma.childrenClipHeroShotAttempt.update({ where: { id: heroAttemptId }, data: { status: willRetry ? 'queued' : 'failed', progress: 0, stage: willRetry ? 'RETRYING' : 'FAILED', errorMessage: message, generationEndedAt: willRetry ? null : new Date() } });
+      await this.heroProgress(job, heroAttemptId, 0, willRetry ? 'RETRYING' : 'FAILED', willRetry ? `Wan falhou; o BullMQ tentara novamente: ${message}` : `Falha na tomada Wan: ${message}`, willRetry ? ProcessingJobStatus.retrying : ProcessingJobStatus.failed, message);
+      throw error;
+    }
+  }
+
+  async processFinalRender(job: Job<ChildrenClipFinalRenderJobPayload>) {
+    const { projectId, organizationId, finalRenderId } = job.data;
+    const render = await this.prisma.childrenClipFinalRender.findFirst({
+      where: { id: finalRenderId, projectId, project: { organizationId, deletedAt: null } },
+      include: { project: { include: { childrenClip: true, track: true, childrenClipAudioAnalysis: true, childrenClipShots: { orderBy: { index: 'asc' }, include: { renderAttempts: { where: { status: 'completed' }, orderBy: { attemptNumber: 'desc' }, take: 1, include: { asset: true } }, heroShotAttempts: { where: { status: 'approved' }, orderBy: { attemptNumber: 'desc' }, take: 1, include: { asset: true } } } } } } }
+    });
+    if (!render?.project.track) throw new Error('A musica original do clipe nao foi encontrada');
+    const shots = render.project.childrenClipShots.map((shot) => {
+      const hero = shot.heroShotAttempts[0]?.asset;
+      const twoD = shot.renderAttempts[0]?.asset;
+      const asset = shot.renderMode === 'wan' ? hero : hero ?? twoD;
+      if (!asset) throw new Error(`A tomada ${shot.index + 1} nao possui render aprovado`);
+      return { shot, asset, source: hero ? 'wan' : 'animation_2d' };
+    });
+    const fps = render.project.generationFps || 16;
+    const portrait = render.project.childrenClip?.aspectRatio === 'portrait_9_16';
+    const square = render.project.childrenClip?.aspectRatio === 'square_1_1';
+    const width = portrait ? 720 : square ? 1080 : 1280;
+    const height = portrait ? 1280 : square ? 1080 : 720;
+    const duration = render.project.childrenClipAudioAnalysis?.durationSeconds ?? shots[shots.length - 1].shot.endSeconds;
+    await this.prisma.$transaction([
+      this.prisma.childrenClipFinalRender.update({ where: { id: finalRenderId }, data: { status: 'compositing', progress: 3, stage: 'STARTING', errorMessage: null, renderStartedAt: new Date(), renderCompletedAt: null } }),
+      this.prisma.childrenClip.update({ where: { projectId }, data: { productionStatus: 'compositing' } })
+    ]);
+    try {
+      await this.finalProgress(job, finalRenderId, 3, 'STARTING', 'Worker iniciou a composicao final.');
+      const manifest = { version: render.versionNumber, fps, width, height, durationSeconds: duration, trackId: render.project.track.id, shots: shots.map(({ shot, asset, source }) => ({ shotId: shot.id, index: shot.index, source, assetId: asset.id, startSeconds: shot.startSeconds, endSeconds: shot.endSeconds, durationSeconds: shot.durationSeconds })) };
+      await this.prisma.childrenClipFinalRender.update({ where: { id: finalRenderId }, data: { renderManifest: manifest as unknown as Prisma.InputJsonValue } });
+      const outputPath = this.storage.buildChildrenClipFinalRenderPath(organizationId, projectId, render.versionNumber);
+      await this.composition.compose({ projectId, finalRenderId, clips: shots.map(({ shot, asset }) => ({ path: asset.storagePath, durationSeconds: shot.durationSeconds })), audioPath: render.project.track.storagePath, outputPath, width, height, fps, totalDuration: duration, onProgress: (progress, stage, message) => this.finalProgress(job, finalRenderId, progress, stage, message) });
+      await this.prisma.childrenClipFinalRender.update({ where: { id: finalRenderId }, data: { status: 'validating', progress: 92, stage: 'VALIDATING' } });
+      await this.finalProgress(job, finalRenderId, 92, 'VALIDATING', 'Validando video, audio, dimensoes, FPS e duracao final.');
+      const absolutePath = this.storage.getAbsolutePath(outputPath);
+      const metadata = await this.videoProbe.probe(absolutePath);
+      if (!metadata.hasAudio) throw new Error('O clipe final nao possui faixa de audio');
+      if (metadata.width !== width || metadata.height !== height) throw new Error('O clipe final possui dimensoes invalidas');
+      if (!metadata.durationSeconds || Math.abs(metadata.durationSeconds - duration) > 0.15) throw new Error('O clipe final diverge da duracao da musica');
+      const sizeBytes = Number((await stat(absolutePath)).size);
+      await this.prisma.$transaction(async (tx) => {
+        const asset = await tx.asset.create({ data: { organizationId, projectId, type: 'render', mimeType: 'video/mp4', storagePath: outputPath, sizeBytes, width, height, metadata: { ...manifest, validation: metadata } as unknown as Prisma.InputJsonValue } });
+        await tx.childrenClipFinalRender.update({ where: { id: finalRenderId }, data: { assetId: asset.id, status: 'completed', progress: 100, stage: 'COMPLETED', renderCompletedAt: new Date(), errorMessage: null } });
+        await tx.childrenClip.update({ where: { projectId }, data: { productionStatus: 'completed' } });
+        await tx.project.update({ where: { id: projectId }, data: { status: 'completed', errorMessage: null } });
+      });
+      await this.finalProgress(job, finalRenderId, 100, 'COMPLETED', 'Clipe infantil finalizado e validado.', ProcessingJobStatus.completed);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const willRetry = job.attemptsMade + 1 < (job.opts.attempts ?? 1);
+      await this.prisma.childrenClipFinalRender.update({ where: { id: finalRenderId }, data: { status: willRetry ? 'queued' : 'failed', progress: 0, stage: willRetry ? 'RETRYING' : 'FAILED', errorMessage: message, renderCompletedAt: willRetry ? null : new Date() } });
+      await this.finalProgress(job, finalRenderId, 0, willRetry ? 'RETRYING' : 'FAILED', willRetry ? `Composicao falhou; o BullMQ tentara novamente: ${message}` : `Falha na composicao final: ${message}`, willRetry ? ProcessingJobStatus.retrying : ProcessingJobStatus.failed, message);
+      throw error;
+    }
+  }
 
   async processShotRender(job: Job<ChildrenClipShotRenderJobPayload>) {
     const { projectId, organizationId, renderAttemptId } = job.data;
@@ -800,6 +927,30 @@ export class ChildrenClipProcessor {
       this.prisma.childrenClipShotRenderAttempt.update({
         where: { id: renderAttemptId }, data: { progress, stage, errorMessage }
       })
+    ]);
+    this.logger.log(`[${String(job.id)}] ${stage} ${progress}%: ${message}`);
+  }
+
+  private async heroProgress(
+    job: Job<ChildrenClipHeroShotJobPayload>, heroAttemptId: string, progress: number, stage: string,
+    message: string, status: ProcessingJobStatus = ProcessingJobStatus.active, errorMessage: string | null = null
+  ) {
+    await job.updateProgress({ progress, stage, message });
+    await Promise.all([
+      this.progress(String(job.id), progress, stage, message, status, errorMessage),
+      this.prisma.childrenClipHeroShotAttempt.update({ where: { id: heroAttemptId }, data: { progress, stage, errorMessage } })
+    ]);
+    this.logger.log(`[${String(job.id)}] ${stage} ${progress}%: ${message}`);
+  }
+
+  private async finalProgress(
+    job: Job<ChildrenClipFinalRenderJobPayload>, finalRenderId: string, progress: number, stage: string,
+    message: string, status: ProcessingJobStatus = ProcessingJobStatus.active, errorMessage: string | null = null
+  ) {
+    await job.updateProgress({ progress, stage, message });
+    await Promise.all([
+      this.progress(String(job.id), progress, stage, message, status, errorMessage),
+      this.prisma.childrenClipFinalRender.update({ where: { id: finalRenderId }, data: { progress, stage, errorMessage } })
     ]);
     this.logger.log(`[${String(job.id)}] ${stage} ${progress}%: ${message}`);
   }

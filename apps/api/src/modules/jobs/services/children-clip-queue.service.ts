@@ -6,11 +6,15 @@ import {
   CHILDREN_CLIP_PLAN_GENERATE_JOB_NAME,
   CHILDREN_CLIP_ASSET_GENERATE_JOB_NAME,
   CHILDREN_CLIP_SHOT_RENDER_JOB_NAME,
+  CHILDREN_CLIP_HERO_SHOT_JOB_NAME,
+  CHILDREN_CLIP_FINAL_RENDER_JOB_NAME,
   CHILDREN_CLIP_QUEUE_NAME,
   type ChildrenClipAudioAnalysisJobPayload,
   type ChildrenClipPlanGenerationJobPayload,
   type ChildrenClipAssetGenerationJobPayload,
   type ChildrenClipShotRenderJobPayload,
+  type ChildrenClipHeroShotJobPayload,
+  type ChildrenClipFinalRenderJobPayload,
   type ChildrenClipCharacterGenerationJobPayload
 } from '@video/shared';
 import { Queue } from 'bullmq';
@@ -18,7 +22,7 @@ import type { ConnectionOptions } from 'bullmq';
 
 @Injectable()
 export class ChildrenClipQueueService implements OnModuleDestroy {
-  private readonly queue: Queue<ChildrenClipCharacterGenerationJobPayload | ChildrenClipAudioAnalysisJobPayload | ChildrenClipPlanGenerationJobPayload | ChildrenClipAssetGenerationJobPayload | ChildrenClipShotRenderJobPayload>;
+  private readonly queue: Queue<ChildrenClipCharacterGenerationJobPayload | ChildrenClipAudioAnalysisJobPayload | ChildrenClipPlanGenerationJobPayload | ChildrenClipAssetGenerationJobPayload | ChildrenClipShotRenderJobPayload | ChildrenClipHeroShotJobPayload | ChildrenClipFinalRenderJobPayload>;
 
   constructor(@Inject(ConfigService) configService: ConfigService) {
     const connection: ConnectionOptions = {
@@ -83,6 +87,20 @@ export class ChildrenClipQueueService implements OnModuleDestroy {
     const job = await this.queue.add(CHILDREN_CLIP_SHOT_RENDER_JOB_NAME, payload, {
       jobId: `render2d-${payload.renderAttemptId}-${Date.now()}`,
       delay: 500
+    });
+    return { bullJobId: String(job.id) };
+  }
+
+  async enqueueHeroShot(payload: ChildrenClipHeroShotJobPayload): Promise<{ bullJobId: string }> {
+    const job = await this.queue.add(CHILDREN_CLIP_HERO_SHOT_JOB_NAME, payload, {
+      jobId: `hero-${payload.heroAttemptId}-${Date.now()}`, delay: 500
+    });
+    return { bullJobId: String(job.id) };
+  }
+
+  async enqueueFinalRender(payload: ChildrenClipFinalRenderJobPayload): Promise<{ bullJobId: string }> {
+    const job = await this.queue.add(CHILDREN_CLIP_FINAL_RENDER_JOB_NAME, payload, {
+      jobId: `final-${payload.finalRenderId}-${Date.now()}`, delay: 500
     });
     return { bullJobId: String(job.id) };
   }
