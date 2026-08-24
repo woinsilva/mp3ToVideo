@@ -17,6 +17,7 @@ import { ChildrenClipAudioAnalysisService, type AudioEnergyPoint } from '../serv
 import { ChildrenClipLyricsAlignmentService } from '../services/children-clip-lyrics-alignment.service';
 import { MusicStructureService } from '../services/music-structure.service';
 import { ChildrenClipPlanningService, type CreativePlanResponse } from '../services/children-clip-planning.service';
+import { ChildrenClipShotPromptService } from '../services/children-clip-shot-prompt.service';
 import { ChildrenClip2dRendererService } from '../services/children-clip-2d-renderer.service';
 import { VideoMetadataProbeService } from '../services/video-metadata-probe.service';
 import { SceneVideoGenerationService } from '../services/scene-video-generation.service';
@@ -43,7 +44,8 @@ export class ChildrenClipProcessor {
     @Inject(ChildrenClipLyricsAlignmentService)
     private readonly lyricsAlignment: ChildrenClipLyricsAlignmentService,
     @Inject(MusicStructureService) private readonly musicStructure: MusicStructureService,
-    @Inject(ChildrenClipPlanningService) private readonly planning: ChildrenClipPlanningService
+    @Inject(ChildrenClipPlanningService) private readonly planning: ChildrenClipPlanningService,
+    @Inject(ChildrenClipShotPromptService) private readonly shotPrompts: ChildrenClipShotPromptService
     , @Inject(ChildrenClip2dRendererService) private readonly renderer2d: ChildrenClip2dRendererService
     , @Inject(VideoMetadataProbeService) private readonly videoProbe: VideoMetadataProbeService
     , @Inject(SceneVideoGenerationService) private readonly sceneVideo: SceneVideoGenerationService
@@ -206,7 +208,10 @@ export class ChildrenClipProcessor {
     if (!background?.asset) throw new Error('A tomada nao possui fundo aprovado');
     const project = attempt.shot.project;
     const versionIds = this.stringArray(attempt.shot.characterVersionIds);
-    const characterLinks = project.characterLinks.filter((link) => link.selectedVersion && (!versionIds.length || versionIds.includes(link.selectedVersion.id)));
+    const hasExplicitEntitySelection = Array.isArray(attempt.shot.characterVersionIds);
+    const characterLinks = project.characterLinks.filter((link) =>
+      link.selectedVersion && (!hasExplicitEntitySelection || versionIds.includes(link.selectedVersion.id))
+    );
 
     await this.prisma.$transaction([
       this.prisma.childrenClipShotRenderAttempt.update({
@@ -314,7 +319,28 @@ export class ChildrenClipProcessor {
       include: {
         shot: {
           include: {
-            project: { include: { childrenClip: true, childrenClipPlan: true } }
+            location: true,
+            project: {
+              include: {
+                childrenClip: true,
+                childrenClipPlan: true,
+                characterLinks: {
+                  orderBy: { sortOrder: 'asc' },
+                  include: {
+                    character: true,
+                    selectedVersion: {
+                      include: {
+                        assets: {
+                          where: { status: 'approved', assetId: { not: null } },
+                          include: { asset: true },
+                          orderBy: { sortOrder: 'asc' }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -338,19 +364,33 @@ export class ChildrenClipProcessor {
     const scheduler = this.config.get<string>('visual.characterScheduler', 'karras');
     const loraName = this.config.get<string>('visual.characterLoraName', '').trim();
     const loraStrength = this.config.get<number>('visual.characterLoraStrength', 1);
-    const isBackground = shotAsset.role === 'background';
     const visualBible = shotAsset.shot.project.childrenClipPlan?.visualBible;
-    const positivePrompt = [
-      'original polished 2D children animation, flat vector illustration, clean bold outlines, simple cel shading, production-ready separated visual asset',
-      isBackground ? 'empty environment background plate, no characters, wide composition with clear foreground middle ground and background layers' : `isolated ${shotAsset.role} visual asset`,
-      shotAsset.generationPrompt,
-      visualBible ? `art direction: ${JSON.stringify(visualBible)}` : null
-    ].filter(Boolean).join(', ');
-    const negativePrompt = [
-      shotAsset.negativePrompt,
-      'photorealistic, realistic skin, 3d render, text, letters, logo, watermark, signature, scary, violence, weapon, malformed, low quality',
-      isBackground ? 'person, people, child, character, animal, creature, mascot' : null
-    ].filter(Boolean).join(', ');
+    const bible = visualBible && typeof visualBible === 'object' && !Array.isArray(visualBible) ? visualBible as Record<string, unknown> : {};
+    const characterRules = Array.isArray(bible.characterRules) ? bible.characterRules : [];
+    const entities = shotAsset.shot.project.characterLinks.flatMap((link) => {
+      if (!link.selectedVersion) return [];
+      const rule = characterRules.find((item) => item && typeof item === 'object' && !Array.isArray(item) && String((item as Record<string, unknown>).name ?? '').toLowerCase() === link.character.name.toLowerCase()) as Record<string, unknown> | undefined;
+      const reference = link.selectedVersion.assets.find((item) => item.role === 'primary_reference' && item.asset)
+        ?? link.selectedVersion.assets.find((item) => item.asset);
+      return [{
+        versionId: link.selectedVersion.id,
+        name: link.character.name,
+        type: typeof rule?.type === 'string' ? rule.type : 'character',
+        identity: typeof rule?.identity === 'string' ? rule.identity : link.selectedVersion.description,
+        referenceAsset: reference?.asset ? { id: reference.asset.id, storagePath: reference.asset.storagePath } : null
+      }];
+    });
+    const builtPrompt = this.shotPrompts.build({
+      role: shotAsset.role,
+      customPrompt: shotAsset.generationPrompt,
+      shot: shotAsset.shot,
+      visualBible,
+      narrative: shotAsset.shot.project.childrenClipPlan?.narrative,
+      entities
+    });
+    const positivePrompt = builtPrompt.positivePrompt;
+    const negativePrompt = [shotAsset.negativePrompt, builtPrompt.negativePrompt].filter(Boolean).join(', ');
+    const usedReference = builtPrompt.referenceAssets[0] ?? null;
 
     await this.prisma.$transaction([
       this.prisma.childrenClipShotAsset.update({
@@ -367,6 +407,8 @@ export class ChildrenClipProcessor {
         positivePrompt, negativePrompt, checkpointName, ...dimensions, steps, cfg, sampler, scheduler, seed,
         filenamePrefix: `children-clips/shot-${shotAsset.shot.index + 1}-${shotAsset.role}-v${shotAsset.versionNumber}`,
         loraName: loraName || null, loraStrength,
+        referenceImagePath: usedReference ? this.storage.getAbsolutePath(usedReference.storagePath) : null,
+        denoise: usedReference ? 0.68 : undefined,
         onGpuWaiting: (owner) => this.assetProgress(
           job,
           22,
@@ -386,7 +428,7 @@ export class ChildrenClipProcessor {
           data: {
             organizationId, projectId, type: AssetType.image, mimeType: 'image/png', storagePath, sizeBytes,
             width: dimensions.width, height: dimensions.height,
-            metadata: { source: 'comfyui', shotAssetId, shotId: shotAsset.shotId, role: shotAsset.role, promptId: result.promptId, checkpointName, seed, steps, cfg, sampler, scheduler, loraName: loraName || null, loraStrength, positivePrompt, negativePrompt }
+            metadata: { source: 'comfyui', shotAssetId, shotId: shotAsset.shotId, role: shotAsset.role, promptId: result.promptId, checkpointName, seed, steps, cfg, sampler, scheduler, loraName: loraName || null, loraStrength, positivePrompt, negativePrompt, referenceAssetIds: usedReference ? [usedReference.id] : [], allowedEntityVersionIds: builtPrompt.allowedEntityVersionIds, forbiddenEntityVersionIds: builtPrompt.forbiddenEntityVersionIds }
           }
         });
         await tx.childrenClipShotAsset.update({
@@ -394,7 +436,8 @@ export class ChildrenClipProcessor {
           data: {
             assetId: asset.id, status: ChildrenClipShotAssetStatus.ready_for_review,
             generationEndedAt: new Date(), errorMessage: null,
-            generationMetadata: { provider: result.provider, promptId: result.promptId, checkpointName, ...dimensions, seed, steps, cfg, sampler, scheduler, loraName: loraName || null, loraStrength, positivePrompt, negativePrompt }
+            generationMetadata: { provider: result.provider, promptId: result.promptId, checkpointName, ...dimensions, seed, steps, cfg, sampler, scheduler, loraName: loraName || null, loraStrength, positivePrompt, negativePrompt, referenceAssetIds: usedReference ? [usedReference.id] : [], allowedEntityVersionIds: builtPrompt.allowedEntityVersionIds, forbiddenEntityVersionIds: builtPrompt.forbiddenEntityVersionIds },
+            reviewReason: null
           }
         });
       });
@@ -417,7 +460,7 @@ export class ChildrenClipProcessor {
   }
 
   async processPlanGeneration(job: Job<ChildrenClipPlanGenerationJobPayload>) {
-    const { projectId, organizationId, revisionInstruction } = job.data;
+    const { projectId, organizationId, revisionInstruction, mode = 'full' } = job.data;
     const bullJobId = String(job.id);
     const project = await this.prisma.project.findFirst({
       where: { id: projectId, organizationId, generationMode: 'children_clip', deletedAt: null },
@@ -425,6 +468,8 @@ export class ChildrenClipProcessor {
         childrenClip: true,
         childrenClipAudioAnalysis: true,
         childrenClipPlan: true,
+        childrenClipLocations: true,
+        childrenClipShots: { orderBy: { index: 'asc' }, include: { assets: true } },
         musicSections: { orderBy: { startSeconds: 'asc' } },
         childrenClipLyricCues: { orderBy: { lineIndex: 'asc' } },
         characterLinks: {
@@ -447,10 +492,41 @@ export class ChildrenClipProcessor {
     try {
       await this.planProgress(job, 5, 'STARTING', 'Worker iniciou o planejamento criativo.');
       await this.planProgress(job, 18, 'BUILDING_VISUAL_BIBLE', 'Definindo regras de arte, narrativa e seguranca infantil.');
+      const characters = project.characterLinks.map((link) => ({
+        name: link.character.name,
+        roleName: link.roleName,
+        versionId: link.selectedVersion!.id,
+        description: link.selectedVersion!.description
+      }));
+      const beatGrid = this.numberArray(project.childrenClipAudioAnalysis.beatGrid);
+      const skeletons = project.childrenClipShots.length
+        ? project.childrenClipShots.map((shot) => ({
+          index: shot.index,
+          sectionId: shot.musicSectionId ?? project.musicSections[0]?.id ?? '',
+          sectionTitle: project.musicSections.find((section) => section.id === shot.musicSectionId)?.title ?? 'Secao',
+          sectionType: project.musicSections.find((section) => section.id === shot.musicSectionId)?.type ?? 'instrumental',
+          startSeconds: shot.startSeconds,
+          endSeconds: shot.endSeconds,
+          lyricText: shot.lyricText
+        }))
+        : this.planning.buildSkeletons({
+          durationSeconds: project.childrenClipAudioAnalysis.durationSeconds!, beatGrid,
+          sections: project.musicSections, cues: project.childrenClipLyricCues
+        });
       const creative = await this.withPlanHeartbeat(job, this.ollama.generateJson<CreativePlanResponse>([
         {
           role: 'system',
-          content: 'You are a production designer and director for original 2D children music videos. Return JSON only with visualBible, narrative and sectionPlans. Keep actions safe, simple, joyful and feasible with layered 2D animation. sectionPlans must use the supplied section titles exactly.'
+          content: [
+            'You are a production designer and shot planner for original 2D children music videos.',
+            'Return JSON only with visualBible, narrative, locations and shotPlans.',
+            'Create exactly one semantic shotPlan for every supplied shotIndex.',
+            'Each shot must describe only its synchronized lyric moment, never repeat the global summary or logline.',
+            'Reuse locationKey for shots in the same place. Declare allowedEntities and forbiddenEntities using exact catalog names.',
+            'Respect narrative introduction order: an entity cannot appear before its introduction.',
+            'Backgrounds are composed separately, so shot action may contain entities but locations must describe environment only.',
+            'Entity type vehicle or object is not a human/animal character. Keep actions safe and feasible with layered 2D animation.',
+            mode === 'shots_only' ? 'Preserve the supplied visualBible and narrative; replan only locations and shotPlans.' : ''
+          ].filter(Boolean).join(' ')
         },
         {
           role: 'user',
@@ -459,13 +535,19 @@ export class ChildrenClipProcessor {
             concept: project.childrenClip.concept,
             visualStyle: project.childrenClip.visualStyle,
             audience: [project.childrenClip.audienceAgeMin, project.childrenClip.audienceAgeMax],
-            sections: project.musicSections.map((section) => ({ title: section.title, type: section.type, lyrics: section.lyricsExcerpt, energy: section.energy })),
-            characters: project.characterLinks.map((link) => ({ name: link.character.name, role: link.roleName, description: link.selectedVersion!.description })),
+            sections: project.musicSections.map((section) => ({ id: section.id, title: section.title, type: section.type, startSeconds: section.startSeconds, endSeconds: section.endSeconds, lyrics: section.lyricsExcerpt, energy: section.energy })),
+            shots: skeletons,
+            entityCatalog: characters.map((character) => ({ name: character.name, role: character.roleName, description: character.description })),
+            existingVisualBible: project.childrenClipPlan?.visualBible ?? null,
+            existingNarrative: project.childrenClipPlan?.narrative ?? null,
             revisionInstruction: revisionInstruction || null
           })
         }
       ]));
       await this.planProgress(job, 48, 'PLANNING_SECTIONS', `Direcao narrativa definida para ${project.musicSections.length} secoes.`);
+      const planningCreative = creative && mode === 'shots_only'
+        ? { ...creative, visualBible: undefined, narrative: undefined }
+        : creative;
       const result = this.planning.build({
         title: project.title,
         concept: project.childrenClip.concept,
@@ -473,30 +555,45 @@ export class ChildrenClipProcessor {
         audienceAgeMin: project.childrenClip.audienceAgeMin,
         audienceAgeMax: project.childrenClip.audienceAgeMax,
         durationSeconds: project.childrenClipAudioAnalysis.durationSeconds!,
-        beatGrid: this.numberArray(project.childrenClipAudioAnalysis.beatGrid),
+        beatGrid,
         sections: project.musicSections,
         cues: project.childrenClipLyricCues,
-        characters: project.characterLinks.map((link) => ({
-          name: link.character.name,
-          roleName: link.roleName,
-          versionId: link.selectedVersion!.id,
-          description: link.selectedVersion!.description
-        })),
-        creative
+        characters,
+        creative: planningCreative,
+        existingVisualBible: project.childrenClipPlan?.visualBible,
+        existingNarrative: project.childrenClipPlan?.narrative,
+        existingShots: project.childrenClipShots.length ? project.childrenClipShots.map((shot) => ({
+          index: shot.index, startSeconds: shot.startSeconds, endSeconds: shot.endSeconds,
+          musicSectionId: shot.musicSectionId ?? project.musicSections[0]?.id ?? '', lyricText: shot.lyricText
+        })) : undefined
       });
       await this.planProgress(job, 72, 'BUILDING_TIMELINE', `Montando ${result.shots.length} tomadas na grade musical.`);
       this.validateTimeline(result.shots, project.childrenClipAudioAnalysis.durationSeconds!);
       await this.planProgress(job, 88, 'VALIDATING', 'Validando cobertura, continuidade e identidades aprovadas.');
 
       await this.prisma.$transaction(async (tx) => {
-        await tx.childrenClipShot.deleteMany({ where: { projectId } });
-        await tx.childrenClipShot.createMany({
-          data: result.shots.map((shot) => ({
+        const locationIds = new Map<string, string>();
+        for (const location of result.locations) {
+          const persisted = await tx.childrenClipLocation.upsert({
+            where: { projectId_key: { projectId, key: location.key } },
+            create: { projectId, key: location.key, name: location.name, description: location.description, timeOfDay: location.timeOfDay, visualPrompt: location.visualPrompt, continuityRules: location.continuityRules },
+            update: { name: location.name, description: location.description, timeOfDay: location.timeOfDay, visualPrompt: location.visualPrompt, continuityRules: location.continuityRules }
+          });
+          locationIds.set(location.key, persisted.id);
+        }
+        const shotData = (shot: typeof result.shots[number]) => ({
             projectId,
             musicSectionId: shot.musicSectionId,
+            locationId: locationIds.get(shot.locationKey),
             index: shot.index,
             title: shot.title,
             description: shot.description,
+            purpose: shot.purpose,
+            primaryFocus: shot.primaryFocus,
+            timeOfDay: shot.timeOfDay,
+            emotion: shot.emotion,
+            motionIntent: shot.motionIntent,
+            continuityFromPreviousShot: shot.continuityFromPreviousShot,
             startSeconds: shot.startSeconds,
             endSeconds: shot.endSeconds,
             durationSeconds: shot.durationSeconds,
@@ -509,10 +606,28 @@ export class ChildrenClipProcessor {
             transitionOut: shot.transitionOut,
             lyricText: shot.lyricText,
             characterVersionIds: shot.characterVersionIds,
+            forbiddenEntityVersionIds: shot.forbiddenEntityVersionIds,
+            objects: shot.objects,
             layers: shot.layers as Prisma.InputJsonValue,
-            motionPreset: shot.motionPreset
-          }))
+            motionPreset: shot.motionPreset,
+            status: 'needs_revision' as const
         });
+        if (project.childrenClipShots.length) {
+          for (const shot of result.shots) {
+            const current = project.childrenClipShots.find((item) => item.index === shot.index);
+            if (!current) continue;
+            const backgroundChanged = current.backgroundPrompt.trim() !== shot.backgroundPrompt.trim();
+            await tx.childrenClipShot.update({ where: { id: current.id }, data: shotData(shot) });
+            if (backgroundChanged) {
+              await tx.childrenClipShotAsset.updateMany({
+                where: { shotId: current.id, role: 'background', status: { in: ['approved', 'ready_for_review'] } },
+                data: { status: 'ready_for_review', approvedAt: null, reviewReason: 'A especificacao visual da tomada mudou no replanejamento. Revise este asset antes de reutiliza-lo.' }
+              });
+            }
+          }
+        } else {
+          await tx.childrenClipShot.createMany({ data: result.shots.map(shotData) });
+        }
         await tx.childrenClipPlan.update({
           where: { projectId },
           data: {
@@ -521,7 +636,8 @@ export class ChildrenClipProcessor {
             visualBible: result.visualBible as Prisma.InputJsonValue,
             narrative: result.narrative as Prisma.InputJsonValue,
             generationMetadata: {
-              provider: creative ? 'ollama+deterministic-timeline' : 'deterministic-fallback',
+              provider: creative ? 'ollama-shot-plans+deterministic-validation' : 'deterministic-shot-fallback',
+              mode,
               shotCount: result.shots.length,
               characterVersionIds: project.characterLinks.map((link) => link.selectedVersion!.id),
               generatedAt: new Date().toISOString()

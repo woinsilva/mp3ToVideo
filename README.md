@@ -227,6 +227,9 @@ Depois de rodar `corepack pnpm prisma:seed`, existe uma conta de desenvolvimento
 
 Implementado:
 
+- Shot Plans semânticos por tomada para clipes infantis, com letra sincronizada, ordem de introdução, localizações reutilizáveis e prompts de fundo sem personagens;
+- replanejamento não destrutivo de projetos existentes pela ação `Replanejar tomadas` na Etapa 4;
+
 - autenticacao e workspace pessoal
 - criacao de projeto e upload MP3
 - fila principal de processamento

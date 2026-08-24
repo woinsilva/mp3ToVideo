@@ -45,6 +45,7 @@ export interface ChildrenClipPlanGenerationJobPayload {
   organizationId: string;
   requestedByUserId: string;
   revisionInstruction?: string | null;
+  mode?: 'full' | 'shots_only';
 }
 
 export interface ChildrenClipAssetGenerationJobPayload {

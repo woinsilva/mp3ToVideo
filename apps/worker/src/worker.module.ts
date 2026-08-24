@@ -11,6 +11,7 @@ import { AudioMetadataService } from './services/audio-metadata.service';
 import { ChildrenClipAudioAnalysisService } from './services/children-clip-audio-analysis.service';
 import { ChildrenClipLyricsAlignmentService } from './services/children-clip-lyrics-alignment.service';
 import { ChildrenClipPlanningService } from './services/children-clip-planning.service';
+import { ChildrenClipShotPromptService } from './services/children-clip-shot-prompt.service';
 import { ChildrenClip2dRendererService } from './services/children-clip-2d-renderer.service';
 import { ChildrenClipCompositionService } from './services/children-clip-composition.service';
 import { GpuLeaseService } from './services/gpu-lease.service';
@@ -65,6 +66,7 @@ import { ChildrenClipWorkerService } from './workers/children-clip-worker.servic
     ChildrenClipAudioAnalysisService,
     ChildrenClipLyricsAlignmentService,
     ChildrenClipPlanningService,
+    ChildrenClipShotPromptService,
     ChildrenClip2dRendererService,
     ChildrenClipCompositionService,
     GpuLeaseService,

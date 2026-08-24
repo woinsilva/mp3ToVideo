@@ -202,12 +202,31 @@ export class ChildrenClipAssetsService {
     const role = input.role as ChildrenClipShotAssetRole;
     const shot = await this.prisma.childrenClipShot.findUnique({ where: { id: shotId } });
     if (!shot) throw new NotFoundException('Tomada nao encontrada');
+    const context = await this.prisma.childrenClipShot.findUnique({
+      where: { id: shotId },
+      include: {
+        project: {
+          include: {
+            childrenClipPlan: true,
+            characterLinks: { include: { character: true } }
+          }
+        }
+      }
+    });
+    if (!context) throw new NotFoundException('Tomada nao encontrada');
+    const prompt = input.prompt?.trim() || (role === 'background' ? context.backgroundPrompt : context.description);
+    const forbiddenIds = this.stringArray(context.forbiddenEntityVersionIds);
+    const forbiddenNames = context.project.characterLinks
+      .filter((link) => link.selectedVersionId && forbiddenIds.includes(link.selectedVersionId))
+      .map((link) => link.character.name);
+    this.assertSafeGeneration(context, role, prompt);
     const record = await this.prisma.childrenClipShotAsset.create({
       data: {
         shotId, role, origin: 'generated', status: 'draft',
         versionNumber: await this.nextVersion(shotId, role),
         label: input.label?.trim() || null,
-        generationPrompt: input.prompt?.trim() || (role === 'background' ? shot.backgroundPrompt : shot.description)
+        generationPrompt: prompt,
+        negativePrompt: forbiddenNames.length ? `forbidden entities: ${forbiddenNames.join(', ')}` : null
       }
     });
     await this.enqueueExisting(projectId, organizationId, userId, record.id);
@@ -218,7 +237,7 @@ export class ChildrenClipAssetsService {
     await this.prisma.$transaction([
       this.prisma.childrenClipShotAsset.update({
         where: { id: shotAssetId },
-        data: { status: 'queued', bullJobId: queued.bullJobId, errorMessage: null, generationStartedAt: null, generationEndedAt: null }
+        data: { status: 'queued', bullJobId: queued.bullJobId, errorMessage: null, reviewReason: null, generationStartedAt: null, generationEndedAt: null }
       }),
       this.prisma.processingJob.create({
         data: {
@@ -254,10 +273,59 @@ export class ChildrenClipAssetsService {
       where: { id: projectId, organizationId, generationMode: 'children_clip', deletedAt: null },
       include: {
         childrenClip: true, childrenClipPlan: true,
-        childrenClipShots: { orderBy: { index: 'asc' }, include: { assets: { orderBy: [{ role: 'asc' }, { versionNumber: 'desc' }], include: { asset: true } } } }
+        characterLinks: { include: { character: true } },
+        childrenClipShots: {
+          orderBy: { index: 'asc' },
+          include: {
+            location: true,
+            musicSection: true,
+            assets: { orderBy: [{ role: 'asc' }, { versionNumber: 'desc' }], include: { asset: true } }
+          }
+        }
       }
     });
     if (!project?.childrenClip) throw new NotFoundException('Projeto de clipe infantil nao encontrado');
     return project;
+  }
+
+  private assertSafeGeneration(
+    shot: {
+      index: number; purpose: string; description: string; backgroundPrompt: string;
+      characterVersionIds: unknown; forbiddenEntityVersionIds: unknown;
+      project: { childrenClipPlan: { narrative: unknown } | null; characterLinks: Array<{ selectedVersionId: string | null; character: { name: string } }> };
+    },
+    role: ChildrenClipShotAssetRole,
+    prompt: string
+  ) {
+    if (!shot.purpose.trim()) throw new BadRequestException(`A tomada ${shot.index + 1} usa o plano legado. Use Replanejar tomadas antes de gerar novos assets.`);
+    const allowed = this.stringArray(shot.characterVersionIds);
+    const forbidden = this.stringArray(shot.forbiddenEntityVersionIds);
+    if (new Set(allowed).size !== allowed.length || new Set(forbidden).size !== forbidden.length) {
+      throw new BadRequestException('O Shot Plan possui entidades duplicadas');
+    }
+    if (allowed.some((id) => forbidden.includes(id))) throw new BadRequestException('O Shot Plan possui conflito entre entidades permitidas e proibidas');
+    const knownIds = new Set(shot.project.characterLinks.map((link) => link.selectedVersionId).filter(Boolean));
+    if ([...allowed, ...forbidden].some((id) => !knownIds.has(id))) throw new BadRequestException('O Shot Plan referencia uma entidade desconhecida');
+    const narrative = shot.project.childrenClipPlan?.narrative;
+    const global = narrative && typeof narrative === 'object' && !Array.isArray(narrative) ? narrative as Record<string, unknown> : {};
+    const summaries = [global.summary, global.logline].filter((item): item is string => typeof item === 'string').map((item) => this.normalize(item));
+    if (summaries.includes(this.normalize(prompt))) throw new BadRequestException('A descricao visual da tomada nao pode repetir a narrativa global');
+    if (role === 'background') {
+      const entity = shot.project.characterLinks.find((link) => this.containsName(prompt, link.character.name));
+      if (entity) throw new BadRequestException(`Fundo sem personagens nao pode solicitar ${entity.character.name}`);
+    }
+  }
+
+  private stringArray(value: unknown): string[] {
+    return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+  }
+
+  private normalize(value: string) {
+    return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  }
+
+  private containsName(text: string, name: string) {
+    const target = this.normalize(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return target.length > 1 && new RegExp(`(^|[^a-z0-9])${target}($|[^a-z0-9])`).test(this.normalize(text));
   }
 }

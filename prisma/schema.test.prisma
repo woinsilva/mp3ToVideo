@@ -327,6 +327,7 @@ model Project {
   childrenClipLyricCues     ChildrenClipLyricCue[]
   childrenClipPlan          ChildrenClipPlan?
   childrenClipShots         ChildrenClipShot[]
+  childrenClipLocations     ChildrenClipLocation[]
   characterLinks            ProjectCharacter[]
   childrenClipFinalRenders  ChildrenClipFinalRender[]
   originatedCharacters      Character[]                @relation("CharacterOriginProject")
@@ -592,13 +593,38 @@ model ChildrenClipPlan {
   @@index([status, updatedAt])
 }
 
+model ChildrenClipLocation {
+  id              String             @id @default(cuid())
+  projectId       String
+  key             String
+  name            String
+  description     String
+  timeOfDay       String?
+  visualPrompt    String
+  continuityRules Json?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  project         Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  shots           ChildrenClipShot[]
+
+  @@unique([projectId, key])
+  @@index([projectId])
+}
+
 model ChildrenClipShot {
   id                  String                          @id @default(cuid())
   projectId           String
   musicSectionId      String?
+  locationId          String?
   index               Int
   title               String
   description         String
+  purpose             String                  @default("")
+  primaryFocus        String?
+  timeOfDay           String?
+  emotion             String?
+  motionIntent        String?
+  continuityFromPreviousShot String?
   startSeconds        Float
   endSeconds          Float
   durationSeconds     Float
@@ -613,6 +639,8 @@ model ChildrenClipShot {
   transitionOut       String?
   lyricText           String?
   characterVersionIds Json?
+  forbiddenEntityVersionIds Json?
+  objects             Json?
   layers              Json?
   motionPreset        String?
   revisionInstruction String?
@@ -620,6 +648,7 @@ model ChildrenClipShot {
   updatedAt           DateTime                        @updatedAt
   project             Project                         @relation(fields: [projectId], references: [id], onDelete: Cascade)
   musicSection        MusicSection?                   @relation(fields: [musicSectionId], references: [id], onDelete: SetNull)
+  location            ChildrenClipLocation?           @relation(fields: [locationId], references: [id], onDelete: SetNull)
   assets              ChildrenClipShotAsset[]
   renderAttempts      ChildrenClipShotRenderAttempt[]
   heroShotAttempts    ChildrenClipHeroShotAttempt[]
@@ -627,6 +656,7 @@ model ChildrenClipShot {
   @@unique([projectId, index])
   @@index([projectId, startSeconds])
   @@index([musicSectionId])
+  @@index([locationId])
 }
 
 model ChildrenClipShotAsset {
@@ -645,6 +675,7 @@ model ChildrenClipShotAsset {
   bullJobId           String?
   generationMetadata  Json?
   errorMessage        String?
+  reviewReason        String?
   generationStartedAt DateTime?
   generationEndedAt   DateTime?
   approvedAt          DateTime?

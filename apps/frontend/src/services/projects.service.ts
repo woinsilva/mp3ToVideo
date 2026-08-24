@@ -299,6 +299,12 @@ class ProjectsService {
     }, token);
   }
 
+  replanChildrenClipShots(projectId: string, revisionInstruction: string | null, token: string) {
+    return apiService.request<ChildrenClipPlanStatus>(`/projects/${projectId}/children-clip/production-plan/replan-shots`, {
+      method: 'POST', body: JSON.stringify({ revisionInstruction })
+    }, token);
+  }
+
   updateChildrenClipProductionPlan(projectId: string, input: { visualBible: Record<string, unknown>; narrative: Record<string, unknown> }, token: string) {
     return apiService.request<ChildrenClipPlanStatus>(`/projects/${projectId}/children-clip/production-plan`, {
       method: 'PUT', body: JSON.stringify(input)

@@ -263,3 +263,12 @@ O modulo sera considerado completo quando um usuario puder, sem operacao manual 
 - API integrada cobrindo criacao, upload, biblioteca de personagens, assets, aprovacoes, rejeicoes,
   filas, retry e downloads autenticados.
 
+#### Shot Plan e prompts da Etapa 4
+
+- A Etapa 4 separa três níveis: Bíblia/Narrativa globais, Shot Plan estruturado por tomada e prompt final por papel de asset.
+- Cada tomada persiste propósito, localização reutilizável, foco, horário, emoção, intenção de movimento, continuidade e listas de entidades permitidas/proibidas.
+- O background é sempre um plate ambiental vazio. Personagens, animais, criaturas, mascotes, veículos e demais entidades cadastradas são compostos depois e não entram no prompt nem nas referências do fundo.
+- Prompts de storyboard, foreground e prop recebem somente identidades e referências aprovadas das entidades permitidas. Entidades proibidas entram no negative prompt.
+- O fallback usa seção, letra sincronizada, story beat, enquadramento e localização; summary/logline global nunca vira descrição de tomada.
+- `Replanejar tomadas` mantém IDs e arquivos existentes. Um background aprovado cujo Shot Plan mudou volta para revisão com motivo explícito, sem apagar o asset.
+- Antes de aprovar ou gerar, o sistema rejeita conflitos allowed/forbidden, entidades desconhecidas ou duplicadas, plano legado sem semântica, descrição igual à narrativa global e background que mencione entidade cadastrada.

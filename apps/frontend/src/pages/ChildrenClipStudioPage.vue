@@ -226,14 +226,22 @@
           <span v-if="productionAssets" class="version-status" :class="{ 'version-status--approved': productionAssets.summary.readyForAnimation }">{{ productionAssets.summary.approvedBackgrounds }}/{{ productionAssets.summary.totalShots }} fundos aprovados</span>
         </div>
         <div class="production-assets-actions">
+          <button class="app-button app-button--secondary" type="button" :disabled="replanningShots" @click="replanShots">{{ replanningShots ? 'Replanejando...' : 'Replanejar tomadas' }}</button>
           <button class="app-button" type="button" :disabled="generatingBackgrounds" @click="generateMissingBackgrounds">{{ generatingBackgrounds ? 'Enfileirando...' : 'Gerar fundos que faltam' }}</button>
           <span v-if="productionAssets?.summary.readyForAnimation" class="approved-copy"><v-icon icon="mdi-check-decagram" /> Assets mínimos prontos para animação</span>
         </div>
 
         <div v-if="productionAssets" class="production-shot-list">
           <article v-for="shot in productionAssets.shots" :key="shot.id" class="shot-asset-card">
-            <header><div><strong>{{ shot.index + 1 }}. {{ shot.title }}</strong><small>{{ formatTimePrecise(shot.startSeconds) }} - {{ formatTimePrecise(shot.endSeconds) }}</small></div><span>{{ shot.assets.length }} versão(ões)</span></header>
-            <p>{{ shot.environment }}</p>
+            <header><div><strong>{{ shot.index + 1 }}. {{ shot.title }}</strong><small>{{ shot.musicSection?.title || 'Seção' }} · {{ formatTimePrecise(shot.startSeconds) }} - {{ formatTimePrecise(shot.endSeconds) }}</small></div><span>{{ shot.assets.length }} versão(ões)</span></header>
+            <div class="shot-plan-summary">
+              <p><strong>Letra:</strong> {{ shot.lyricText || 'Trecho instrumental' }}</p>
+              <p><strong>Descrição visual:</strong> {{ shot.description }}</p>
+              <p><strong>Local:</strong> {{ shot.location?.name || shot.environment }}<span v-if="shot.timeOfDay"> · {{ shot.timeOfDay }}</span></p>
+              <p><strong>Foco:</strong> {{ shot.primaryFocus || 'Ambiente' }}</p>
+              <p><strong>Permitidos:</strong> {{ entityNames(shot.characterVersionIds) || 'Nenhuma entidade cadastrada' }}</p>
+              <p><strong>Proibidos:</strong> {{ entityNames(shot.forbiddenEntityVersionIds) || 'Nenhum' }}</p>
+            </div>
             <div v-if="shot.assets.length" class="shot-assets-grid">
               <figure v-for="asset in shot.assets" :key="asset.id" :class="{ 'shot-asset--approved': asset.status === 'approved' }">
                 <img v-if="shotAssetUrls[asset.id]" :src="shotAssetUrls[asset.id]" :alt="asset.label || asset.role" />
@@ -242,6 +250,7 @@
                 <figcaption><strong>{{ shotAssetRoleLabel(asset.role) }} · v{{ asset.versionNumber }}</strong><span class="version-status" :class="`version-status--${asset.status}`">{{ shotAssetStatusLabel(asset.status) }}</span></figcaption>
                 <div v-if="asset.status === 'queued' || asset.status === 'generating'" class="asset-job-progress"><v-progress-linear :model-value="asset.job?.progress || 0" color="warning" /><small>{{ asset.job?.detailMessage || 'Aguardando worker...' }} ({{ asset.job?.progress || 0 }}%)</small></div>
                 <v-alert v-if="asset.errorMessage || asset.job?.errorMessage" density="compact" type="error" variant="tonal">{{ asset.errorMessage || asset.job?.errorMessage }}</v-alert>
+                <v-alert v-if="asset.reviewReason" density="compact" type="warning" variant="tonal">{{ asset.reviewReason }}</v-alert>
                 <div class="version-actions"><button v-if="asset.status === 'ready_for_review'" class="app-button" type="button" @click="approveShotAsset(asset.id)">Aprovar</button><button v-if="asset.status === 'ready_for_review'" class="app-button app-button--secondary" type="button" @click="rejectShotAsset(asset.id)">Rejeitar</button><button v-if="asset.status === 'failed'" class="app-button app-button--secondary" type="button" @click="retryShotAsset(asset.id)">Tentar novamente</button><span v-if="asset.status === 'approved'" class="approved-copy"><v-icon icon="mdi-lock-check" /> Aprovado</span></div>
               </figure>
             </div>
@@ -341,6 +350,7 @@ export default class ChildrenClipStudioPage extends Vue {
   replacementTrack: File | null = null;
   replacingTrack = false;
   generatingBackgrounds = false;
+  replanningShots = false;
   shotAssetUrls: Record<string, string> = {};
   shotAssetRoles: Record<string, ChildrenClipShotAssetRole> = {};
   shotAssetPrompts: Record<string, string> = {};
@@ -635,6 +645,16 @@ export default class ChildrenClipStudioPage extends Vue {
     this.generatingBackgrounds = true;
     try { this.productionAssets = await projectsService.generateMissingChildrenClipBackgrounds(this.projectId, this.authStore.token); } catch (error) { this.captureError(error, 'Falha ao enfileirar os fundos'); } finally { this.generatingBackgrounds = false; }
   }
+  async replanShots() {
+    if (!this.authStore.token) return;
+    this.replanningShots = true;
+    try {
+      this.planStatus = await projectsService.replanChildrenClipShots(this.projectId, this.planRevision.trim() || null, this.authStore.token);
+      this.planRevision = '';
+      this.productionAssets = null;
+    } catch (error) { this.captureError(error, 'Falha ao replanejar tomadas'); }
+    finally { this.replanningShots = false; }
+  }
   async generateShotAsset(shotId: string) {
     if (!this.authStore.token) return;
     const role = (this.shotAssetRoles[shotId] || 'background') as Exclude<ChildrenClipShotAssetRole, 'character_pose'>;
@@ -647,7 +667,8 @@ export default class ChildrenClipStudioPage extends Vue {
     if (role === 'character_pose' && !characterVersionId) { this.errorMessage = 'Selecione a qual personagem pertence esta pose.'; return; }
     try { this.productionAssets = await projectsService.uploadChildrenClipShotAsset(this.projectId, shotId, this.shotAssetFiles[shotId]!, role, characterVersionId, this.authStore.token); this.shotAssetFiles = { ...this.shotAssetFiles, [shotId]: null }; await this.loadShotAssetUrls(); } catch (error) { this.captureError(error, 'Falha ao enviar asset'); }
   }
-  charactersForShot(shot: ChildrenClipShot) { const ids = Array.isArray(shot.characterVersionIds) ? shot.characterVersionIds : []; return this.characters.filter((character) => character.selectedVersionId && (!ids.length || ids.includes(character.selectedVersionId))); }
+  charactersForShot(shot: ChildrenClipShot) { const explicit = Array.isArray(shot.characterVersionIds); const ids = explicit ? shot.characterVersionIds as string[] : []; return this.characters.filter((character) => character.selectedVersionId && (!explicit || ids.includes(character.selectedVersionId))); }
+  entityNames(versionIds: string[] | null) { const ids = Array.isArray(versionIds) ? versionIds : []; return this.characters.filter((character) => character.selectedVersionId && ids.includes(character.selectedVersionId)).map((character) => character.name).join(', '); }
   async approveShotAsset(assetId: string) { if (!this.authStore.token) return; try { this.productionAssets = await projectsService.approveChildrenClipShotAsset(this.projectId, assetId, this.authStore.token); if (this.productionAssets.summary.readyForAnimation) await Promise.all([this.loadAnimation(), this.loadOutput()]); } catch (error) { this.captureError(error, 'Falha ao aprovar asset'); } }
   async rejectShotAsset(assetId: string) { if (!this.authStore.token) return; try { this.productionAssets = await projectsService.rejectChildrenClipShotAsset(this.projectId, assetId, this.authStore.token); } catch (error) { this.captureError(error, 'Falha ao rejeitar asset'); } }
   async retryShotAsset(assetId: string) { if (!this.authStore.token) return; try { this.productionAssets = await projectsService.retryChildrenClipShotAsset(this.projectId, assetId, this.authStore.token); } catch (error) { this.captureError(error, 'Falha ao reiniciar geracao do asset'); } }
@@ -753,6 +774,8 @@ export default class ChildrenClipStudioPage extends Vue {
 .production-assets-actions { display: flex; align-items: center; gap: 16px; margin: 18px 0; }
 .production-shot-list { display: grid; gap: 16px; }
 .shot-asset-card { padding: 16px; border: 1px solid #dfe3e8; border-radius: 14px; background: #fafbfc; }
+.shot-plan-summary { display: grid; gap: 6px; padding: 12px; border-radius: 10px; background: #fff; }
+.shot-plan-summary p { margin: 0; line-height: 1.45; }
 .shot-asset-card > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .shot-asset-card > header div { display: grid; gap: 3px; }
 .shot-asset-card small, .shot-asset-card > header > span, .shot-asset-card > p { color: #65676b; }

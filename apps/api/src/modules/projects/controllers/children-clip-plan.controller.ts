@@ -23,6 +23,11 @@ export class ChildrenClipPlanController {
     return this.plans.enqueue(projectId, user.organizationId, user.userId, input);
   }
 
+  @Post('replan-shots')
+  replanShots(@CurrentUser() user: AuthenticatedUser, @Param('projectId') projectId: string, @Body() input: GenerateChildrenClipPlanDto) {
+    return this.plans.replanShots(projectId, user.organizationId, user.userId, input);
+  }
+
   @Put()
   update(@CurrentUser() user: AuthenticatedUser, @Param('projectId') projectId: string, @Body() input: UpdateChildrenClipPlanDto) {
     return this.plans.updatePlan(projectId, user.organizationId, input);

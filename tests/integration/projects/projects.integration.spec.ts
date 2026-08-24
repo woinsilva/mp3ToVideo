@@ -406,9 +406,19 @@ describe('Projects integration', () => {
       where: { projectId: projectResponse.body.id },
       data: { status: 'ready_for_review', visualBible: { style: '2D' }, narrative: { summary: 'Horta feliz' } }
     });
+    const productionLocation = await prisma.childrenClipLocation.create({
+      data: {
+        projectId: projectResponse.body.id,
+        key: 'horta',
+        name: 'Horta colorida',
+        description: 'Horta infantil com canteiros e cerca clara',
+        timeOfDay: 'manha clara',
+        visualPrompt: 'Horta infantil vazia em 2D, canteiros e cerca clara'
+      }
+    });
     await prisma.childrenClipShot.createMany({ data: [
-      { projectId: projectResponse.body.id, index: 0, title: 'Inicio', description: 'Inicio', startSeconds: 0, endSeconds: 6, durationSeconds: 6, framing: 'geral', cameraMovement: 'pan', characterAction: 'plantar', environment: 'horta', backgroundPrompt: 'horta 2D' },
-      { projectId: projectResponse.body.id, index: 1, title: 'Final', description: 'Final', startSeconds: 6, endSeconds: 12, durationSeconds: 6, framing: 'medio', cameraMovement: 'fixa', characterAction: 'cantar', environment: 'horta', backgroundPrompt: 'horta 2D' }
+      { projectId: projectResponse.body.id, locationId: productionLocation.id, index: 0, title: 'Inicio', description: 'Plano geral dos canteiros durante o inicio do plantio.', purpose: 'Apresentar o plantio', primaryFocus: 'Bibi', startSeconds: 0, endSeconds: 6, durationSeconds: 6, framing: 'geral', cameraMovement: 'pan', characterAction: 'plantar', environment: 'horta', backgroundPrompt: 'horta 2D vazia com canteiros', characterVersionIds: [versionId], forbiddenEntityVersionIds: [] },
+      { projectId: projectResponse.body.id, locationId: productionLocation.id, index: 1, title: 'Final', description: 'Plano medio dos canteiros durante a celebracao final.', purpose: 'Encerrar o plantio', primaryFocus: 'Bibi', startSeconds: 6, endSeconds: 12, durationSeconds: 6, framing: 'medio', cameraMovement: 'fixa', characterAction: 'cantar', environment: 'horta', backgroundPrompt: 'horta 2D vazia com canteiros', characterVersionIds: [versionId], forbiddenEntityVersionIds: [] }
     ] });
     const shots = await prisma.childrenClipShot.findMany({ where: { projectId: projectResponse.body.id }, orderBy: { index: 'asc' } });
     await request(app.getHttpServer())
@@ -422,6 +432,18 @@ describe('Projects integration', () => {
       .set('Authorization', `Bearer ${authToken}`)
       .expect(201)
       .expect(({ body }) => expect(body.plan.status).toBe('approved'));
+
+    const descriptionsBeforeRegeneration = shots.map((shot) => shot.description);
+    await request(app.getHttpServer())
+      .post(`/projects/${projectResponse.body.id}/children-clip/production-assets/shots/${shots[0].id}/generate`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ role: 'foreground', prompt: 'Regador infantil isolado em primeiro plano.' })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.shots[0].assets).toEqual(expect.arrayContaining([expect.objectContaining({ role: 'foreground', status: 'queued' })]));
+        expect(body.shots[1].assets).toHaveLength(0);
+        expect(body.shots.map((shot: { description: string }) => shot.description)).toEqual(descriptionsBeforeRegeneration);
+      });
 
     const shotAssetResponse = await request(app.getHttpServer())
       .post(`/projects/${projectResponse.body.id}/children-clip/production-assets/shots/${shots[0].id}/upload`)
@@ -493,6 +515,17 @@ describe('Projects integration', () => {
           width: 1280, height: 720, frameCount: 96, hasVideo: false
         });
       });
+
+    const preservedAssetId = shotAsset.id;
+    const preservedShotIds = shots.map((shot) => shot.id);
+    await request(app.getHttpServer())
+      .post(`/projects/${projectResponse.body.id}/children-clip/production-plan/replan-shots`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ revisionInstruction: 'Tornar cada tomada especifica para sua letra.' })
+      .expect(201)
+      .expect(({ body }) => expect(body.plan.status).toBe('queued'));
+    expect((await prisma.childrenClipShot.findMany({ where: { projectId: projectResponse.body.id }, orderBy: { index: 'asc' } })).map((shot) => shot.id)).toEqual(preservedShotIds);
+    expect(await prisma.childrenClipShotAsset.findUnique({ where: { id: preservedAssetId } })).not.toBeNull();
 
     const characterAssetId = listResponse.body[0].versions[0].assets[0].id;
     const assetId = listResponse.body[0].versions[0].assets[0].assetId;

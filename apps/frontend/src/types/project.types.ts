@@ -223,6 +223,12 @@ export interface ChildrenClipShot {
   index: number;
   title: string;
   description: string;
+  purpose: string;
+  primaryFocus: string | null;
+  timeOfDay: string | null;
+  emotion: string | null;
+  motionIntent: string | null;
+  continuityFromPreviousShot: string | null;
   startSeconds: number;
   endSeconds: number;
   durationSeconds: number;
@@ -237,6 +243,10 @@ export interface ChildrenClipShot {
   transitionOut: string | null;
   lyricText: string | null;
   characterVersionIds: string[] | null;
+  forbiddenEntityVersionIds: string[] | null;
+  objects: string[] | null;
+  location: { id: string; key: string; name: string; description: string; timeOfDay: string | null; visualPrompt: string } | null;
+  musicSection: { id: string; title: string; type: string } | null;
   layers: Array<Record<string, unknown>> | null;
   motionPreset: string | null;
   revisionInstruction: string | null;
@@ -262,13 +272,14 @@ export interface ChildrenClipShotAsset {
   id: string;
   role: ChildrenClipShotAssetRole;
   origin: 'generated' | 'uploaded';
-  status: 'draft' | 'queued' | 'generating' | 'ready_for_review' | 'approved' | 'failed';
+  status: 'draft' | 'queued' | 'generating' | 'ready_for_review' | 'approved' | 'rejected' | 'failed';
   versionNumber: number;
   label: string | null;
   characterVersionId: string | null;
   generationPrompt: string | null;
   seed: number | null;
   errorMessage: string | null;
+  reviewReason: string | null;
   asset: { id: string; mimeType: string; width: number | null; height: number | null; sizeBytes: number } | null;
   job: { status: 'queued' | 'active' | 'completed' | 'failed' | 'retrying'; progress: number; detailMessage: string | null; errorMessage: string | null; activityLog: Array<{ stage: string; message: string; progress: number; timestamp: string }> | null } | null;
 }

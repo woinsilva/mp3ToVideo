@@ -43,7 +43,31 @@ export class ChildrenClipPlanService {
     requestedByUserId: string,
     input: GenerateChildrenClipPlanDto
   ) {
+    return this.enqueueMode(projectId, organizationId, requestedByUserId, input, 'full');
+  }
+
+  async replanShots(
+    projectId: string,
+    organizationId: string,
+    requestedByUserId: string,
+    input: GenerateChildrenClipPlanDto
+  ) {
     const project = await this.getOwnedProject(projectId, organizationId);
+    if (!project.childrenClipPlan || !project.childrenClipShots.length) {
+      throw new BadRequestException('Gere o plano inicial antes de replanejar as tomadas');
+    }
+    return this.enqueueMode(projectId, organizationId, requestedByUserId, input, 'shots_only', project);
+  }
+
+  private async enqueueMode(
+    projectId: string,
+    organizationId: string,
+    requestedByUserId: string,
+    input: GenerateChildrenClipPlanDto,
+    mode: 'full' | 'shots_only',
+    loadedProject?: Awaited<ReturnType<ChildrenClipPlanService['getOwnedProject']>>
+  ) {
+    const project = loadedProject ?? await this.getOwnedProject(projectId, organizationId);
     const blockers = this.readinessBlockers(project);
     if (blockers.length) throw new BadRequestException(blockers.join(' '));
     if (project.childrenClipPlan?.status === 'queued' || project.childrenClipPlan?.status === 'generating') {
@@ -51,7 +75,7 @@ export class ChildrenClipPlanService {
     }
     const revisionInstruction = input.revisionInstruction?.trim() || null;
     const queued = await this.queue.enqueueProductionPlan({
-      projectId, organizationId, requestedByUserId, revisionInstruction
+      projectId, organizationId, requestedByUserId, revisionInstruction, mode
     });
     await this.prisma.$transaction([
       this.prisma.childrenClipPlan.upsert({
@@ -71,8 +95,8 @@ export class ChildrenClipPlanService {
         data: {
           projectId, queueName: CHILDREN_CLIP_QUEUE_NAME, jobName: CHILDREN_CLIP_PLAN_GENERATE_JOB_NAME,
           bullJobId: queued.bullJobId, status: ProcessingJobStatus.queued, progress: 0,
-          detailMessage: 'Planejamento narrativo enfileirado.',
-          activityLog: [{ stage: 'QUEUED', message: 'Planejamento narrativo enfileirado.', progress: 0, timestamp: new Date().toISOString() }]
+          detailMessage: mode === 'shots_only' ? 'Replanejamento semantico das tomadas enfileirado.' : 'Planejamento narrativo enfileirado.',
+          activityLog: [{ stage: 'QUEUED', message: mode === 'shots_only' ? 'Replanejamento semantico das tomadas enfileirado.' : 'Planejamento narrativo enfileirado.', progress: 0, timestamp: new Date().toISOString() }]
         }
       })
     ]);
@@ -144,6 +168,7 @@ export class ChildrenClipPlanService {
       throw new BadRequestException('O plano precisa estar pronto para revisao');
     }
     if (!project.childrenClipShots.length) throw new BadRequestException('O storyboard nao possui tomadas');
+    this.validateSemanticShots(project);
     const selectedVersionIds = new Set(project.characterLinks.map((link) => link.selectedVersionId).filter(Boolean));
     const hasStaleIdentity = project.childrenClipShots.some((shot) =>
       Array.isArray(shot.characterVersionIds) &&
@@ -186,6 +211,31 @@ export class ChildrenClipPlanService {
     if (status === 'queued' || status === 'generating') throw new BadRequestException('Aguarde a geracao do plano terminar');
   }
 
+  private validateSemanticShots(project: Awaited<ReturnType<ChildrenClipPlanService['getOwnedProject']>>) {
+    const selected = project.characterLinks
+      .filter((link) => link.selectedVersionId)
+      .map((link) => ({ id: link.selectedVersionId!, name: link.character.name }));
+    const knownIds = new Set(selected.map((item) => item.id));
+    const narrative = project.childrenClipPlan?.narrative;
+    const global = narrative && typeof narrative === 'object' && !Array.isArray(narrative) ? narrative as Record<string, unknown> : {};
+    const summaries = [global.summary, global.logline].filter((item): item is string => typeof item === 'string').map((item) => this.normalize(item));
+    for (const shot of project.childrenClipShots) {
+      if (!shot.purpose.trim() || !shot.locationId) throw new BadRequestException(`Replaneje a tomada ${shot.index + 1}: faltam dados semanticos ou localizacao.`);
+      const allowed = this.stringArray(shot.characterVersionIds);
+      const forbidden = this.stringArray(shot.forbiddenEntityVersionIds);
+      if (new Set(allowed).size !== allowed.length || new Set(forbidden).size !== forbidden.length) throw new BadRequestException(`Tomada ${shot.index + 1}: existem entidades duplicadas.`);
+      if (allowed.some((id) => forbidden.includes(id))) throw new BadRequestException(`Tomada ${shot.index + 1}: uma entidade esta permitida e proibida ao mesmo tempo.`);
+      if ([...allowed, ...forbidden].some((id) => !knownIds.has(id))) throw new BadRequestException(`Tomada ${shot.index + 1}: existe uma entidade desconhecida.`);
+      if (summaries.includes(this.normalize(shot.description))) throw new BadRequestException(`Tomada ${shot.index + 1}: a descricao repete a narrativa global.`);
+      const entity = selected.find((item) => this.containsName(shot.backgroundPrompt, item.name));
+      if (entity) throw new BadRequestException(`Tomada ${shot.index + 1}: o fundo inclui a entidade ${entity.name}.`);
+    }
+  }
+
+  private stringArray(value: unknown): string[] { return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []; }
+  private normalize(value: unknown) { return typeof value === 'string' ? value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim() : ''; }
+  private containsName(text: string, name: string) { const target = this.normalize(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); return target.length > 1 && new RegExp(`(^|[^a-z0-9])${target}($|[^a-z0-9])`).test(this.normalize(text)); }
+
   private async getOwnedProject(projectId: string, organizationId: string) {
     const project = await this.prisma.project.findFirst({
       where: { id: projectId, organizationId, generationMode: 'children_clip', deletedAt: null },
@@ -193,9 +243,10 @@ export class ChildrenClipPlanService {
         childrenClip: true,
         childrenClipAudioAnalysis: true,
         childrenClipPlan: true,
-        childrenClipShots: { orderBy: { index: 'asc' } },
+        childrenClipShots: { orderBy: { index: 'asc' }, include: { location: true } },
+        childrenClipLocations: { orderBy: { key: 'asc' } },
         musicSections: true,
-        characterLinks: { include: { selectedVersion: true } }
+        characterLinks: { include: { character: true, selectedVersion: true } }
       }
     });
     if (!project?.childrenClip) throw new NotFoundException('Children clip project not found');
