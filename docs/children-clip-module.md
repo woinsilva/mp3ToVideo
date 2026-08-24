@@ -147,6 +147,24 @@ todas as tomadas possuem um fundo aprovado. Geracao textual de pose nao e tratad
 de identidade; poses de personagem exigem upload nesta etapa ate o workflow com referencia ficar
 disponivel.
 
+### Animacao 2D e lip sync
+
+Tomadas `animation_2d` e a base 2D de tomadas `hybrid` sao renderizadas pelo pacote isolado
+`@video/children-clip-renderer`, com React e Remotion. O job `children-clip.shot.render2d` monta um
+manifesto imutavel com fundo e primeiro plano aprovados, versoes de personagem, poses, grade de
+batidas, cues de palavras, formas de boca, movimento de camera, FPS, dimensoes e frame count.
+
+O motor aplica pan/zoom, profundidade de primeiro plano, movimento ocioso e pulsos nas batidas. A
+letra vira legenda sincronizada; os tempos de cada palavra sao convertidos deterministicamente em
+formas `A`, `E`, `O`, `U` e `closed`. Quando o personagem possui `mouth_shape` rotulada, a forma e
+sobreposta na pose. Sem sprites de boca, a tomada continua renderizavel e preserva os cues no
+manifesto para posterior complementacao.
+
+Cada tentativa gera um MP4 H.264 separado e passa por FFprobe para validar dimensoes, FPS, frames e
+duracao. Falhas mantem erro e historico, o retry cria outra tentativa, e a interface exibe progresso,
+preview autenticado e o manifesto reproduzivel. O Chromium necessario e preparado automaticamente
+na primeira execucao e reutilizado nas seguintes.
+
 RIFE fica disponivel apenas para tomadas generativas que realmente precisem de interpolacao. Animacao 2D sera renderizada diretamente no FPS final.
 
 ## Modelo de dados

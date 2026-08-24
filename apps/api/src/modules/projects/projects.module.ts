@@ -7,11 +7,13 @@ import { ChildrenClipCharactersController } from './controllers/children-clip-ch
 import { ChildrenClipAudioController } from './controllers/children-clip-audio.controller';
 import { ChildrenClipPlanController } from './controllers/children-clip-plan.controller';
 import { ChildrenClipAssetsController } from './controllers/children-clip-assets.controller';
+import { ChildrenClipAnimationController } from './controllers/children-clip-animation.controller';
 import { ProjectsController } from './controllers/projects.controller';
 import { ChildrenClipCharactersService } from './services/children-clip-characters.service';
 import { ChildrenClipAudioService } from './services/children-clip-audio.service';
 import { ChildrenClipPlanService } from './services/children-clip-plan.service';
 import { ChildrenClipAssetsService } from './services/children-clip-assets.service';
+import { ChildrenClipAnimationService } from './services/children-clip-animation.service';
 import { ImageUploadPolicyService } from './services/image-upload-policy.service';
 import { LocalStorageService } from './services/local-storage.service';
 import { ProjectPresenter } from './services/project.presenter';
@@ -20,12 +22,13 @@ import { TrackUploadPolicyService } from './services/track-upload-policy.service
 
 @Module({
   imports: [ConfigModule, AuthModule, JobsModule],
-  controllers: [ChildrenClipAudioController, ChildrenClipCharactersController, ChildrenClipPlanController, ChildrenClipAssetsController, ProjectsController],
+  controllers: [ChildrenClipAudioController, ChildrenClipCharactersController, ChildrenClipPlanController, ChildrenClipAssetsController, ChildrenClipAnimationController, ProjectsController],
   providers: [
     ChildrenClipCharactersService,
     ChildrenClipAudioService,
     ChildrenClipPlanService,
     ChildrenClipAssetsService,
+    ChildrenClipAnimationService,
     ProjectsService,
     LocalStorageService,
     ImageUploadPolicyService,

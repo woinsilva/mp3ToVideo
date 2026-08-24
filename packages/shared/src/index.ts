@@ -9,6 +9,7 @@ export const CHILDREN_CLIP_CHARACTER_GENERATE_JOB_NAME = 'children-clip.characte
 export const CHILDREN_CLIP_AUDIO_ANALYZE_JOB_NAME = 'children-clip.audio.analyze';
 export const CHILDREN_CLIP_PLAN_GENERATE_JOB_NAME = 'children-clip.plan.generate';
 export const CHILDREN_CLIP_ASSET_GENERATE_JOB_NAME = 'children-clip.asset.generate';
+export const CHILDREN_CLIP_SHOT_RENDER_JOB_NAME = 'children-clip.shot.render2d';
 
 export interface ProjectProcessingJobPayload {
   projectId: string;
@@ -48,4 +49,11 @@ export interface ChildrenClipAssetGenerationJobPayload {
   organizationId: string;
   requestedByUserId: string;
   shotAssetId: string;
+}
+
+export interface ChildrenClipShotRenderJobPayload {
+  projectId: string;
+  organizationId: string;
+  requestedByUserId: string;
+  renderAttemptId: string;
 }

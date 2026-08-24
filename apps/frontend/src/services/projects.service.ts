@@ -6,6 +6,7 @@ import type {
   ChildrenClipAudioStatus,
   ChildrenClipPlanStatus,
   ChildrenClipProductionAssetsStatus,
+  ChildrenClipAnimationStatus,
   ChildrenClipShotAssetRole,
   ChildrenClipShot,
   CreateChildrenClipCharacterInput,
@@ -310,6 +311,26 @@ class ProjectsService {
 
   downloadChildrenClipShotAsset(projectId: string, shotAssetId: string, token: string) {
     return apiService.download(`/projects/${projectId}/children-clip/production-assets/${shotAssetId}/file`, token);
+  }
+
+  getChildrenClipAnimation(projectId: string, token: string) {
+    return apiService.request<ChildrenClipAnimationStatus>(`/projects/${projectId}/children-clip/animation`, {}, token);
+  }
+
+  renderMissingChildrenClipShots(projectId: string, token: string) {
+    return apiService.request<ChildrenClipAnimationStatus>(`/projects/${projectId}/children-clip/animation/render-missing`, { method: 'POST' }, token);
+  }
+
+  renderChildrenClipShot(projectId: string, shotId: string, token: string) {
+    return apiService.request<ChildrenClipAnimationStatus>(`/projects/${projectId}/children-clip/animation/shots/${shotId}/render`, { method: 'POST' }, token);
+  }
+
+  retryChildrenClipShotRender(projectId: string, attemptId: string, token: string) {
+    return apiService.request<ChildrenClipAnimationStatus>(`/projects/${projectId}/children-clip/animation/attempts/${attemptId}/retry`, { method: 'POST' }, token);
+  }
+
+  downloadChildrenClipShotRender(projectId: string, attemptId: string, token: string) {
+    return apiService.download(`/projects/${projectId}/children-clip/animation/attempts/${attemptId}/file`, token);
   }
 }
 

@@ -88,6 +88,19 @@ export class RenderStorageService {
     ).replace(/\\/g, '/');
   }
 
+  buildChildrenClipShotRenderPath(
+    organizationId: string,
+    projectId: string,
+    shotId: string,
+    attemptNumber: number
+  ): string {
+    const root = this.configService.get<string>('storage.root', './storage');
+    return join(
+      root, 'children-clips', organizationId, projectId, 'shots', shotId, 'renders',
+      `render2d-attempt-${attemptNumber}.mp4`
+    ).replace(/\\/g, '/');
+  }
+
   buildContinuityFramePath(organizationId: string, projectId: string, sceneIndex: number): string {
     const root = this.configService.get<string>('storage.root', './storage');
 

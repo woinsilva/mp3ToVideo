@@ -236,6 +236,26 @@
           </article>
         </div>
       </section>
+
+      <section v-if="productionAssets?.summary.readyForAnimation" class="surface-card studio-width plan-panel animation-panel">
+        <div class="panel-heading">
+          <div><p class="page-eyebrow">Etapa 5</p><h3>Animacao 2D e lip sync</h3><p>Render deterministico com camera, parallax, pulsos musicais, legenda e formas de boca sincronizadas.</p></div>
+          <span v-if="animationStatus" class="version-status" :class="{ 'version-status--approved': animationStatus.summary.completed2dShots === animationStatus.summary.total2dShots }">{{ animationStatus.summary.completed2dShots }}/{{ animationStatus.summary.total2dShots }} tomadas 2D</span>
+        </div>
+        <div class="production-assets-actions"><button class="app-button" type="button" :disabled="renderingMissingShots" @click="renderMissingShots">{{ renderingMissingShots ? 'Enfileirando...' : 'Renderizar tomadas 2D pendentes' }}</button></div>
+        <div v-if="animationStatus" class="animation-shot-list">
+          <article v-for="shot in animationStatus.shots" :key="shot.id" class="animation-shot-card">
+            <header><div><strong>{{ shot.index + 1 }}. {{ shot.title }}</strong><small>{{ shot.renderMode === 'hybrid' ? '2D + tomada especial' : shot.renderMode === 'wan' ? 'Tomada especial Wan' : 'Animacao 2D' }}</small></div><span v-if="shot.latestAttempt" class="version-status" :class="`version-status--${shot.latestAttempt.status}`">{{ renderStatusLabel(shot.latestAttempt.status) }}</span></header>
+            <template v-if="shot.renderMode !== 'wan'">
+              <video v-if="shot.latestAttempt?.hasVideo && renderUrls[shot.latestAttempt.id]" class="shot-render-preview" controls preload="metadata" :src="renderUrls[shot.latestAttempt.id]" />
+              <div v-if="shot.latestAttempt && ['queued', 'rendering'].includes(shot.latestAttempt.status)" class="asset-job-progress"><v-progress-linear :model-value="shot.latestAttempt.progress" color="warning" /><small>{{ shot.latestAttempt.stage || 'QUEUED' }} · {{ shot.latestAttempt.progress }}%</small></div>
+              <v-alert v-if="shot.latestAttempt?.status === 'failed'" density="compact" type="error" variant="tonal">{{ shot.latestAttempt.errorMessage || 'Falha no render 2D.' }}</v-alert>
+              <div class="version-actions"><button v-if="!shot.latestAttempt" class="app-button app-button--secondary" type="button" :disabled="!shot.hasApprovedBackground" @click="renderShot(shot.id)">Renderizar tomada</button><button v-if="shot.latestAttempt?.status === 'failed'" class="app-button app-button--secondary" type="button" @click="retryShotRender(shot.latestAttempt.id)">Tentar novamente</button><button v-if="shot.latestAttempt?.status === 'completed'" class="app-button app-button--secondary" type="button" @click="renderShot(shot.id)">Nova versao</button></div>
+              <details v-if="shot.latestAttempt?.renderManifest"><summary>Manifesto reproduzivel</summary><pre class="render-manifest">{{ JSON.stringify(shot.latestAttempt.renderManifest, null, 2) }}</pre></details>
+            </template>
+          </article>
+        </div>
+      </section>
     </template>
   </AppLayout>
 </template>
@@ -246,7 +266,7 @@ import AppLayout from '@/layouts/AppLayout.vue';
 import { projectsService } from '@/services/projects.service';
 import { useAuthStore } from '@/stores/auth.store';
 import { useProjectsStore } from '@/stores/projects.store';
-import type { CharacterAssetRole, ChildrenClipAudioStatus, ChildrenClipCharacter, ChildrenClipCharacterVersion, ChildrenClipPlanStatus, ChildrenClipProductionAssetsStatus, ChildrenClipShot, ChildrenClipShotAsset, ChildrenClipShotAssetRole } from '@/types/project.types';
+import type { CharacterAssetRole, ChildrenClipAnimationStatus, ChildrenClipAudioStatus, ChildrenClipCharacter, ChildrenClipCharacterVersion, ChildrenClipPlanStatus, ChildrenClipProductionAssetsStatus, ChildrenClipShot, ChildrenClipShotAsset, ChildrenClipShotAssetRole, ChildrenClipShotRenderAttempt } from '@/types/project.types';
 
 @Component({ components: { AppLayout } })
 export default class ChildrenClipStudioPage extends Vue {
@@ -254,6 +274,7 @@ export default class ChildrenClipStudioPage extends Vue {
   audioStatus: ChildrenClipAudioStatus | null = null;
   planStatus: ChildrenClipPlanStatus | null = null;
   productionAssets: ChildrenClipProductionAssetsStatus | null = null;
+  animationStatus: ChildrenClipAnimationStatus | null = null;
   visualBibleJson = '';
   narrativeJson = '';
   planRevision = '';
@@ -278,6 +299,8 @@ export default class ChildrenClipStudioPage extends Vue {
   shotAssetRoles: Record<string, ChildrenClipShotAssetRole> = {};
   shotAssetPrompts: Record<string, string> = {};
   shotAssetFiles: Record<string, File | null> = {};
+  renderingMissingShots = false;
+  renderUrls: Record<string, string> = {};
 
   get authStore(): any { return useAuthStore(); }
   get projectsStore(): any { return useProjectsStore(); }
@@ -295,7 +318,10 @@ export default class ChildrenClipStudioPage extends Vue {
       const project = await this.projectsStore.fetchProject(this.projectId, this.authStore.token);
       if (project.generationMode !== 'children_clip') { void this.$router.replace({ name: 'project-detail', params: { id: project.id } }); return; }
       await Promise.all([this.loadAudioAnalysis(), this.loadCharacters(), this.loadPlan()]);
-      if (this.planStatus?.plan?.status === 'approved') await this.loadProductionAssets();
+      if (this.planStatus?.plan?.status === 'approved') {
+        await this.loadProductionAssets();
+        if (this.productionAssets?.summary.readyForAnimation) await this.loadAnimation();
+      }
       this.pollTimer = setInterval(() => void this.pollIfNeeded(), 4000);
     } catch (error) { this.captureError(error, 'Falha ao carregar o estudio'); }
   }
@@ -304,6 +330,7 @@ export default class ChildrenClipStudioPage extends Vue {
     if (this.pollTimer) clearInterval(this.pollTimer);
     Object.values(this.assetUrls).forEach((url) => URL.revokeObjectURL(url));
     Object.values(this.shotAssetUrls).forEach((url) => URL.revokeObjectURL(url));
+    Object.values(this.renderUrls).forEach((url) => URL.revokeObjectURL(url));
   }
 
   async loadCharacters() {
@@ -333,6 +360,17 @@ export default class ChildrenClipStudioPage extends Vue {
     await this.loadShotAssetUrls();
   }
 
+  async loadAnimation() {
+    if (!this.authStore.token) return;
+    this.animationStatus = await projectsService.getChildrenClipAnimation(this.projectId, this.authStore.token);
+    for (const shot of this.animationStatus.shots) {
+      const attempt = shot.latestAttempt;
+      if (!attempt?.hasVideo || this.renderUrls[attempt.id]) continue;
+      const blob = await projectsService.downloadChildrenClipShotRender(this.projectId, attempt.id, this.authStore.token);
+      this.renderUrls = { ...this.renderUrls, [attempt.id]: URL.createObjectURL(blob) };
+    }
+  }
+
   async pollIfNeeded() {
     if (this.audioStatus?.analysis && ['queued', 'analyzing'].includes(this.audioStatus.analysis.status)) {
       try {
@@ -355,6 +393,9 @@ export default class ChildrenClipStudioPage extends Vue {
     }
     if (this.productionAssets?.shots.some((shot) => shot.assets.some((asset) => ['queued', 'generating'].includes(asset.status)))) {
       try { await this.loadProductionAssets(); } catch (error) { this.captureError(error, 'Falha ao atualizar assets das tomadas'); }
+    }
+    if (this.animationStatus?.shots.some((shot) => shot.latestAttempt && ['queued', 'rendering'].includes(shot.latestAttempt.status))) {
+      try { await this.loadAnimation(); } catch (error) { this.captureError(error, 'Falha ao atualizar renders 2D'); }
     }
   }
 
@@ -496,10 +537,14 @@ export default class ChildrenClipStudioPage extends Vue {
     if (!this.authStore.token || !this.shotAssetFiles[shotId]) return;
     try { this.productionAssets = await projectsService.uploadChildrenClipShotAsset(this.projectId, shotId, this.shotAssetFiles[shotId]!, this.shotAssetRoles[shotId] || 'background', this.authStore.token); this.shotAssetFiles = { ...this.shotAssetFiles, [shotId]: null }; await this.loadShotAssetUrls(); } catch (error) { this.captureError(error, 'Falha ao enviar asset'); }
   }
-  async approveShotAsset(assetId: string) { if (!this.authStore.token) return; try { this.productionAssets = await projectsService.approveChildrenClipShotAsset(this.projectId, assetId, this.authStore.token); } catch (error) { this.captureError(error, 'Falha ao aprovar asset'); } }
+  async approveShotAsset(assetId: string) { if (!this.authStore.token) return; try { this.productionAssets = await projectsService.approveChildrenClipShotAsset(this.projectId, assetId, this.authStore.token); if (this.productionAssets.summary.readyForAnimation) await this.loadAnimation(); } catch (error) { this.captureError(error, 'Falha ao aprovar asset'); } }
   async retryShotAsset(assetId: string) { if (!this.authStore.token) return; try { this.productionAssets = await projectsService.retryChildrenClipShotAsset(this.projectId, assetId, this.authStore.token); } catch (error) { this.captureError(error, 'Falha ao reiniciar geracao do asset'); } }
   shotAssetRoleLabel(role: ChildrenClipShotAssetRole) { return ({ background: 'Fundo', foreground: 'Primeiro plano', prop: 'Objeto', character_pose: 'Pose de personagem', storyboard_frame: 'Storyboard' })[role]; }
   shotAssetStatusLabel(status: ChildrenClipShotAsset['status']) { return ({ draft: 'Rascunho', queued: 'Enfileirado', generating: 'Gerando', ready_for_review: 'Revisar', approved: 'Aprovado', failed: 'Falhou' })[status]; }
+  async renderMissingShots() { if (!this.authStore.token) return; this.renderingMissingShots = true; try { this.animationStatus = await projectsService.renderMissingChildrenClipShots(this.projectId, this.authStore.token); } catch (error) { this.captureError(error, 'Falha ao enfileirar animacoes'); } finally { this.renderingMissingShots = false; } }
+  async renderShot(shotId: string) { if (!this.authStore.token) return; try { this.animationStatus = await projectsService.renderChildrenClipShot(this.projectId, shotId, this.authStore.token); } catch (error) { this.captureError(error, 'Falha ao enfileirar tomada 2D'); } }
+  async retryShotRender(attemptId: string) { if (!this.authStore.token) return; try { this.animationStatus = await projectsService.retryChildrenClipShotRender(this.projectId, attemptId, this.authStore.token); } catch (error) { this.captureError(error, 'Falha ao reiniciar render 2D'); } }
+  renderStatusLabel(status: ChildrenClipShotRenderAttempt['status']) { return ({ queued: 'Enfileirado', rendering: 'Renderizando', completed: 'Concluido', failed: 'Falhou' })[status]; }
   formatTime(seconds: number) { const safe = Math.max(0, seconds); return `${Math.floor(safe / 60)}:${String(Math.floor(safe % 60)).padStart(2, '0')}`; }
   formatTimePrecise(seconds: number) { const safe = Math.max(0, seconds); return `${this.formatTime(safe)}.${Math.floor((safe % 1) * 10)}`; }
   captureError(error: unknown, fallback: string) { this.errorMessage = error instanceof Error ? error.message : fallback; }
@@ -570,6 +615,7 @@ export default class ChildrenClipStudioPage extends Vue {
 .version-origin { margin-left: 8px; color: #65676b; font-size: 0.78rem; }
 .version-status { padding: 5px 9px; border-radius: 999px; background: #e8eaed; font-size: 0.75rem; font-weight: 800; }
 .version-status--approved { color: #19703a; background: #dff3e5; }
+.version-status--completed { color: #19703a; background: #dff3e5; }
 .version-status--failed { color: #a32525; background: #fbe1e1; }
 .version-status--queued, .version-status--generating { color: #92520a; background: #fff0d4; }
 .version-description { color: #4d5156; }
@@ -598,5 +644,12 @@ export default class ChildrenClipStudioPage extends Vue {
 .shot-assets-grid .version-actions, .shot-assets-grid .v-alert, .asset-job-progress { margin-right: 12px; margin-left: 12px; }
 .asset-job-progress { display: grid; gap: 5px; color: #65676b; }
 .shot-asset-form { display: grid; grid-template-columns: 180px 1fr auto; gap: 10px; margin-top: 12px; align-items: end; }
+.animation-shot-list { display: grid; gap: 12px; }
+.animation-shot-card { display: grid; gap: 12px; padding: 16px; border: 1px solid #dfe3e8; border-radius: 14px; background: #fafbfc; }
+.animation-shot-card > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.animation-shot-card > header > div { display: grid; gap: 3px; }
+.animation-shot-card small { color: #65676b; }
+.shot-render-preview { width: min(640px, 100%); max-height: 360px; border-radius: 12px; background: #111; }
+.render-manifest { max-height: 260px; overflow: auto; padding: 12px; border-radius: 8px; background: #1e2430; color: #e8edf5; font-size: .72rem; white-space: pre-wrap; }
 @media (max-width: 700px) { .setup-grid, .character-form, .audio-metrics, .replace-track, .plan-json-grid, .shot-form { grid-template-columns: 1fr; } .character-form__wide, .shot-form__wide { grid-column: auto; } .character-panel, .character-card, .audio-panel, .plan-panel { padding: 18px; } .supplementary-assets__form, .shot-asset-form { grid-template-columns: 1fr; } .shot-card summary { align-items: flex-start; flex-direction: column; } }
 </style>

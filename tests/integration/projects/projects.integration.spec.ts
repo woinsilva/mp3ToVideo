@@ -395,6 +395,17 @@ describe('Projects integration', () => {
       .expect(200)
       .expect('Content-Type', /image\/png/);
 
+    await request(app.getHttpServer())
+      .post(`/projects/${projectResponse.body.id}/children-clip/animation/shots/${shots[0].id}/render`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.shots[0].latestAttempt).toMatchObject({
+          attemptNumber: 1, status: 'queued', progress: 0, stage: 'QUEUED', fps: 16,
+          width: 1280, height: 720, frameCount: 96, hasVideo: false
+        });
+      });
+
     const assetId = listResponse.body[0].versions[0].assets[0].id;
     await request(app.getHttpServer())
       .get(`/projects/${projectResponse.body.id}/children-clip/characters/${characterId}/versions/${versionId}/assets/${assetId}`)

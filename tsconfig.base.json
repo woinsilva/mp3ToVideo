@@ -15,6 +15,9 @@
     "paths": {
       "@video/shared": [
         "packages/shared/src"
+      ],
+      "@video/children-clip-renderer": [
+        "packages/children-clip-renderer/src"
       ]
     }
   }

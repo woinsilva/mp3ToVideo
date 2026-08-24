@@ -108,6 +108,13 @@ enum ChildrenClipShotAssetStatus {
   failed
 }
 
+enum ChildrenClipShotRenderStatus {
+  queued
+  rendering
+  completed
+  failed
+}
+
 enum CharacterScope {
   project
   organization
@@ -440,7 +447,7 @@ model ScenePrompt {
 }
 
 model Asset {
-  id                     String                 @id @default(cuid())
+  id                     String                         @id @default(cuid())
   organizationId         String
   projectId              String
   type                   AssetType
@@ -450,17 +457,18 @@ model Asset {
   width                  Int?
   height                 Int?
   metadata               Json?
-  createdAt              DateTime               @default(now())
-  updatedAt              DateTime               @updatedAt
-  organization           Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  project                Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt              DateTime                       @default(now())
+  updatedAt              DateTime                       @updatedAt
+  organization           Organization                   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project                Project                        @relation(fields: [projectId], references: [id], onDelete: Cascade)
   render                 Render?
-  storyboardVisualFor    Storyboard[]           @relation("StoryboardVisualAsset")
-  sceneVideoFor          Scene[]                @relation("SceneVideoAsset")
-  sceneReferenceImageFor Scene[]                @relation("SceneReferenceImageAsset")
-  sourceImageFor         Project?               @relation("ProjectSourceImageAsset")
+  storyboardVisualFor    Storyboard[]                   @relation("StoryboardVisualAsset")
+  sceneVideoFor          Scene[]                        @relation("SceneVideoAsset")
+  sceneReferenceImageFor Scene[]                        @relation("SceneReferenceImageAsset")
+  sourceImageFor         Project?                       @relation("ProjectSourceImageAsset")
   characterAssets        CharacterAsset[]
   childrenClipShotAsset  ChildrenClipShotAsset?
+  childrenClipShotRender ChildrenClipShotRenderAttempt?
 
   @@index([organizationId, projectId, type])
 }
@@ -547,7 +555,7 @@ model ChildrenClipPlan {
 }
 
 model ChildrenClipShot {
-  id                  String                  @id @default(cuid())
+  id                  String                          @id @default(cuid())
   projectId           String
   musicSectionId      String?
   index               Int
@@ -556,8 +564,8 @@ model ChildrenClipShot {
   startSeconds        Float
   endSeconds          Float
   durationSeconds     Float
-  status              ChildrenClipShotStatus  @default(draft)
-  renderMode          ChildrenClipRenderMode  @default(animation_2d)
+  status              ChildrenClipShotStatus          @default(draft)
+  renderMode          ChildrenClipRenderMode          @default(animation_2d)
   framing             String
   cameraMovement      String
   characterAction     String
@@ -570,11 +578,12 @@ model ChildrenClipShot {
   layers              Json?
   motionPreset        String?
   revisionInstruction String?
-  createdAt           DateTime                @default(now())
-  updatedAt           DateTime                @updatedAt
-  project             Project                 @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  musicSection        MusicSection?           @relation(fields: [musicSectionId], references: [id], onDelete: SetNull)
+  createdAt           DateTime                        @default(now())
+  updatedAt           DateTime                        @updatedAt
+  project             Project                         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  musicSection        MusicSection?                   @relation(fields: [musicSectionId], references: [id], onDelete: SetNull)
   assets              ChildrenClipShotAsset[]
+  renderAttempts      ChildrenClipShotRenderAttempt[]
 
   @@unique([projectId, index])
   @@index([projectId, startSeconds])
@@ -606,6 +615,33 @@ model ChildrenClipShotAsset {
 
   @@unique([shotId, role, versionNumber])
   @@index([shotId, role, status])
+  @@index([bullJobId])
+}
+
+model ChildrenClipShotRenderAttempt {
+  id                String                       @id @default(cuid())
+  shotId            String
+  assetId           String?                      @unique
+  attemptNumber     Int
+  status            ChildrenClipShotRenderStatus @default(queued)
+  bullJobId         String?
+  fps               Int
+  width             Int
+  height            Int
+  frameCount        Int
+  renderManifest    Json?
+  progress          Int                          @default(0)
+  stage             String?
+  errorMessage      String?
+  renderStartedAt   DateTime?
+  renderCompletedAt DateTime?
+  createdAt         DateTime                     @default(now())
+  updatedAt         DateTime                     @updatedAt
+  shot              ChildrenClipShot             @relation(fields: [shotId], references: [id], onDelete: Cascade)
+  asset             Asset?                       @relation(fields: [assetId], references: [id], onDelete: SetNull)
+
+  @@unique([shotId, attemptNumber])
+  @@index([shotId, status])
   @@index([bullJobId])
 }
 

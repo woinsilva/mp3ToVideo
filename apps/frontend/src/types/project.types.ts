@@ -262,6 +262,39 @@ export interface ChildrenClipProductionAssetsStatus {
   summary: { totalShots: number; approvedBackgrounds: number; readyForAnimation: boolean };
 }
 
+export interface ChildrenClipShotRenderAttempt {
+  id: string;
+  attemptNumber: number;
+  status: 'queued' | 'rendering' | 'completed' | 'failed';
+  progress: number;
+  stage: string | null;
+  errorMessage: string | null;
+  fps: number;
+  width: number;
+  height: number;
+  frameCount: number;
+  renderManifest: Record<string, unknown> | null;
+  hasVideo: boolean;
+  createdAt: string;
+  renderStartedAt: string | null;
+  renderCompletedAt: string | null;
+}
+
+export interface ChildrenClipAnimationStatus {
+  shots: Array<{
+    id: string;
+    index: number;
+    title: string;
+    startSeconds: number;
+    endSeconds: number;
+    durationSeconds: number;
+    renderMode: 'animation_2d' | 'wan' | 'hybrid';
+    hasApprovedBackground: boolean;
+    latestAttempt: ChildrenClipShotRenderAttempt | null;
+  }>;
+  summary: { total2dShots: number; completed2dShots: number };
+}
+
 export interface TrackUploadResult {
   projectId: string;
   trackId: string;

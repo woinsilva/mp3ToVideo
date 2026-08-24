@@ -1,9 +1,11 @@
-import { stat, writeFile } from 'node:fs/promises';
+import { readFile, stat, writeFile } from 'node:fs/promises';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AssetType, CharacterAssetRole, CharacterVersionStatus, ChildrenClipShotAssetStatus, Prisma, ProcessingJobStatus } from '@prisma/client';
 import type { ChildrenClipAssetGenerationJobPayload, ChildrenClipAudioAnalysisJobPayload, ChildrenClipCharacterGenerationJobPayload, ChildrenClipPlanGenerationJobPayload } from '@video/shared';
+import type { ChildrenClipShotRenderJobPayload } from '@video/shared';
+import { buildMouthFrames, type CharacterLayer, type TimedWord } from '@video/children-clip-renderer';
 import type { Job } from 'bullmq';
 
 import { PrismaService } from '../database/prisma.service';
@@ -14,6 +16,8 @@ import { ChildrenClipAudioAnalysisService, type AudioEnergyPoint } from '../serv
 import { ChildrenClipLyricsAlignmentService } from '../services/children-clip-lyrics-alignment.service';
 import { MusicStructureService } from '../services/music-structure.service';
 import { ChildrenClipPlanningService, type CreativePlanResponse } from '../services/children-clip-planning.service';
+import { ChildrenClip2dRendererService } from '../services/children-clip-2d-renderer.service';
+import { VideoMetadataProbeService } from '../services/video-metadata-probe.service';
 
 interface OptimizedCharacterPrompt {
   positivePrompt: string;
@@ -36,7 +40,135 @@ export class ChildrenClipProcessor {
     private readonly lyricsAlignment: ChildrenClipLyricsAlignmentService,
     @Inject(MusicStructureService) private readonly musicStructure: MusicStructureService,
     @Inject(ChildrenClipPlanningService) private readonly planning: ChildrenClipPlanningService
+    , @Inject(ChildrenClip2dRendererService) private readonly renderer2d: ChildrenClip2dRendererService
+    , @Inject(VideoMetadataProbeService) private readonly videoProbe: VideoMetadataProbeService
   ) {}
+
+  async processShotRender(job: Job<ChildrenClipShotRenderJobPayload>) {
+    const { projectId, organizationId, renderAttemptId } = job.data;
+    const bullJobId = String(job.id);
+    const attempt = await this.prisma.childrenClipShotRenderAttempt.findFirst({
+      where: { id: renderAttemptId, shot: { projectId, project: { organizationId, deletedAt: null } } },
+      include: {
+        shot: {
+          include: {
+            assets: { where: { status: 'approved' }, include: { asset: true } },
+            project: {
+              include: {
+                childrenClip: true, childrenClipPlan: true, childrenClipAudioAnalysis: true,
+                childrenClipLyricCues: { orderBy: { lineIndex: 'asc' } },
+                characterLinks: {
+                  orderBy: { sortOrder: 'asc' },
+                  include: { character: true, selectedVersion: { include: { assets: { include: { asset: true } } } } }
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+    if (!attempt) throw new Error(`Render attempt ${renderAttemptId} not found`);
+    const background = attempt.shot.assets.find((item) => item.role === 'background' && item.asset);
+    if (!background?.asset) throw new Error('A tomada nao possui fundo aprovado');
+    const project = attempt.shot.project;
+    const versionIds = this.stringArray(attempt.shot.characterVersionIds);
+    const characterLinks = project.characterLinks.filter((link) => link.selectedVersion && (!versionIds.length || versionIds.includes(link.selectedVersion.id)));
+
+    await this.prisma.$transaction([
+      this.prisma.childrenClipShotRenderAttempt.update({
+        where: { id: renderAttemptId },
+        data: { status: 'rendering', bullJobId, progress: 2, stage: 'STARTING', errorMessage: null, renderStartedAt: new Date(), renderCompletedAt: null }
+      }),
+      this.prisma.childrenClip.update({ where: { projectId }, data: { productionStatus: 'animating' } })
+    ]);
+    try {
+      await this.renderProgress(job, renderAttemptId, 2, 'STARTING', 'Worker iniciou o render 2D da tomada.');
+      await this.renderProgress(job, renderAttemptId, 5, 'BUILDING_MANIFEST', 'Montando camadas, batidas e formas de boca.');
+      const timedWords = project.childrenClipLyricCues.flatMap((cue) => {
+        if (cue.endSeconds <= attempt.shot.startSeconds || cue.startSeconds >= attempt.shot.endSeconds) return [];
+        return this.timedWords(cue.words, cue.text, cue.startSeconds, cue.endSeconds);
+      });
+      const baseMouthFrames = buildMouthFrames(timedWords, attempt.fps, attempt.shot.startSeconds)
+        .filter((frame) => frame.startFrame < attempt.frameCount);
+      const poseAssets = attempt.shot.assets.filter((item) => item.role === 'character_pose' && item.asset);
+      const characters: CharacterLayer[] = [];
+      for (let index = 0; index < characterLinks.length; index += 1) {
+        const link = characterLinks[index];
+        const version = link.selectedVersion!;
+        const pose = poseAssets[index]?.asset ?? version.assets.find((item) => item.role === 'pose')?.asset ?? version.assets.find((item) => item.role === 'primary_reference')?.asset;
+        if (!pose) continue;
+        const mouths = version.assets.filter((item) => item.role === 'mouth_shape');
+        const mouthSources = new Map<string, string>();
+        for (const mouth of mouths) {
+          const key = (mouth.label || '').trim().toLowerCase();
+          if (key) mouthSources.set(key, await this.assetDataUrl(mouth.asset.storagePath, mouth.asset.mimeType));
+        }
+        const width = characterLinks.length === 1 ? 42 : Math.min(34, 72 / characterLinks.length);
+        const x = characterLinks.length === 1 ? 29 : 8 + index * (84 / characterLinks.length);
+        characters.push({
+          id: version.id, name: link.character.name,
+          src: await this.assetDataUrl(pose.storagePath, pose.mimeType),
+          x, y: 20, width, height: 72, mouthX: 41, mouthY: 27, mouthWidth: 18,
+          mouthFrames: baseMouthFrames.map((frame) => ({
+            ...frame,
+            src: mouthSources.get(frame.shape.toLowerCase()) ??
+              (frame.shape === 'closed' ? mouthSources.get('closed') ?? mouthSources.get('rest') : null)
+          }))
+        });
+      }
+      const foreground = attempt.shot.assets.find((item) => item.role === 'foreground' && item.asset)?.asset;
+      const beats = this.numberArray(project.childrenClipAudioAnalysis?.beatGrid ?? null)
+        .filter((beat) => beat >= attempt.shot.startSeconds && beat < attempt.shot.endSeconds)
+        .map((beat) => Math.round((beat - attempt.shot.startSeconds) * attempt.fps));
+      const props = {
+        width: attempt.width, height: attempt.height, fps: attempt.fps, durationInFrames: attempt.frameCount,
+        backgroundSrc: await this.assetDataUrl(background.asset.storagePath, background.asset.mimeType),
+        foregroundSrc: foreground ? await this.assetDataUrl(foreground.storagePath, foreground.mimeType) : null,
+        characters, lyricText: attempt.shot.lyricText, motionPreset: attempt.shot.motionPreset,
+        transitionIn: attempt.shot.transitionIn, transitionOut: attempt.shot.transitionOut, beatFrames: beats
+      };
+      const manifest = {
+        renderer: 'remotion', rendererVersion: 1, renderAttemptId, shotId: attempt.shotId,
+        fps: attempt.fps, frameCount: attempt.frameCount, width: attempt.width, height: attempt.height,
+        backgroundShotAssetId: background.id, foregroundShotAssetId: foreground ? attempt.shot.assets.find((item) => item.assetId === foreground.id)?.id : null,
+        characterVersionIds: characters.map((item) => item.id), timedWordCount: timedWords.length,
+        mouthFrameCount: baseMouthFrames.length, beatFrames: beats, motionPreset: attempt.shot.motionPreset
+      };
+      await this.prisma.childrenClipShotRenderAttempt.update({ where: { id: renderAttemptId }, data: { renderManifest: manifest } });
+      const outputPath = this.storage.buildChildrenClipShotRenderPath(organizationId, projectId, attempt.shotId, attempt.attemptNumber);
+      const absolutePath = await this.storage.ensureParentDirectory(outputPath);
+      await this.renderer2d.render(props, absolutePath, (progress, stage, message) => this.renderProgress(job, renderAttemptId, progress, stage, message));
+      await this.renderProgress(job, renderAttemptId, 96, 'VALIDATING', 'Validando FPS, frames, dimensoes e duracao da tomada.');
+      const metadata = await this.videoProbe.probe(absolutePath);
+      const expectedDuration = attempt.frameCount / attempt.fps;
+      if (metadata.width !== attempt.width || metadata.height !== attempt.height) throw new Error('O render 2D possui dimensoes inesperadas');
+      if (!metadata.durationSeconds || Math.abs(metadata.durationSeconds - expectedDuration) > 2 / attempt.fps) throw new Error('O render 2D possui duracao divergente da timeline');
+      const sizeBytes = Number((await stat(absolutePath)).size);
+      await this.prisma.$transaction(async (tx) => {
+        const asset = await tx.asset.create({
+          data: {
+            organizationId, projectId, type: AssetType.video_scene, mimeType: 'video/mp4', storagePath: outputPath,
+            sizeBytes, width: attempt.width, height: attempt.height,
+            metadata: { ...manifest, validation: metadata } as unknown as Prisma.InputJsonValue
+          }
+        });
+        await tx.childrenClipShotRenderAttempt.update({
+          where: { id: renderAttemptId },
+          data: { assetId: asset.id, status: 'completed', progress: 100, stage: 'COMPLETED', renderCompletedAt: new Date(), errorMessage: null }
+        });
+      });
+      await this.renderProgress(job, renderAttemptId, 100, 'COMPLETED', 'Tomada 2D renderizada e validada.', ProcessingJobStatus.completed);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const willRetry = job.attemptsMade + 1 < (job.opts.attempts ?? 1);
+      await this.prisma.childrenClipShotRenderAttempt.update({
+        where: { id: renderAttemptId },
+        data: { status: willRetry ? 'queued' : 'failed', progress: 0, stage: willRetry ? 'RETRYING' : 'FAILED', errorMessage: message, renderCompletedAt: willRetry ? null : new Date() }
+      });
+      await this.renderProgress(job, renderAttemptId, 0, willRetry ? 'RETRYING' : 'FAILED', willRetry ? `Render falhou; o BullMQ tentara novamente: ${message}` : `Falha no render 2D: ${message}`, willRetry ? ProcessingJobStatus.retrying : ProcessingJobStatus.failed, message);
+      throw error;
+    }
+  }
 
   async processAssetGeneration(job: Job<ChildrenClipAssetGenerationJobPayload>) {
     const { projectId, organizationId, shotAssetId } = job.data;
@@ -653,6 +785,25 @@ export class ChildrenClipProcessor {
     this.logger.log(`[${String(job.id)}] ${stage} ${progress}%: ${message}`);
   }
 
+  private async renderProgress(
+    job: Job<ChildrenClipShotRenderJobPayload>,
+    renderAttemptId: string,
+    progress: number,
+    stage: string,
+    message: string,
+    status: ProcessingJobStatus = ProcessingJobStatus.active,
+    errorMessage: string | null = null
+  ) {
+    await job.updateProgress({ progress, stage, message });
+    await Promise.all([
+      this.progress(String(job.id), progress, stage, message, status, errorMessage),
+      this.prisma.childrenClipShotRenderAttempt.update({
+        where: { id: renderAttemptId }, data: { progress, stage, errorMessage }
+      })
+    ]);
+    this.logger.log(`[${String(job.id)}] ${stage} ${progress}%: ${message}`);
+  }
+
   private async withPlanHeartbeat<T>(job: Job<ChildrenClipPlanGenerationJobPayload>, operation: Promise<T>) {
     let progress = 18;
     const timer = setInterval(() => {
@@ -669,6 +820,39 @@ export class ChildrenClipProcessor {
 
   private numberArray(value: Prisma.JsonValue | null): number[] {
     return Array.isArray(value) ? value.filter((item): item is number => typeof item === 'number') : [];
+  }
+
+  private stringArray(value: Prisma.JsonValue | null): string[] {
+    return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+  }
+
+  private timedWords(
+    value: Prisma.JsonValue | null,
+    fallbackText: string,
+    startSeconds: number,
+    endSeconds: number
+  ): TimedWord[] {
+    if (Array.isArray(value)) {
+      const words = value.flatMap((item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
+        const word = item as Record<string, Prisma.JsonValue>;
+        return typeof word.text === 'string' && typeof word.startSeconds === 'number' && typeof word.endSeconds === 'number'
+          ? [{ text: word.text, startSeconds: word.startSeconds, endSeconds: word.endSeconds }]
+          : [];
+      });
+      if (words.length) return words;
+    }
+    const tokens = fallbackText.split(/\s+/).filter(Boolean);
+    return tokens.map((text, index) => ({
+      text,
+      startSeconds: startSeconds + ((endSeconds - startSeconds) * index) / Math.max(1, tokens.length),
+      endSeconds: startSeconds + ((endSeconds - startSeconds) * (index + 1)) / Math.max(1, tokens.length)
+    }));
+  }
+
+  private async assetDataUrl(storagePath: string, mimeType: string) {
+    const buffer = await readFile(this.storage.getAbsolutePath(storagePath));
+    return `data:${mimeType};base64,${buffer.toString('base64')}`;
   }
 
   private validateTimeline(shots: Array<{ startSeconds: number; endSeconds: number }>, duration: number) {
