@@ -5,6 +5,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { ComfyUiWorkflowLoaderService } from './comfyui-workflow-loader.service';
+import { GpuLeaseService } from './gpu-lease.service';
 
 interface ComfyUiPromptResponse {
   prompt_id?: string;
@@ -60,6 +61,7 @@ export interface GenerateVideoInput {
   onSubmitted?: (promptId: string) => Promise<void>;
   onHeartbeat?: (heartbeat: ComfyUiHeartbeat) => Promise<void>;
   shouldCancel?: () => Promise<boolean>;
+  onGpuWaiting?: (owner: string | null) => Promise<void>;
 }
 
 export interface ComfyUiGenerationResult {
@@ -83,6 +85,7 @@ export interface GenerateStillImageInput {
   filenamePrefix: string;
   loraName?: string | null;
   loraStrength?: number;
+  onGpuWaiting?: (owner: string | null) => Promise<void>;
 }
 
 export interface ComfyUiHeartbeat {
@@ -112,7 +115,8 @@ export class ComfyUiClientService {
     @Inject(ConfigService)
     private readonly configService: ConfigService,
     @Inject(ComfyUiWorkflowLoaderService)
-    private readonly workflowLoaderService: ComfyUiWorkflowLoaderService
+    private readonly workflowLoaderService: ComfyUiWorkflowLoaderService,
+    @Inject(GpuLeaseService) private readonly gpu: GpuLeaseService
   ) {}
 
   isEnabled(): boolean {
@@ -120,6 +124,10 @@ export class ComfyUiClientService {
   }
 
   async generateStillImage(input: GenerateStillImageInput): Promise<ComfyUiGenerationResult> {
+    return this.gpu.withLease('comfyui-still', () => this.generateStillImageUnsafe(input), input.onGpuWaiting);
+  }
+
+  private async generateStillImageUnsafe(input: GenerateStillImageInput): Promise<ComfyUiGenerationResult> {
     if (!this.isEnabled()) {
       throw new Error('ComfyUI image generation requires SCENE_VISUAL_PROVIDER=comfyui');
     }
@@ -201,6 +209,14 @@ export class ComfyUiClientService {
   }
 
   async generateImage(
+    promptText: string,
+    negativePrompt: string,
+    checkpointOverride?: string | null
+  ): Promise<ComfyUiGenerationResult | null> {
+    return this.gpu.withLease('comfyui-image', () => this.generateImageUnsafe(promptText, negativePrompt, checkpointOverride));
+  }
+
+  private async generateImageUnsafe(
     promptText: string,
     negativePrompt: string,
     checkpointOverride?: string | null
@@ -324,6 +340,10 @@ export class ComfyUiClientService {
   }
 
   async generateVideo(input: GenerateVideoInput): Promise<ComfyUiGenerationResult | null> {
+    return this.gpu.withLease('comfyui-wan', () => this.generateVideoUnsafe(input), input.onGpuWaiting);
+  }
+
+  private async generateVideoUnsafe(input: GenerateVideoInput): Promise<ComfyUiGenerationResult | null> {
     if (!this.isEnabled()) {
       return null;
     }

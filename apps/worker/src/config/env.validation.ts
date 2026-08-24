@@ -66,5 +66,7 @@ export const envValidationSchema = Joi.object({
   REDIS_PORT: Joi.number().default(6379),
   WORKER_LOCK_DURATION_MS: Joi.number().integer().positive().default(1800000),
   WORKER_STALLED_INTERVAL_MS: Joi.number().integer().positive().default(30000),
+  GPU_LEASE_TTL_MS: Joi.number().integer().min(15000).default(180000),
+  GPU_LEASE_POLL_MS: Joi.number().integer().min(100).default(1000),
   DATABASE_URL: Joi.string().default('postgresql://postgres:postgres@localhost:5432/video_saas')
 });

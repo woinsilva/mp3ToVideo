@@ -8,6 +8,7 @@ describe('ComfyUiClientService', () => {
       {
         get: vi.fn()
       } as never,
+      {} as never,
       {} as never
     ) as unknown as {
       extractOutputAsset: (
@@ -50,6 +51,7 @@ describe('ComfyUiClientService', () => {
       {
         get: vi.fn()
       } as never,
+      {} as never,
       {} as never
     ) as unknown as {
       extractOutputAsset: (

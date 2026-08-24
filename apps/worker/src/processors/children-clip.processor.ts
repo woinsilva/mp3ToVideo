@@ -82,6 +82,13 @@ export class ChildrenClipProcessor {
         negativePrompt: settings.negativePrompt, width: settings.width, height: settings.height,
         durationSeconds: settings.effectiveDurationSeconds,
         referenceImagePath: this.storage.getAbsolutePath(reference.storagePath),
+        onGpuWaiting: (owner) => this.heroProgress(
+          job,
+          heroAttemptId,
+          12,
+          'WAITING_GPU',
+          `Tomada Wan aguardando a GPU local${owner ? `, atualmente ocupada por ${owner.split(':')[0]}` : ''}.`
+        ),
         onSubmitted: async (promptId) => {
           submittedPromptId = promptId;
           await this.prisma.childrenClipHeroShotAttempt.update({ where: { id: heroAttemptId }, data: { promptId, stage: 'SUBMITTED', progress: 18 } });
@@ -357,7 +364,13 @@ export class ChildrenClipProcessor {
       const result = await this.comfyUi.generateStillImage({
         positivePrompt, negativePrompt, checkpointName, ...dimensions, steps, cfg, sampler, scheduler, seed,
         filenamePrefix: `children-clips/shot-${shotAsset.shot.index + 1}-${shotAsset.role}-v${shotAsset.versionNumber}`,
-        loraName: loraName || null, loraStrength
+        loraName: loraName || null, loraStrength,
+        onGpuWaiting: (owner) => this.assetProgress(
+          job,
+          22,
+          'WAITING_GPU',
+          `Asset aguardando a GPU local${owner ? `, atualmente ocupada por ${owner.split(':')[0]}` : ''}.`
+        )
       });
       await this.assetProgress(job, 82, 'SAVING_ASSET', 'Imagem gerada. Salvando a versao para revisao.');
       const storagePath = this.storage.buildChildrenClipShotAssetPath(
@@ -735,7 +748,13 @@ export class ChildrenClipProcessor {
         seed,
         filenamePrefix: `children-clips/character-${characterId}-v${version.versionNumber}`,
         loraName: loraName || null,
-        loraStrength
+        loraStrength,
+        onGpuWaiting: (owner) => this.characterProgress(
+          job,
+          22,
+          'WAITING_GPU',
+          `Personagem aguardando a GPU local${owner ? `, atualmente ocupada por ${owner.split(':')[0]}` : ''}.`
+        )
       });
       await this.characterProgress(job, 75, 'SAVING_ASSET', 'Imagem gerada. Salvando ficha versionada.');
 

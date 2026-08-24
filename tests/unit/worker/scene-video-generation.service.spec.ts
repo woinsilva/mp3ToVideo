@@ -19,13 +19,13 @@ describe('SceneVideoGenerationService', () => {
     });
 
     expect(result).toEqual({ buffer: Buffer.from('video-bytes'), provider: 'comfyui-video' });
-    expect(generateVideo).toHaveBeenCalledWith({
+    expect(generateVideo).toHaveBeenCalledWith(expect.objectContaining({
       sceneId: 'scene-1',
       positivePrompt: 'cowboy riding a horse at sunset',
       negativePrompt: 'blurry, low quality',
       width: 1280,
       height: 704,
       durationSeconds: 5
-    });
+    }));
   });
 });

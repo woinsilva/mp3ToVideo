@@ -15,6 +15,7 @@ interface SceneVideoInput extends ResolvedVideoGenerationSettings {
   onSubmitted?: (promptId: string) => Promise<void>;
   onHeartbeat?: (heartbeat: ComfyUiHeartbeat) => Promise<void>;
   shouldCancel?: () => Promise<boolean>;
+  onGpuWaiting?: (owner: string | null) => Promise<void>;
 }
 
 export interface SceneVideoResult {
@@ -53,7 +54,8 @@ export class SceneVideoGenerationService {
         referenceImagePath: input.referenceImagePath,
         onSubmitted: input.onSubmitted,
         onHeartbeat: input.onHeartbeat,
-        shouldCancel: input.shouldCancel
+        shouldCancel: input.shouldCancel,
+        onGpuWaiting: input.onGpuWaiting
       });
 
     if (!result) {

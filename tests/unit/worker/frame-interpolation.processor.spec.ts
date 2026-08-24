@@ -26,7 +26,8 @@ describe('FrameInterpolationProcessor', () => {
       })
     };
     const updateProgress = vi.fn().mockResolvedValue(undefined);
-    const processor = new FrameInterpolationProcessor(prisma as never, interpolation as never);
+    const gpu = { withLease: vi.fn((_label, operation) => operation()) };
+    const processor = new FrameInterpolationProcessor(prisma as never, interpolation as never, gpu as never);
 
     await processor.process({
       id: 'processing-job-1',
@@ -57,7 +58,8 @@ describe('FrameInterpolationProcessor', () => {
     const interpolation = {
       interpolate: vi.fn().mockRejectedValue(new Error('RIFE model failed to load'))
     };
-    const processor = new FrameInterpolationProcessor(prisma as never, interpolation as never);
+    const gpu = { withLease: vi.fn((_label, operation) => operation()) };
+    const processor = new FrameInterpolationProcessor(prisma as never, interpolation as never, gpu as never);
 
     await expect(processor.process({
       id: 'processing-job-1',

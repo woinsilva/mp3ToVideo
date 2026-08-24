@@ -203,7 +203,15 @@ O dominio deve contemplar:
 ## Filas e recursos
 
 - O pipeline infantil nao pode usar `project-processing` como atalho para o pipeline musical atual.
-- Operacoes de GPU passam por exclusao mutua global.
+- Operacoes de GPU passam por exclusao mutua global. Um lease distribuido no Redis serializa
+  geracoes de imagem do ComfyUI, tomadas Wan e RIFE mesmo quando existem varios workers. O lease
+  possui TTL renovado enquanto a operacao esta ativa e liberacao atomica por token, portanto uma
+  queda de processo nao bloqueia a GPU indefinidamente.
+- Enquanto houver contencao, o job permanece ativo e publica `WAITING_GPU` no BullMQ, no
+  `ProcessingJob` e na tentativa especifica. Os logs identificam solicitante e ocupante com
+  `WAITING_GPU`, `GPU_ACQUIRED` e `GPU_RELEASED`.
+- `GPU_LEASE_TTL_MS` e `GPU_LEASE_POLL_MS` controlam respectivamente o prazo renovavel e o
+  intervalo de nova tentativa; os defaults sao 180 segundos e 1 segundo.
 - Renderizacao 2D/CPU pode ocorrer em paralelo quando nao competir pela GPU.
 - Cada job deve ser idempotente e retomavel a partir do ultimo artefato validado.
 - O cancelamento nao remove assets aprovados nem o video original.

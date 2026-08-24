@@ -5,6 +5,7 @@ import type { Job } from 'bullmq';
 
 import { PrismaService } from '../database/prisma.service';
 import { FrameInterpolationService } from '../services/frame-interpolation.service';
+import { GpuLeaseService } from '../services/gpu-lease.service';
 
 @Injectable()
 export class FrameInterpolationProcessor {
@@ -12,19 +13,30 @@ export class FrameInterpolationProcessor {
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(FrameInterpolationService) private readonly interpolation: FrameInterpolationService
+    @Inject(FrameInterpolationService) private readonly interpolation: FrameInterpolationService,
+    @Inject(GpuLeaseService) private readonly gpu: GpuLeaseService
   ) {}
 
   async process(job: Job<FrameInterpolationJobPayload>): Promise<void> {
     const id = String(job.id);
     try {
       await this.update(job, ProcessingJobStatus.active, 'STARTING', 5, 'Worker iniciou a interpolacao RIFE 2x.');
-      const asset = await this.interpolation.interpolate({
-        jobId: id,
-        ...job.data,
-        onProgress: (stage, progress, message) =>
-          this.update(job, ProcessingJobStatus.active, stage, progress, message)
-      });
+      const asset = await this.gpu.withLease(
+        `rife:${id}`,
+        () => this.interpolation.interpolate({
+          jobId: id,
+          ...job.data,
+          onProgress: (stage, progress, message) =>
+            this.update(job, ProcessingJobStatus.active, stage, progress, message)
+        }),
+        (owner) => this.update(
+          job,
+          ProcessingJobStatus.active,
+          'WAITING_GPU',
+          7,
+          `Aguardando a GPU local${owner ? `, atualmente ocupada por ${owner.split(':')[0]}` : ''}.`
+        )
+      );
       await this.update(
         job,
         ProcessingJobStatus.completed,

@@ -91,6 +91,10 @@ export const configuration = () => ({
     lockDurationMs: Number(process.env.WORKER_LOCK_DURATION_MS ?? 1800000),
     stalledIntervalMs: Number(process.env.WORKER_STALLED_INTERVAL_MS ?? 30000)
   },
+  gpu: {
+    leaseTtlMs: Number(process.env.GPU_LEASE_TTL_MS ?? 180000),
+    leasePollMs: Number(process.env.GPU_LEASE_POLL_MS ?? 1000)
+  },
   database: {
     url: process.env.DATABASE_URL ?? 'postgresql://postgres:postgres@localhost:5432/video_saas'
   }
