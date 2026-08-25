@@ -249,7 +249,7 @@
         <div class="production-assets-actions">
           <button class="app-button app-button--secondary" type="button" :disabled="replanningShots" @click="replanShots">{{ replanningShots ? 'Replanejando...' : 'Replanejar tomadas' }}</button>
           <button class="app-button" type="button" :disabled="generatingBackgrounds" @click="generateMissingBackgrounds">{{ generatingBackgrounds ? 'Enfileirando...' : 'Avançar geração por Location' }}</button>
-          <button class="app-button step4-reset-button" type="button" :disabled="resettingStep4" @click="resetStep4Dialog = true">{{ resettingStep4 ? 'Gerando tudo do zero...' : 'Gerar toda a Etapa 4 do zero' }}</button>
+          <button class="app-button step4-reset-button" type="button" :disabled="resettingStep4" @click="requestStep4Reset">{{ resettingStep4 ? 'Gerando tudo do zero...' : 'Gerar toda a Etapa 4 do zero' }}</button>
           <span v-if="productionAssets?.summary.readyForAnimation" class="approved-copy"><v-icon icon="mdi-check-decagram" /> Assets mínimos prontos para animação</span>
         </div>
         <v-alert v-if="step4Feedback" :type="step4Feedback.type" variant="tonal" density="compact" closable aria-live="polite" @click:close="step4Feedback = null">{{ step4Feedback.message }}</v-alert>
@@ -359,19 +359,6 @@
       </section>
     </template>
 
-    <v-dialog v-model="resetStep4Dialog" max-width="620" persistent>
-      <v-card class="step4-confirm-dialog">
-        <v-card-title>Gerar toda a Etapa 4 do zero?</v-card-title>
-        <v-card-text>
-          Os cenários, assets e renders atuais serão arquivados e não serão reutilizados. O sistema atualizará o Style Lock e gerará novos masters usando as referências atuais dos personagens.
-        </v-card-text>
-        <v-card-actions>
-          <button class="app-button app-button--secondary" type="button" :disabled="resettingStep4" @click="resetStep4Dialog = false">Cancelar</button>
-          <button class="app-button step4-reset-button" type="button" :disabled="resettingStep4" @click="resetStep4">{{ resettingStep4 ? 'Iniciando geração...' : 'Sim, gerar tudo do zero' }}</button>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
-
     <v-dialog :model-value="Boolean(previewImageUrl)" max-width="1400" @update:model-value="closeImagePreview">
       <v-card v-if="previewImageUrl" class="asset-preview-dialog">
         <v-card-title><span>{{ previewImageTitle }}</span><button class="asset-preview-close" type="button" aria-label="Fechar imagem ampliada" @click="closeImagePreview"><v-icon icon="mdi-close" /></button></v-card-title>
@@ -432,7 +419,6 @@ export default class ChildrenClipStudioPage extends Vue {
   replacingTrack = false;
   generatingBackgrounds = false;
   resettingStep4 = false;
-  resetStep4Dialog = false;
   step4Feedback: { type: 'success' | 'error'; message: string } | null = null;
   step4FeedbackVisible = false;
   generatingLocations: Record<string, boolean> = {};
@@ -758,6 +744,13 @@ export default class ChildrenClipStudioPage extends Vue {
     this.generatingBackgrounds = true;
     try { this.productionAssets = await projectsService.generateMissingChildrenClipBackgrounds(this.projectId, this.authStore.token); } catch (error) { this.captureError(error, 'Falha ao enfileirar os fundos'); } finally { this.generatingBackgrounds = false; }
   }
+  requestStep4Reset() {
+    if (this.resettingStep4) return;
+    const confirmed = window.confirm(
+      'Gerar toda a Etapa 4 do zero? Os cenários, assets e renders atuais serão arquivados e não serão reutilizados. O sistema atualizará o Style Lock e gerará novos masters usando as referências atuais dos personagens.'
+    );
+    if (confirmed) void this.resetStep4();
+  }
   async resetStep4() {
     if (!this.authStore.token || this.resettingStep4) return;
     this.resettingStep4 = true;
@@ -777,7 +770,6 @@ export default class ChildrenClipStudioPage extends Vue {
       this.outputStatus = null;
       this.step4Feedback = { type: 'success', message: 'Etapa 4 reiniciada. Os novos backgrounds master foram enfileirados com o Style Lock atual.' };
       this.step4FeedbackVisible = true;
-      this.resetStep4Dialog = false;
       await this.projectsStore.fetchProject(this.projectId, this.authStore.token);
     } catch (error) {
       this.step4Feedback = { type: 'error', message: error instanceof Error ? error.message : 'Falha ao reiniciar a Etapa 4.' };
@@ -991,8 +983,7 @@ export default class ChildrenClipStudioPage extends Vue {
 .hero-shot-list, .final-render-card { display: grid; gap: 12px; margin-top: 18px; }
 .final-render-preview { width: min(820px, 100%); max-height: 460px; border-radius: 14px; background: #111; }
 .final-download { width: fit-content; text-decoration: none; }
-.step4-confirm-dialog .v-card-text { line-height: 1.55; }
-.step4-confirm-dialog .v-card-actions, .asset-preview-dialog .v-card-actions { justify-content: flex-end; gap: 10px; padding: 16px 24px 20px; }
+.asset-preview-dialog .v-card-actions { justify-content: flex-end; gap: 10px; padding: 16px 24px 20px; }
 .asset-preview-dialog .v-card-title { display: flex; align-items: center; justify-content: space-between; gap: 16px; white-space: normal; }
 .asset-preview-dialog .v-card-text { display: flex; justify-content: center; padding: 0 24px; background: #111827; }
 .asset-preview-dialog .v-card-text img { width: 100%; max-height: 78vh; object-fit: contain; }
