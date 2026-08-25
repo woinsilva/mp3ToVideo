@@ -3,9 +3,16 @@ import {
   ChildrenClipShotAssetOrigin,
   ChildrenClipShotAssetRole,
   ChildrenClipShotAssetStatus,
+  Prisma,
   ProcessingJobStatus
 } from '@prisma/client';
-import { CHILDREN_CLIP_ASSET_GENERATE_JOB_NAME, CHILDREN_CLIP_QUEUE_NAME } from '@video/shared';
+import {
+  CHILDREN_CLIP_ASSET_GENERATE_JOB_NAME,
+  CHILDREN_CLIP_FINAL_RENDER_JOB_NAME,
+  CHILDREN_CLIP_HERO_SHOT_JOB_NAME,
+  CHILDREN_CLIP_QUEUE_NAME,
+  CHILDREN_CLIP_SHOT_RENDER_JOB_NAME
+} from '@video/shared';
 import { imageSize } from 'image-size';
 
 import { PrismaService } from '../../../database/prisma.service';
@@ -26,7 +33,10 @@ export class ChildrenClipAssetsService {
   ) {}
 
   async get(projectId: string, organizationId: string) {
-    const project = await this.getOwnedProject(projectId, organizationId);
+    let project = await this.getOwnedProject(projectId, organizationId);
+    if (await this.reconcileFailedAssetJobs(projectId)) {
+      project = await this.getOwnedProject(projectId, organizationId);
+    }
     const jobs = await this.prisma.processingJob.findMany({
       where: { projectId, jobName: CHILDREN_CLIP_ASSET_GENERATE_JOB_NAME },
       orderBy: { createdAt: 'desc' }
@@ -73,6 +83,48 @@ export class ChildrenClipAssetsService {
     };
   }
 
+  private async reconcileFailedAssetJobs(projectId: string) {
+    const pendingJobs = await this.prisma.processingJob.findMany({
+      where: {
+        projectId,
+        jobName: CHILDREN_CLIP_ASSET_GENERATE_JOB_NAME,
+        status: { in: ['queued', 'active', 'retrying'] },
+        bullJobId: { not: null }
+      }
+    });
+    let changed = false;
+    for (const pending of pendingJobs) {
+      const bullJob = pending.bullJobId ? await this.queue.inspect(pending.bullJobId) : null;
+      if (!bullJob || bullJob.state !== 'failed') continue;
+      const message = bullJob.failedReason || 'A geracao falhou no BullMQ sem uma mensagem de erro.';
+      const activityLog = Array.isArray(pending.activityLog) ? [...pending.activityLog] : [];
+      activityLog.push({
+        stage: 'FAILED',
+        message: `Falha ao gerar asset: ${message}`,
+        progress: pending.progress,
+        timestamp: new Date().toISOString(),
+        reconciledFrom: 'bullmq'
+      });
+      await this.prisma.$transaction([
+        this.prisma.processingJob.update({
+          where: { id: pending.id },
+          data: {
+            status: 'failed',
+            detailMessage: `Falha ao gerar asset: ${message}`,
+            errorMessage: message,
+            activityLog: activityLog.slice(-200) as Prisma.InputJsonValue
+          }
+        }),
+        this.prisma.childrenClipShotAsset.updateMany({
+          where: { bullJobId: pending.bullJobId },
+          data: { status: 'failed', errorMessage: message, generationEndedAt: new Date() }
+        })
+      ]);
+      changed = true;
+    }
+    return changed;
+  }
+
   async generateMissingBackgrounds(projectId: string, organizationId: string, userId: string) {
     const project = await this.getOwnedProject(projectId, organizationId);
     this.assertApprovedPlan(project.childrenClipPlan?.status);
@@ -80,6 +132,67 @@ export class ChildrenClipAssetsService {
     const locations = this.buildLocationWorkflow(project);
     for (const location of locations) {
       await this.enqueueLocationTargets(project, location, projectId, organizationId, userId);
+    }
+    return this.get(projectId, organizationId);
+  }
+
+  async resetAndRegenerate(projectId: string, organizationId: string, userId: string) {
+    const project = await this.getOwnedProject(projectId, organizationId);
+    this.assertApprovedPlan(project.childrenClipPlan?.status);
+    const dependentJobNames = [
+      CHILDREN_CLIP_ASSET_GENERATE_JOB_NAME,
+      CHILDREN_CLIP_SHOT_RENDER_JOB_NAME,
+      CHILDREN_CLIP_HERO_SHOT_JOB_NAME,
+      CHILDREN_CLIP_FINAL_RENDER_JOB_NAME
+    ];
+    const pendingJobs = await this.prisma.processingJob.findMany({
+      where: {
+        projectId,
+        jobName: { in: dependentJobNames },
+        status: { in: ['queued', 'active', 'retrying'] },
+        bullJobId: { not: null }
+      },
+      select: { bullJobId: true }
+    });
+    const liveStates = new Set(['active', 'waiting', 'delayed', 'prioritized', 'waiting-children']);
+    for (const pending of pendingJobs) {
+      const bullJob = pending.bullJobId ? await this.queue.inspect(pending.bullJobId) : null;
+      if (bullJob && liveStates.has(bullJob.state)) {
+        throw new BadRequestException('Aguarde os processamentos ativos das Etapas 4, 5 e 6 antes de reiniciar os cenarios.');
+      }
+    }
+
+    await this.styles.lock(projectId, true);
+    const resetReason = 'Versao arquivada pelo reset completo da Etapa 4. Nao reutilizar nos novos renders.';
+    const shotIds = project.childrenClipShots.map((shot) => shot.id);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.childrenClipLocation.updateMany({ where: { projectId }, data: { masterBackgroundAssetId: null } });
+      await tx.childrenClipShotAsset.updateMany({
+        where: { shotId: { in: shotIds } },
+        data: { status: 'rejected', approvedAt: null, reviewReason: resetReason }
+      });
+      await tx.childrenClipShotRenderAttempt.updateMany({
+        where: { shotId: { in: shotIds } },
+        data: { status: 'failed', progress: 0, stage: 'INVALIDATED', errorMessage: resetReason }
+      });
+      await tx.childrenClipHeroShotAttempt.updateMany({
+        where: { shotId: { in: shotIds } },
+        data: { status: 'rejected', progress: 0, stage: 'INVALIDATED', approvedAt: null, errorMessage: resetReason }
+      });
+      await tx.childrenClipFinalRender.updateMany({
+        where: { projectId },
+        data: { status: 'failed', progress: 0, stage: 'INVALIDATED', errorMessage: resetReason }
+      });
+      await tx.processingJob.updateMany({
+        where: { projectId, jobName: { in: dependentJobNames }, status: { in: ['queued', 'active', 'retrying'] } },
+        data: { status: 'failed', progress: 0, detailMessage: resetReason, errorMessage: resetReason }
+      });
+      await tx.childrenClip.update({ where: { projectId }, data: { productionStatus: 'generating_assets' } });
+    });
+
+    const refreshed = await this.getOwnedProject(projectId, organizationId);
+    for (const location of this.buildLocationWorkflow(refreshed)) {
+      await this.enqueueLocationTargets(refreshed, location, projectId, organizationId, userId);
     }
     return this.get(projectId, organizationId);
   }

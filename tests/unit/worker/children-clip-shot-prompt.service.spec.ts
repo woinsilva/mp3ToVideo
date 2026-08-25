@@ -46,7 +46,16 @@ describe('ChildrenClipShotPromptService', () => {
   });
 
   it('builds a background-only prompt with no entity references or character bible', () => {
-    const result = new ChildrenClipShotPromptService().build(context('background'));
+    const input = context('background');
+    input.styleProfile!.profile = {
+      medium: 'flat 2D cel animation',
+      lineStyle: 'contornos inspirados na Alba',
+      palette: ['#FFCC00', '#55AAEE'],
+      maxBackgroundDetail: 'simple',
+      characterDetail: { edgeDensity: 0.06 }
+    };
+    input.shot.continuityFromPreviousShot = 'Alba acabou de sair pela direita';
+    const result = new ChildrenClipShotPromptService().build(input);
     expect(result.referenceAssets).toEqual([]);
     expect(result.positivePrompt).not.toContain('Alba');
     expect(result.positivePrompt).not.toContain('Futuro');

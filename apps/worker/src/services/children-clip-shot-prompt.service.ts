@@ -72,9 +72,10 @@ export class ChildrenClipShotPromptService {
       const namedEntity = context.entities.find((entity) => this.containsName(basePrompt, entity.name));
       if (namedEntity) throw new Error(`Background-only nao pode solicitar a entidade ${namedEntity.name}`);
       const safeStyle = this.withoutNamedFragments(style, context.entities.map((entity) => entity.name));
-      const positivePrompt = [
+      const safeLockedStyle = this.withoutNamedFragments(lockedStyle.positive, context.entities.map((entity) => entity.name));
+      const positivePrompt = this.withoutNamedFragments([
         'original polished 2D children animation background plate, clean layered environment, clear foreground middle ground and background',
-        lockedStyle.positive,
+        safeLockedStyle,
         safeStyle,
         basePrompt,
         context.shot.timeOfDay,
@@ -82,7 +83,7 @@ export class ChildrenClipShotPromptService {
         `environmental composition only: ${context.shot.framing}; ${context.shot.cameraMovement}`,
         this.compositionRules(context.shot),
         'empty staging area for later 2D composition; no registered entities; no characters; no vehicles; no text'
-      ].filter(Boolean).join(', ');
+      ].filter(Boolean).join(', '), context.entities.map((entity) => entity.name));
       const leakedEntity = context.entities.find((entity) => this.containsName(positivePrompt, entity.name));
       if (leakedEntity) throw new Error(`Background-only positivo inclui a entidade ${leakedEntity.name}`);
       return {

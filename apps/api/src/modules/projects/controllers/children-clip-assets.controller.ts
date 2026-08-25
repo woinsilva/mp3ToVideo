@@ -30,6 +30,11 @@ export class ChildrenClipAssetsController {
     return this.assets.generateMissingBackgrounds(projectId, user.organizationId, user.userId);
   }
 
+  @Post('reset')
+  reset(@CurrentUser() user: AuthenticatedUser, @Param('projectId') projectId: string) {
+    return this.assets.resetAndRegenerate(projectId, user.organizationId, user.userId);
+  }
+
   @Post('locations/:locationId/generate-backgrounds')
   generateLocation(@CurrentUser() user: AuthenticatedUser, @Param('projectId') projectId: string, @Param('locationId') locationId: string) {
     return this.assets.generateLocationBackgrounds(projectId, locationId, user.organizationId, user.userId);

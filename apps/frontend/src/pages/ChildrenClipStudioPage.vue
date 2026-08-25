@@ -249,8 +249,10 @@
         <div class="production-assets-actions">
           <button class="app-button app-button--secondary" type="button" :disabled="replanningShots" @click="replanShots">{{ replanningShots ? 'Replanejando...' : 'Replanejar tomadas' }}</button>
           <button class="app-button" type="button" :disabled="generatingBackgrounds" @click="generateMissingBackgrounds">{{ generatingBackgrounds ? 'Enfileirando...' : 'Avançar geração por Location' }}</button>
+          <button class="app-button step4-reset-button" type="button" :disabled="resettingStep4" @click="resetStep4">{{ resettingStep4 ? 'Reiniciando...' : 'Reiniciar Etapa 4 do zero' }}</button>
           <span v-if="productionAssets?.summary.readyForAnimation" class="approved-copy"><v-icon icon="mdi-check-decagram" /> Assets mínimos prontos para animação</span>
         </div>
+        <v-alert v-if="step4Feedback" :type="step4Feedback.type" variant="tonal" density="compact" closable aria-live="polite" @click:close="step4Feedback = null">{{ step4Feedback.message }}</v-alert>
 
         <div v-if="productionAssets" class="production-location-list">
           <section v-for="location in productionAssets.locations" :key="location.id" class="production-location-card">
@@ -397,6 +399,8 @@ export default class ChildrenClipStudioPage extends Vue {
   replacementTrack: File | null = null;
   replacingTrack = false;
   generatingBackgrounds = false;
+  resettingStep4 = false;
+  step4Feedback: { type: 'success' | 'error'; message: string } | null = null;
   generatingLocations: Record<string, boolean> = {};
   replanningShots = false;
   shotAssetUrls: Record<string, string> = {};
@@ -718,6 +722,34 @@ export default class ChildrenClipStudioPage extends Vue {
     this.generatingBackgrounds = true;
     try { this.productionAssets = await projectsService.generateMissingChildrenClipBackgrounds(this.projectId, this.authStore.token); } catch (error) { this.captureError(error, 'Falha ao enfileirar os fundos'); } finally { this.generatingBackgrounds = false; }
   }
+  async resetStep4() {
+    if (!this.authStore.token || this.resettingStep4) return;
+    const confirmed = window.confirm(
+      'Reiniciar a Etapa 4 do zero? Os assets e renders atuais serão arquivados e não serão reutilizados. Os novos masters serão gerados com as referências e o Style Lock atuais.'
+    );
+    if (!confirmed) return;
+    this.resettingStep4 = true;
+    this.step4Feedback = null;
+    try {
+      this.productionAssets = await projectsService.resetChildrenClipProductionAssets(this.projectId, this.authStore.token);
+      Object.values(this.shotAssetUrls).forEach((url) => URL.revokeObjectURL(url));
+      Object.values(this.renderUrls).forEach((url) => URL.revokeObjectURL(url));
+      Object.values(this.heroUrls).forEach((url) => URL.revokeObjectURL(url));
+      if (this.finalRenderUrl) URL.revokeObjectURL(this.finalRenderUrl);
+      this.shotAssetUrls = {};
+      this.renderUrls = {};
+      this.heroUrls = {};
+      this.finalRenderUrl = null;
+      this.animationStatus = null;
+      this.outputStatus = null;
+      this.step4Feedback = { type: 'success', message: 'Etapa 4 reiniciada. Os novos backgrounds master foram enfileirados com o Style Lock atual.' };
+      await this.projectsStore.fetchProject(this.projectId, this.authStore.token);
+    } catch (error) {
+      this.step4Feedback = { type: 'error', message: error instanceof Error ? error.message : 'Falha ao reiniciar a Etapa 4.' };
+    } finally {
+      this.resettingStep4 = false;
+    }
+  }
   async generateLocationBackgrounds(locationId: string) {
     if (!this.authStore.token) return;
     this.generatingLocations = { ...this.generatingLocations, [locationId]: true };
@@ -811,6 +843,8 @@ export default class ChildrenClipStudioPage extends Vue {
 .plan-panel { padding: 24px; }
 .plan-save-area { display: grid; justify-items: start; gap: 10px; margin-top: 12px; }
 .plan-save-area .v-alert { width: 100%; }
+.step4-reset-button { color: #fff; background: #b42318; }
+.step4-reset-button:hover:not(:disabled) { background: #8f1c13; }
 .plan-blockers { margin-top: 18px; padding: 14px; border-radius: 12px; background: #fff7e7; color: #7b5314; }
 .plan-blockers ul { margin-bottom: 0; }
 .plan-start { margin-top: 18px; }

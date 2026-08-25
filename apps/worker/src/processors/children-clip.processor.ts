@@ -400,25 +400,6 @@ export class ChildrenClipProcessor {
         ? masterLink.approvedAt && masterLink.approvedAt >= styleProfile.lockedAt
         : masterMetadata.styleProfileVersion === styleProfile.versionNumber
     ));
-    const builtPrompt = this.shotPrompts.build({
-      role: shotAsset.role,
-      customPrompt: shotAsset.generationPrompt,
-      shot: {
-        ...shotAsset.shot,
-        location: shotAsset.shot.location ? {
-          ...shotAsset.shot.location,
-          masterBackgroundAsset: masterCompatible && masterAsset ? { id: masterAsset.id, storagePath: masterAsset.storagePath } : null
-        } : null
-      },
-      visualBible,
-      styleProfile,
-      narrative: shotAsset.shot.project.childrenClipPlan?.narrative,
-      entities
-    });
-    const positivePrompt = builtPrompt.positivePrompt;
-    const negativePrompt = [shotAsset.negativePrompt, builtPrompt.negativePrompt].filter(Boolean).join(', ');
-    const usedReference = builtPrompt.referenceAssets[0] ?? null;
-
     await this.prisma.$transaction([
       this.prisma.childrenClipShotAsset.update({
         where: { id: shotAssetId },
@@ -427,6 +408,25 @@ export class ChildrenClipProcessor {
       this.prisma.childrenClip.update({ where: { projectId }, data: { productionStatus: 'generating_assets' } })
     ]);
     try {
+      const builtPrompt = this.shotPrompts.build({
+        role: shotAsset.role,
+        customPrompt: shotAsset.generationPrompt,
+        shot: {
+          ...shotAsset.shot,
+          location: shotAsset.shot.location ? {
+            ...shotAsset.shot.location,
+            masterBackgroundAsset: masterCompatible && masterAsset ? { id: masterAsset.id, storagePath: masterAsset.storagePath } : null
+          } : null
+        },
+        visualBible,
+        styleProfile,
+        narrative: shotAsset.shot.project.childrenClipPlan?.narrative,
+        entities
+      });
+      const positivePrompt = builtPrompt.positivePrompt;
+      const negativePrompt = [shotAsset.negativePrompt, builtPrompt.negativePrompt].filter(Boolean).join(', ');
+      const usedReference = builtPrompt.referenceAssets[0] ?? null;
+
       await this.assetProgress(job, 8, 'STARTING', 'Worker iniciou a producao do asset da tomada.');
       await this.assetProgress(job, 18, 'LOADING_MODEL', `Carregando checkpoint ${checkpointName}.`);
       await this.assetProgress(job, 25, 'GENERATING', `Gerando ${shotAsset.role} em ${dimensions.width}x${dimensions.height}.`);

@@ -105,6 +105,16 @@ export class ChildrenClipQueueService implements OnModuleDestroy {
     return { bullJobId: String(job.id) };
   }
 
+  async inspect(jobId: string) {
+    const job = await this.queue.getJob(jobId);
+    if (!job) return null;
+    return {
+      state: await job.getState(),
+      progress: job.progress,
+      failedReason: job.failedReason || null
+    };
+  }
+
   async onModuleDestroy(): Promise<void> {
     await this.queue.close();
   }
