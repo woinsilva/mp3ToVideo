@@ -249,7 +249,7 @@
         <div class="production-assets-actions">
           <button class="app-button app-button--secondary" type="button" :disabled="replanningShots" @click="replanShots">{{ replanningShots ? 'Replanejando...' : 'Replanejar tomadas' }}</button>
           <button class="app-button" type="button" :disabled="generatingBackgrounds" @click="generateMissingBackgrounds">{{ generatingBackgrounds ? 'Enfileirando...' : 'Avançar geração por Location' }}</button>
-          <button class="app-button step4-reset-button" type="button" :disabled="resettingStep4" @click="resetStep4">{{ resettingStep4 ? 'Reiniciando...' : 'Reiniciar Etapa 4 do zero' }}</button>
+          <button class="app-button step4-reset-button" type="button" :disabled="resettingStep4" @click="resetStep4">{{ resettingStep4 ? 'Gerando tudo do zero...' : 'Gerar toda a Etapa 4 do zero' }}</button>
           <span v-if="productionAssets?.summary.readyForAnimation" class="approved-copy"><v-icon icon="mdi-check-decagram" /> Assets mínimos prontos para animação</span>
         </div>
         <v-alert v-if="step4Feedback" :type="step4Feedback.type" variant="tonal" density="compact" closable aria-live="polite" @click:close="step4Feedback = null">{{ step4Feedback.message }}</v-alert>
