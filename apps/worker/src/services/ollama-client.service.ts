@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { GpuLeaseService } from './gpu-lease.service';
 
 interface OllamaGenerateResponse {
   response: string;
@@ -27,7 +28,9 @@ export class OllamaClientService {
 
   constructor(
     @Inject(ConfigService)
-    private readonly configService: ConfigService
+    private readonly configService: ConfigService,
+    @Inject(GpuLeaseService)
+    private readonly gpu: GpuLeaseService
   ) {}
 
   isEnabled(): boolean {
@@ -39,6 +42,10 @@ export class OllamaClientService {
       return null;
     }
 
+    return this.gpu.withLease('ollama', () => this.generateJsonWithGpu<T>(messages));
+  }
+
+  private async generateJsonWithGpu<T>(messages: OllamaChatMessage[]): Promise<T | null> {
     const baseUrl = this.configService.get<string>('ai.ollamaBaseUrl', 'http://localhost:11434');
     const model = this.configService.get<string>('ai.ollamaModel', 'qwen3:8b');
     const timeoutMs = this.configService.get<number>('ai.ollamaTimeoutMs', 180000);

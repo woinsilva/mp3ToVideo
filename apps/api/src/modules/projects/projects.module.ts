@@ -22,6 +22,7 @@ import { LocalStorageService } from './services/local-storage.service';
 import { ProjectPresenter } from './services/project.presenter';
 import { ProjectsService } from './services/projects.service';
 import { TrackUploadPolicyService } from './services/track-upload-policy.service';
+import { GpuLeaseService } from './services/gpu-lease.service';
 
 @Module({
   imports: [ConfigModule, AuthModule, JobsModule],
@@ -34,6 +35,7 @@ import { TrackUploadPolicyService } from './services/track-upload-policy.service
     ChildrenClipAnimationService,
     ChildrenClipOutputService,
     ChildrenClipStyleProfileService,
+    GpuLeaseService,
     ProjectsService,
     LocalStorageService,
     ImageUploadPolicyService,

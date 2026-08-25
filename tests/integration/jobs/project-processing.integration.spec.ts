@@ -252,7 +252,9 @@ describe('Project processing integration', () => {
     const processingProgressService = new ProcessingProgressService(
       prisma as unknown as WorkerPrismaService
     );
-    const ollamaClientService = new OllamaClientService(configService);
+    const ollamaClientService = new OllamaClientService(configService, {
+      withLease: (_label: string, operation: () => Promise<unknown>) => operation()
+    } as never);
     const renderedInputs: Array<{
       scenes: Array<{ id: string; durationSeconds: number }>;
       audioPath: string | null;
@@ -352,7 +354,9 @@ describe('Project processing integration', () => {
     const processingProgressService = new ProcessingProgressService(
       prisma as unknown as WorkerPrismaService
     );
-    const ollamaClientService = new OllamaClientService(configService);
+    const ollamaClientService = new OllamaClientService(configService, {
+      withLease: (_label: string, operation: () => Promise<unknown>) => operation()
+    } as never);
     const renderedInputs: Array<{
       generationMode: string;
       generationFps: number;
@@ -470,7 +474,9 @@ describe('Project processing integration', () => {
     const processingProgressService = new ProcessingProgressService(
       prisma as unknown as WorkerPrismaService
     );
-    const ollamaClientService = new OllamaClientService(configService);
+    const ollamaClientService = new OllamaClientService(configService, {
+      withLease: (_label: string, operation: () => Promise<unknown>) => operation()
+    } as never);
     const storyboardGenerationService = new StoryboardGenerationService(
       configService,
       ollamaClientService,

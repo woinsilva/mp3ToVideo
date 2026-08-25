@@ -6,6 +6,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { resolveFromWorkspaceRoot } from '../utils/workspace-path.util';
 import { RenderStorageService } from './render-storage.service';
+import { GpuLeaseService } from './gpu-lease.service';
 
 const execFileAsync = promisify(execFile);
 
@@ -30,7 +31,9 @@ export class WhisperTranscriptionService {
     @Inject(ConfigService)
     private readonly configService: ConfigService,
     @Inject(RenderStorageService)
-    private readonly renderStorageService: RenderStorageService
+    private readonly renderStorageService: RenderStorageService,
+    @Inject(GpuLeaseService)
+    private readonly gpu: GpuLeaseService
   ) {}
 
   isEnabled(): boolean {
@@ -42,6 +45,10 @@ export class WhisperTranscriptionService {
       return null;
     }
 
+    return this.gpu.withLease('whisper', () => this.transcribeWithGpu(audioPath));
+  }
+
+  private async transcribeWithGpu(audioPath: string): Promise<WhisperTranscriptResult | null> {
     const pythonPath = this.configService.get<string>('audio.whisperPythonPath', 'python');
     const model = this.configService.get<string>('audio.whisperModel', 'distil-large-v3');
     const device = this.configService.get<string>('audio.whisperDevice', 'cuda');

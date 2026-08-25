@@ -218,7 +218,8 @@ O dominio deve contemplar:
 
 - O pipeline infantil nao pode usar `project-processing` como atalho para o pipeline musical atual.
 - Operacoes de GPU passam por exclusao mutua global. Um lease distribuido no Redis serializa
-  geracoes de imagem do ComfyUI, tomadas Wan e RIFE mesmo quando existem varios workers. O lease
+  Ollama, Whisper/CUDA, geracoes de imagem do ComfyUI, tomadas Wan, storyboards e RIFE mesmo
+  quando existem varios processos. O lease
   possui TTL renovado enquanto a operacao esta ativa e liberacao atomica por token, portanto uma
   queda de processo nao bloqueia a GPU indefinidamente.
 - Enquanto houver contencao, o job permanece ativo e publica `WAITING_GPU` no BullMQ, no

@@ -12,6 +12,7 @@ export const CHILDREN_CLIP_ASSET_GENERATE_JOB_NAME = 'children-clip.asset.genera
 export const CHILDREN_CLIP_SHOT_RENDER_JOB_NAME = 'children-clip.shot.render2d';
 export const CHILDREN_CLIP_HERO_SHOT_JOB_NAME = 'children-clip.shot.wan';
 export const CHILDREN_CLIP_FINAL_RENDER_JOB_NAME = 'children-clip.final.render';
+export const GPU_LEASE_KEY = 'video-saas:gpu:lease';
 
 export interface ProjectProcessingJobPayload {
   projectId: string;

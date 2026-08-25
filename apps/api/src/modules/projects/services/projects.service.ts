@@ -29,6 +29,7 @@ import { FrameInterpolationQueueService } from '../../jobs/services/frame-interp
 import { ChildrenClipAudioService } from './children-clip-audio.service';
 import { LocalStorageService } from './local-storage.service';
 import { ProjectPresenter } from './project.presenter';
+import { GpuLeaseService } from './gpu-lease.service';
 
 interface CreateProjectInput {
   organizationId: string;
@@ -101,7 +102,9 @@ export class ProjectsService {
     @Inject(FrameInterpolationQueueService)
     private readonly frameInterpolationQueueService: FrameInterpolationQueueService,
     @Inject(ChildrenClipAudioService)
-    private readonly childrenClipAudioService: ChildrenClipAudioService
+    private readonly childrenClipAudioService: ChildrenClipAudioService,
+    @Inject(GpuLeaseService)
+    private readonly gpu: GpuLeaseService
   ) {}
 
   async createProject(input: CreateProjectInput) {
@@ -509,7 +512,10 @@ export class ProjectsService {
 
     const normalizedInstruction = instruction?.trim() || null;
     const visualPrompt = this.buildVisualStoryboardPrompt(project, normalizedInstruction);
-    const imageBuffer = await this.generateComfyUiStoryboardImage(visualPrompt);
+    const imageBuffer = await this.gpu.withLease(
+      'comfyui-storyboard',
+      () => this.generateComfyUiStoryboardImage(visualPrompt)
+    );
     const storagePath = await this.localStorageService.saveStoryboardImage(
       organizationId,
       projectId,

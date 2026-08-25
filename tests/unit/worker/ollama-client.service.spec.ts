@@ -23,15 +23,18 @@ describe('OllamaClientService', () => {
       }[key] ?? fallback))
     };
 
-    const service = new OllamaClientService(config as never);
+    const gpu = { withLease: vi.fn((_label: string, operation: () => Promise<unknown>) => operation()) };
+    const service = new OllamaClientService(config as never, gpu as never);
     await expect(service.generateJson([{ role: 'user', content: 'plan' }])).resolves.toEqual({ locations: [] });
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ stream: true, format: 'json' });
+    expect(gpu.withLease).toHaveBeenCalledWith('ollama', expect.any(Function));
   });
 
   it('surfaces an Ollama stream error when fallbacks are disabled', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(`${JSON.stringify({ error: 'model crashed' })}\n`, { status: 200 })));
     const config = { get: vi.fn((key: string, fallback: unknown) => key === 'ai.enableOllama' ? true : key === 'ai.enableFallbacks' ? false : fallback) };
-    const service = new OllamaClientService(config as never);
+    const gpu = { withLease: vi.fn((_label: string, operation: () => Promise<unknown>) => operation()) };
+    const service = new OllamaClientService(config as never, gpu as never);
     await expect(service.generateJson([{ role: 'user', content: 'plan' }])).rejects.toThrow('Ollama stream failed: model crashed');
   });
 });

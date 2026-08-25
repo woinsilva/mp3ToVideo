@@ -18,6 +18,10 @@ export const configuration = () => ({
     host: process.env.REDIS_HOST ?? 'localhost',
     port: Number(process.env.REDIS_PORT ?? 6379)
   },
+  gpu: {
+    leaseTtlMs: Number(process.env.GPU_LEASE_TTL_MS ?? 180000),
+    leasePollMs: Number(process.env.GPU_LEASE_POLL_MS ?? 1000)
+  },
   visual: {
     provider: process.env.SCENE_VISUAL_PROVIDER ?? 'procedural',
     comfyuiBaseUrl: process.env.COMFYUI_BASE_URL ?? 'http://localhost:8188',

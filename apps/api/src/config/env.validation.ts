@@ -10,6 +10,8 @@ export const envValidationSchema = Joi.object({
   DATABASE_PROVIDER: Joi.string().valid('postgresql', 'sqlite').default('postgresql'),
   REDIS_HOST: Joi.string().default('localhost'),
   REDIS_PORT: Joi.number().default(6379),
+  GPU_LEASE_TTL_MS: Joi.number().integer().min(15000).default(180000),
+  GPU_LEASE_POLL_MS: Joi.number().integer().min(100).default(1000),
   SCENE_VISUAL_PROVIDER: Joi.string().valid('procedural', 'comfyui').default('procedural'),
   COMFYUI_BASE_URL: Joi.string().uri({ scheme: ['http', 'https'] }).default('http://localhost:8188'),
   COMFYUI_HEALTH_TIMEOUT_MS: Joi.number().integer().positive().default(5000),
