@@ -184,7 +184,22 @@
             <label class="auth-input-group"><span class="auth-input-label">Biblia visual (JSON editavel)</span><textarea v-model="visualBibleJson" class="auth-input auth-input--textarea code-textarea" rows="12" :disabled="planStatus.plan.status === 'approved'" /></label>
             <label class="auth-input-group"><span class="auth-input-label">Narrativa (JSON editavel)</span><textarea v-model="narrativeJson" class="auth-input auth-input--textarea code-textarea" rows="12" :disabled="planStatus.plan.status === 'approved'" /></label>
           </div>
-          <button v-if="planStatus.plan.status !== 'approved'" class="app-button app-button--secondary" type="button" @click="savePlanText">Salvar biblia e narrativa</button>
+          <div v-if="planStatus.plan.status !== 'approved'" class="plan-save-area">
+            <button class="app-button app-button--secondary" type="button" :disabled="savingPlanText" @click="savePlanText">
+              {{ savingPlanText ? 'Salvando...' : 'Salvar biblia e narrativa' }}
+            </button>
+            <v-alert
+              v-if="planSaveFeedback"
+              :type="planSaveFeedback.type"
+              variant="tonal"
+              density="compact"
+              closable
+              aria-live="polite"
+              @click:close="planSaveFeedback = null"
+            >
+              {{ planSaveFeedback.message }}
+            </v-alert>
+          </div>
 
           <div class="timeline-strip">
             <div v-for="shot in planStatus.shots" :key="shot.id" :style="{ width: `${(shot.durationSeconds / Math.max(1, audioStatus?.analysis?.durationSeconds || 1)) * 100}%` }" :title="`${shot.index + 1}. ${shot.title}`"><span>{{ shot.index + 1 }}</span></div>
@@ -361,6 +376,8 @@ export default class ChildrenClipStudioPage extends Vue {
   outputStatus: ChildrenClipOutputStatus | null = null;
   visualBibleJson = '';
   narrativeJson = '';
+  savingPlanText = false;
+  planSaveFeedback: { type: 'success' | 'error'; message: string } | null = null;
   planRevision = '';
   characterName = '';
   roleName = '';
@@ -649,11 +666,36 @@ export default class ChildrenClipStudioPage extends Vue {
   }
   async savePlanText() {
     if (!this.authStore.token) return;
+    this.planSaveFeedback = null;
+    let visualBible: Record<string, unknown>;
+    let narrative: Record<string, unknown>;
+
     try {
-      const visualBible = JSON.parse(this.visualBibleJson) as Record<string, unknown>;
-      const narrative = JSON.parse(this.narrativeJson) as Record<string, unknown>;
+      visualBible = JSON.parse(this.visualBibleJson) as Record<string, unknown>;
+    } catch {
+      this.planSaveFeedback = { type: 'error', message: 'A Bíblia visual contém um JSON inválido. Corrija o conteúdo antes de salvar.' };
+      return;
+    }
+
+    try {
+      narrative = JSON.parse(this.narrativeJson) as Record<string, unknown>;
+    } catch {
+      this.planSaveFeedback = { type: 'error', message: 'A narrativa contém um JSON inválido. Corrija o conteúdo antes de salvar.' };
+      return;
+    }
+
+    this.savingPlanText = true;
+    try {
       this.planStatus = await projectsService.updateChildrenClipProductionPlan(this.projectId, { visualBible, narrative }, this.authStore.token);
-    } catch (error) { this.captureError(error, 'JSON invalido ou falha ao salvar o plano'); }
+      this.planSaveFeedback = { type: 'success', message: 'Bíblia visual e narrativa salvas com sucesso.' };
+    } catch (error) {
+      this.planSaveFeedback = {
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Falha ao salvar a Bíblia visual e a narrativa.'
+      };
+    } finally {
+      this.savingPlanText = false;
+    }
   }
   async saveShot(shot: ChildrenClipShot) {
     if (!this.authStore.token) return;
@@ -767,6 +809,8 @@ export default class ChildrenClipStudioPage extends Vue {
 .lyric-cues li { display: grid; grid-template-columns: 48px 1fr; gap: 8px; }
 .lyric-cues time { color: #9b5d0b; font-variant-numeric: tabular-nums; }
 .plan-panel { padding: 24px; }
+.plan-save-area { display: grid; justify-items: start; gap: 10px; margin-top: 12px; }
+.plan-save-area .v-alert { width: 100%; }
 .plan-blockers { margin-top: 18px; padding: 14px; border-radius: 12px; background: #fff7e7; color: #7b5314; }
 .plan-blockers ul { margin-bottom: 0; }
 .plan-start { margin-top: 18px; }
