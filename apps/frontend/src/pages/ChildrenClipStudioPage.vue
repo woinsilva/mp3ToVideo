@@ -249,7 +249,7 @@
         <div class="production-assets-actions">
           <button class="app-button app-button--secondary" type="button" :disabled="replanningShots" @click="replanShots">{{ replanningShots ? 'Replanejando...' : 'Replanejar tomadas' }}</button>
           <button class="app-button" type="button" :disabled="generatingBackgrounds" @click="generateMissingBackgrounds">{{ generatingBackgrounds ? 'Enfileirando...' : 'Avançar geração por Location' }}</button>
-          <button class="app-button step4-reset-button" type="button" :disabled="resettingStep4" @click="resetStep4">{{ resettingStep4 ? 'Gerando tudo do zero...' : 'Gerar toda a Etapa 4 do zero' }}</button>
+          <button class="app-button step4-reset-button" type="button" :disabled="resettingStep4" @click="resetStep4Dialog = true">{{ resettingStep4 ? 'Gerando tudo do zero...' : 'Gerar toda a Etapa 4 do zero' }}</button>
           <span v-if="productionAssets?.summary.readyForAnimation" class="approved-copy"><v-icon icon="mdi-check-decagram" /> Assets mínimos prontos para animação</span>
         </div>
         <v-alert v-if="step4Feedback" :type="step4Feedback.type" variant="tonal" density="compact" closable aria-live="polite" @click:close="step4Feedback = null">{{ step4Feedback.message }}</v-alert>
@@ -261,7 +261,10 @@
               <div class="location-heading__status"><span class="version-status" :class="{ 'version-status--approved': location.phase === 'complete' }">{{ locationPhaseLabel(location.phase) }}</span><small>{{ location.approvedShots }}/{{ location.shots.length }} vistas aprovadas</small></div>
             </header>
             <div class="location-master" :class="{ 'location-master--approved': location.master }">
-              <img v-if="location.master && shotAssetUrls[location.master.shotAssetId]" :src="shotAssetUrls[location.master.shotAssetId]" :alt="`Master de ${location.name}`" />
+              <button v-if="location.master && shotAssetUrls[location.master.shotAssetId]" class="asset-preview-trigger location-master__preview" type="button" :aria-label="`Ampliar master de ${location.name}`" @click="openImagePreview(location.master.shotAssetId, `Master de ${location.name}`)">
+                <img :src="shotAssetUrls[location.master.shotAssetId]" :alt="`Master de ${location.name}`" />
+                <span><v-icon icon="mdi-magnify-plus-outline" /> Ampliar</span>
+              </button>
               <div v-else class="location-master__placeholder"><v-icon icon="mdi-image-filter-center-focus-strong-outline" size="34" /></div>
               <div>
                 <span class="location-kicker">Shot Background Anchor</span>
@@ -287,7 +290,10 @@
             </div>
             <div v-if="shot.assets.length" class="shot-assets-grid">
               <figure v-for="asset in shot.assets" :key="asset.id" :class="{ 'shot-asset--approved': asset.status === 'approved' }">
-                <img v-if="shotAssetUrls[asset.id]" :src="shotAssetUrls[asset.id]" :alt="asset.label || asset.role" />
+                <button v-if="shotAssetUrls[asset.id]" class="asset-preview-trigger" type="button" :aria-label="`Ampliar ${asset.label || shotAssetRoleLabel(asset.role)}`" @click="openImagePreview(asset.id, `${shot.index + 1}. ${shot.title} — ${shotAssetRoleLabel(asset.role)} v${asset.versionNumber}`)">
+                  <img :src="shotAssetUrls[asset.id]" :alt="asset.label || asset.role" />
+                  <span><v-icon icon="mdi-magnify-plus-outline" /> Ampliar</span>
+                </button>
                 <div v-else-if="asset.status === 'queued' || asset.status === 'generating'" class="asset-loading"><v-progress-circular indeterminate size="28" /></div>
                 <div v-else class="asset-loading"><v-icon icon="mdi-image-off-outline" /></div>
                 <figcaption><strong>{{ shotAssetRoleLabel(asset.role) }} · v{{ asset.versionNumber }}</strong><span class="version-status" :class="`version-status--${asset.status}`">{{ shotAssetStatusLabel(asset.status) }}</span></figcaption>
@@ -352,6 +358,32 @@
         </div>
       </section>
     </template>
+
+    <v-dialog v-model="resetStep4Dialog" max-width="620" persistent>
+      <v-card class="step4-confirm-dialog">
+        <v-card-title>Gerar toda a Etapa 4 do zero?</v-card-title>
+        <v-card-text>
+          Os cenários, assets e renders atuais serão arquivados e não serão reutilizados. O sistema atualizará o Style Lock e gerará novos masters usando as referências atuais dos personagens.
+        </v-card-text>
+        <v-card-actions>
+          <button class="app-button app-button--secondary" type="button" :disabled="resettingStep4" @click="resetStep4Dialog = false">Cancelar</button>
+          <button class="app-button step4-reset-button" type="button" :disabled="resettingStep4" @click="resetStep4">{{ resettingStep4 ? 'Iniciando geração...' : 'Sim, gerar tudo do zero' }}</button>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <v-dialog :model-value="Boolean(previewImageUrl)" max-width="1400" @update:model-value="closeImagePreview">
+      <v-card v-if="previewImageUrl" class="asset-preview-dialog">
+        <v-card-title><span>{{ previewImageTitle }}</span><button class="asset-preview-close" type="button" aria-label="Fechar imagem ampliada" @click="closeImagePreview"><v-icon icon="mdi-close" /></button></v-card-title>
+        <v-card-text><img :src="previewImageUrl" :alt="previewImageTitle" /></v-card-text>
+        <v-card-actions><button class="app-button app-button--secondary" type="button" @click="closeImagePreview">Fechar</button></v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <v-snackbar v-model="step4FeedbackVisible" :color="step4Feedback?.type === 'error' ? 'error' : 'success'" location="top right" :timeout="9000" multi-line>
+      {{ step4Feedback?.message }}
+      <template #actions><v-btn variant="text" @click="step4FeedbackVisible = false">Fechar</v-btn></template>
+    </v-snackbar>
   </AppLayout>
 </template>
 
@@ -400,10 +432,14 @@ export default class ChildrenClipStudioPage extends Vue {
   replacingTrack = false;
   generatingBackgrounds = false;
   resettingStep4 = false;
+  resetStep4Dialog = false;
   step4Feedback: { type: 'success' | 'error'; message: string } | null = null;
+  step4FeedbackVisible = false;
   generatingLocations: Record<string, boolean> = {};
   replanningShots = false;
   shotAssetUrls: Record<string, string> = {};
+  previewImageUrl: string | null = null;
+  previewImageTitle = '';
   shotAssetRoles: Record<string, ChildrenClipShotAssetRole> = {};
   shotAssetPrompts: Record<string, string> = {};
   shotAssetFiles: Record<string, File | null> = {};
@@ -724,12 +760,9 @@ export default class ChildrenClipStudioPage extends Vue {
   }
   async resetStep4() {
     if (!this.authStore.token || this.resettingStep4) return;
-    const confirmed = window.confirm(
-      'Reiniciar a Etapa 4 do zero? Os assets e renders atuais serão arquivados e não serão reutilizados. Os novos masters serão gerados com as referências e o Style Lock atuais.'
-    );
-    if (!confirmed) return;
     this.resettingStep4 = true;
     this.step4Feedback = null;
+    this.step4FeedbackVisible = false;
     try {
       this.productionAssets = await projectsService.resetChildrenClipProductionAssets(this.projectId, this.authStore.token);
       Object.values(this.shotAssetUrls).forEach((url) => URL.revokeObjectURL(url));
@@ -743,12 +776,25 @@ export default class ChildrenClipStudioPage extends Vue {
       this.animationStatus = null;
       this.outputStatus = null;
       this.step4Feedback = { type: 'success', message: 'Etapa 4 reiniciada. Os novos backgrounds master foram enfileirados com o Style Lock atual.' };
+      this.step4FeedbackVisible = true;
+      this.resetStep4Dialog = false;
       await this.projectsStore.fetchProject(this.projectId, this.authStore.token);
     } catch (error) {
       this.step4Feedback = { type: 'error', message: error instanceof Error ? error.message : 'Falha ao reiniciar a Etapa 4.' };
+      this.step4FeedbackVisible = true;
     } finally {
       this.resettingStep4 = false;
     }
+  }
+  openImagePreview(assetId: string, title: string) {
+    const url = this.shotAssetUrls[assetId];
+    if (!url) return;
+    this.previewImageUrl = url;
+    this.previewImageTitle = title;
+  }
+  closeImagePreview() {
+    this.previewImageUrl = null;
+    this.previewImageTitle = '';
   }
   async generateLocationBackgrounds(locationId: string) {
     if (!this.authStore.token) return;
@@ -911,6 +957,7 @@ export default class ChildrenClipStudioPage extends Vue {
 .location-master { display: grid; grid-template-columns: 190px minmax(0, 1fr) auto; align-items: center; gap: 16px; margin: 16px; padding: 14px; border: 1px dashed #d2a15d; border-radius: 14px; background: #fff9ef; }
 .location-master--approved { border-style: solid; border-color: #78b78b; background: #f1faf4; }
 .location-master img, .location-master__placeholder { width: 190px; aspect-ratio: 16 / 9; border-radius: 10px; object-fit: cover; background: #edf0f4; }
+.location-master__preview { width: 190px; border-radius: 10px; }
 .location-master__placeholder { display: flex; align-items: center; justify-content: center; color: #8b5a17; }
 .location-master > div:not(.location-master__placeholder) { display: grid; gap: 5px; }
 .location-shot-list { display: grid; gap: 12px; padding: 0 16px 16px; }
@@ -925,6 +972,11 @@ export default class ChildrenClipStudioPage extends Vue {
 .shot-assets-grid figure { overflow: hidden; margin: 0; padding-bottom: 12px; border: 1px solid #dfe3e8; border-radius: 12px; background: #fff; }
 .shot-assets-grid figure.shot-asset--approved { border-color: #67ae7d; box-shadow: 0 0 0 2px #dff3e5; }
 .shot-assets-grid img, .shot-assets-grid .asset-loading { width: 100%; aspect-ratio: 16 / 9; object-fit: contain; background: #f0f2f5; }
+.asset-preview-trigger { position: relative; display: block; width: 100%; overflow: hidden; padding: 0; border: 0; background: #f0f2f5; color: #fff; cursor: zoom-in; }
+.asset-preview-trigger img { display: block; }
+.asset-preview-trigger > span { position: absolute; right: 8px; bottom: 8px; display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; border-radius: 999px; background: rgb(17 24 39 / 78%); font-size: .76rem; font-weight: 700; opacity: 0; transform: translateY(4px); transition: opacity .15s ease, transform .15s ease; }
+.asset-preview-trigger:hover > span, .asset-preview-trigger:focus-visible > span { opacity: 1; transform: translateY(0); }
+.asset-preview-trigger:focus-visible { outline: 3px solid #1f6feb; outline-offset: -3px; }
 .shot-assets-grid figcaption { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px 0; }
 .shot-assets-grid .version-actions, .shot-assets-grid .v-alert, .asset-job-progress { margin-right: 12px; margin-left: 12px; }
 .asset-job-progress { display: grid; gap: 5px; color: #65676b; }
@@ -939,5 +991,12 @@ export default class ChildrenClipStudioPage extends Vue {
 .hero-shot-list, .final-render-card { display: grid; gap: 12px; margin-top: 18px; }
 .final-render-preview { width: min(820px, 100%); max-height: 460px; border-radius: 14px; background: #111; }
 .final-download { width: fit-content; text-decoration: none; }
-@media (max-width: 700px) { .setup-grid, .character-form, .audio-metrics, .replace-track, .plan-json-grid, .shot-form, .location-master { grid-template-columns: 1fr; } .character-form__wide, .shot-form__wide { grid-column: auto; } .character-panel, .character-card, .audio-panel, .plan-panel { padding: 18px; } .supplementary-assets__form, .shot-asset-form, .library-character-form { grid-template-columns: 1fr; } .shot-card summary, .location-heading { align-items: flex-start; flex-direction: column; } .location-heading__status { justify-items: start; } .location-master img, .location-master__placeholder { width: 100%; } }
+.step4-confirm-dialog .v-card-text { line-height: 1.55; }
+.step4-confirm-dialog .v-card-actions, .asset-preview-dialog .v-card-actions { justify-content: flex-end; gap: 10px; padding: 16px 24px 20px; }
+.asset-preview-dialog .v-card-title { display: flex; align-items: center; justify-content: space-between; gap: 16px; white-space: normal; }
+.asset-preview-dialog .v-card-text { display: flex; justify-content: center; padding: 0 24px; background: #111827; }
+.asset-preview-dialog .v-card-text img { width: 100%; max-height: 78vh; object-fit: contain; }
+.asset-preview-close { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 38px; height: 38px; border: 0; border-radius: 50%; background: transparent; cursor: pointer; }
+.asset-preview-close:hover { background: #edf0f4; }
+@media (max-width: 700px) { .setup-grid, .character-form, .audio-metrics, .replace-track, .plan-json-grid, .shot-form, .location-master { grid-template-columns: 1fr; } .character-form__wide, .shot-form__wide { grid-column: auto; } .character-panel, .character-card, .audio-panel, .plan-panel { padding: 18px; } .supplementary-assets__form, .shot-asset-form, .library-character-form { grid-template-columns: 1fr; } .shot-card summary, .location-heading { align-items: flex-start; flex-direction: column; } .location-heading__status { justify-items: start; } .location-master img, .location-master__placeholder, .location-master__preview { width: 100%; } }
 </style>
