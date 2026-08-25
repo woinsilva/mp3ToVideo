@@ -359,13 +359,15 @@
       </section>
     </template>
 
-    <v-dialog :model-value="Boolean(previewImageUrl)" max-width="1400" @update:model-value="closeImagePreview">
-      <v-card v-if="previewImageUrl" class="asset-preview-dialog">
-        <v-card-title><span>{{ previewImageTitle }}</span><button class="asset-preview-close" type="button" aria-label="Fechar imagem ampliada" @click="closeImagePreview"><v-icon icon="mdi-close" /></button></v-card-title>
-        <v-card-text><img :src="previewImageUrl" :alt="previewImageTitle" /></v-card-text>
-        <v-card-actions><button class="app-button app-button--secondary" type="button" @click="closeImagePreview">Fechar</button></v-card-actions>
-      </v-card>
-    </v-dialog>
+    <Teleport to="body">
+      <div v-if="previewImageUrl" class="asset-lightbox" role="dialog" aria-modal="true" :aria-label="previewImageTitle" @click.self="closeImagePreview">
+        <section class="asset-lightbox__panel">
+          <header><strong>{{ previewImageTitle }}</strong><button class="asset-preview-close" type="button" aria-label="Fechar imagem ampliada" @click="closeImagePreview"><v-icon icon="mdi-close" /></button></header>
+          <div class="asset-lightbox__image"><img :src="previewImageUrl" :alt="previewImageTitle" /></div>
+          <footer><span>Use Esc ou clique fora da imagem para fechar.</span><button class="app-button app-button--secondary" type="button" @click="closeImagePreview">Fechar</button></footer>
+        </section>
+      </div>
+    </Teleport>
 
     <v-snackbar v-model="step4FeedbackVisible" :color="step4Feedback?.type === 'error' ? 'error' : 'success'" location="top right" :timeout="9000" multi-line>
       {{ step4Feedback?.message }}
@@ -446,6 +448,7 @@ export default class ChildrenClipStudioPage extends Vue {
   get planStatusLabel() { return ({ draft: 'Rascunho', queued: 'Enfileirado', generating: 'Gerando', ready_for_review: 'Revisar', approved: 'Aprovado', failed: 'Falhou' } as Record<string, string>)[this.planStatus?.plan?.status || 'draft']; }
 
   async mounted() {
+    window.addEventListener('keydown', this.onPreviewKeydown);
     if (!this.authStore.token) return;
     try {
       const project = await this.projectsStore.fetchProject(this.projectId, this.authStore.token);
@@ -460,6 +463,7 @@ export default class ChildrenClipStudioPage extends Vue {
   }
 
   beforeUnmount() {
+    window.removeEventListener('keydown', this.onPreviewKeydown);
     if (this.pollTimer) clearInterval(this.pollTimer);
     Object.values(this.assetUrls).forEach((url) => URL.revokeObjectURL(url));
     Object.values(this.shotAssetUrls).forEach((url) => URL.revokeObjectURL(url));
@@ -788,6 +792,9 @@ export default class ChildrenClipStudioPage extends Vue {
     this.previewImageUrl = null;
     this.previewImageTitle = '';
   }
+  onPreviewKeydown(event: KeyboardEvent) {
+    if (event.key === 'Escape' && this.previewImageUrl) this.closeImagePreview();
+  }
   async generateLocationBackgrounds(locationId: string) {
     if (!this.authStore.token) return;
     this.generatingLocations = { ...this.generatingLocations, [locationId]: true };
@@ -983,10 +990,13 @@ export default class ChildrenClipStudioPage extends Vue {
 .hero-shot-list, .final-render-card { display: grid; gap: 12px; margin-top: 18px; }
 .final-render-preview { width: min(820px, 100%); max-height: 460px; border-radius: 14px; background: #111; }
 .final-download { width: fit-content; text-decoration: none; }
-.asset-preview-dialog .v-card-actions { justify-content: flex-end; gap: 10px; padding: 16px 24px 20px; }
-.asset-preview-dialog .v-card-title { display: flex; align-items: center; justify-content: space-between; gap: 16px; white-space: normal; }
-.asset-preview-dialog .v-card-text { display: flex; justify-content: center; padding: 0 24px; background: #111827; }
-.asset-preview-dialog .v-card-text img { width: 100%; max-height: 78vh; object-fit: contain; }
+.asset-lightbox { position: fixed; inset: 0; z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgb(3 7 18 / 88%); backdrop-filter: blur(4px); }
+.asset-lightbox__panel { display: grid; width: min(1400px, 96vw); max-height: 94vh; overflow: hidden; border-radius: 16px; background: #fff; box-shadow: 0 24px 80px rgb(0 0 0 / 45%); }
+.asset-lightbox__panel header, .asset-lightbox__panel footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; }
+.asset-lightbox__panel header strong { line-height: 1.35; }
+.asset-lightbox__panel footer { color: #65676b; font-size: .84rem; }
+.asset-lightbox__image { display: flex; min-height: 220px; align-items: center; justify-content: center; overflow: auto; background: #111827; }
+.asset-lightbox__image img { display: block; width: auto; max-width: 100%; height: auto; max-height: calc(94vh - 132px); object-fit: contain; }
 .asset-preview-close { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 38px; height: 38px; border: 0; border-radius: 50%; background: transparent; cursor: pointer; }
 .asset-preview-close:hover { background: #edf0f4; }
 @media (max-width: 700px) { .setup-grid, .character-form, .audio-metrics, .replace-track, .plan-json-grid, .shot-form, .location-master { grid-template-columns: 1fr; } .character-form__wide, .shot-form__wide { grid-column: auto; } .character-panel, .character-card, .audio-panel, .plan-panel { padding: 18px; } .supplementary-assets__form, .shot-asset-form, .library-character-form { grid-template-columns: 1fr; } .shot-card summary, .location-heading { align-items: flex-start; flex-direction: column; } .location-heading__status { justify-items: start; } .location-master img, .location-master__placeholder, .location-master__preview { width: 100%; } }
