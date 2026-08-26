@@ -41,6 +41,7 @@ import { GpuLeaseService } from './services/gpu-lease.service';
     ImageUploadPolicyService,
     ProjectPresenter,
     TrackUploadPolicyService
-  ]
+  ],
+  exports: [GpuLeaseService]
 })
 export class ProjectsModule {}

@@ -81,6 +81,7 @@
         </main>
       </div>
     </div>
+    <AssistantChat />
   </v-main>
 </template>
 
@@ -88,8 +89,9 @@
 import { Component, Vue } from 'vue-facing-decorator';
 
 import { useAuthStore } from '@/stores/auth.store';
+import AssistantChat from '@/components/AssistantChat.vue';
 
-@Component
+@Component({ components: { AssistantChat } })
 export default class AppLayout extends Vue {
   get authStore(): any {
     return useAuthStore();

@@ -22,6 +22,14 @@ export const configuration = () => ({
     leaseTtlMs: Number(process.env.GPU_LEASE_TTL_MS ?? 180000),
     leasePollMs: Number(process.env.GPU_LEASE_POLL_MS ?? 1000)
   },
+  ai: {
+    enableOllama: process.env.ENABLE_OLLAMA === 'true',
+    ollamaBaseUrl: process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434',
+    ollamaModel: process.env.OLLAMA_MODEL ?? 'qwen3:8b',
+    ollamaTimeoutMs: Number(process.env.OLLAMA_TIMEOUT_MS ?? 600000),
+    ollamaKeepAlive: process.env.OLLAMA_KEEP_ALIVE ?? '0s',
+    ollamaThink: process.env.OLLAMA_THINK === 'true'
+  },
   visual: {
     provider: process.env.SCENE_VISUAL_PROVIDER ?? 'procedural',
     comfyuiBaseUrl: process.env.COMFYUI_BASE_URL ?? 'http://localhost:8188',

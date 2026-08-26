@@ -8,6 +8,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { HealthController } from './modules/health/health.controller';
 import { JobsModule } from './modules/jobs/jobs.module';
 import { ProjectsModule } from './modules/projects/projects.module';
+import { AssistantModule } from './modules/assistant/assistant.module';
 
 @Module({
   imports: [
@@ -21,7 +22,8 @@ import { ProjectsModule } from './modules/projects/projects.module';
     PrismaModule,
     AuthModule,
     JobsModule,
-    ProjectsModule
+    ProjectsModule,
+    AssistantModule
   ],
   controllers: [HealthController]
 })
