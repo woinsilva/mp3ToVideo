@@ -28,13 +28,13 @@ function setup(queueState: string | null = null) {
   const service = new ChildrenClipAssetsService(prisma as never, queue as never, {} as never, styles as never);
   vi.spyOn(service as never, 'getOwnedProject').mockResolvedValue(project as never);
   vi.spyOn(service as never, 'buildLocationWorkflow').mockReturnValue([{ id: 'location-1' }] as never);
-  const enqueue = vi.spyOn(service as never, 'enqueueLocationTargets').mockResolvedValue(undefined as never);
-  vi.spyOn(service, 'get').mockResolvedValue({ summary: { totalShots: 1, approvedBackgrounds: 0 } } as never);
+  const enqueue = vi.spyOn(service as never, 'enqueueCompleteStep4').mockResolvedValue(undefined as never);
+  vi.spyOn(service, 'get').mockResolvedValue({ summary: { totalShots: 1, approvedBackgrounds: 0, approvedStoryboards: 0 } } as never);
   return { service, styles, tx, enqueue };
 }
 
 describe('ChildrenClipAssetsService reset', () => {
-  it('archives prior outputs, refreshes the style lock and queues fresh location masters', async () => {
+  it('archives prior outputs, refreshes the style lock and queues the complete step 4', async () => {
     const { service, styles, tx, enqueue } = setup();
 
     await service.resetAndRegenerate('project-1', 'org-1', 'user-1');
@@ -51,6 +51,28 @@ describe('ChildrenClipAssetsService reset', () => {
 
     await expect(service.resetAndRegenerate('project-1', 'org-1', 'user-1')).rejects.toBeInstanceOf(BadRequestException);
     expect(styles.lock).not.toHaveBeenCalled();
+  });
+
+  it('queues a background followed by a complete storyboard for every shot', async () => {
+    const service = new ChildrenClipAssetsService({} as never, {} as never, {} as never, {} as never);
+    const fullProject = {
+      childrenClipShots: [
+        { id: 'shot-1', index: 0, backgroundPrompt: 'station wide', description: 'Lia waves' },
+        { id: 'shot-2', index: 1, backgroundPrompt: 'station close', description: 'Toto smiles' }
+      ]
+    };
+    vi.spyOn(service as never, 'buildLocationWorkflow').mockReturnValue([{
+      id: 'location-1', name: 'Station', anchorShotId: 'shot-1',
+      shots: [{ id: 'shot-1' }, { id: 'shot-2' }]
+    }] as never);
+    const create = vi.spyOn(service as never, 'createAndEnqueue').mockResolvedValue(undefined as never);
+
+    await (service as unknown as {
+      enqueueCompleteStep4(project: unknown, projectId: string, organizationId: string, userId: string): Promise<void>;
+    }).enqueueCompleteStep4(fullProject, 'project-1', 'org-1', 'user-1');
+
+    expect(create.mock.calls.map((call) => (call[4] as { role: string }).role))
+      .toEqual(['background', 'storyboard_frame', 'background', 'storyboard_frame']);
   });
 });
 

@@ -213,8 +213,10 @@ export class ChildrenClipProcessor {
       }
     });
     if (!attempt) throw new Error(`Render attempt ${renderAttemptId} not found`);
+    const storyboard = attempt.shot.assets.find((item) => item.role === 'storyboard_frame' && item.asset);
     const background = attempt.shot.assets.find((item) => item.role === 'background' && item.asset);
-    if (!background?.asset) throw new Error('A tomada nao possui fundo aprovado');
+    const visualBase = storyboard ?? background;
+    if (!visualBase?.asset) throw new Error('A tomada nao possui storyboard ou fundo aprovado');
     const project = attempt.shot.project;
     const versionIds = this.stringArray(attempt.shot.characterVersionIds);
     const hasExplicitEntitySelection = Array.isArray(attempt.shot.characterVersionIds);
@@ -240,13 +242,13 @@ export class ChildrenClipProcessor {
         .filter((frame) => frame.startFrame < attempt.frameCount);
       const poseAssets = attempt.shot.assets.filter((item) => item.role === 'character_pose' && item.asset);
       const characters: CharacterLayer[] = [];
-      for (let index = 0; index < characterLinks.length; index += 1) {
+      for (let index = 0; !storyboard && index < characterLinks.length; index += 1) {
         const link = characterLinks[index];
         const version = link.selectedVersion!;
         const pose = poseAssets.find((item) => item.characterVersionId === version.id)?.asset
           ?? version.assets.find((item) => item.role === 'pose')?.asset
-          ?? version.assets.find((item) => item.role === 'primary_reference')?.asset;
-        if (!pose) continue;
+          ?? version.assets.find((item) => item.role === 'front_view')?.asset;
+        if (!pose) throw new Error(`A tomada requer storyboard aprovado ou pose isolada aprovada para ${link.character.name}`);
         const mouths = version.assets.filter((item) => item.role === 'mouth_shape' && item.status === 'approved' && item.asset);
         const mouthSources = new Map<string, string>();
         for (const mouth of mouths) {
@@ -272,7 +274,7 @@ export class ChildrenClipProcessor {
         .map((beat) => Math.round((beat - attempt.shot.startSeconds) * attempt.fps));
       const props = {
         width: attempt.width, height: attempt.height, fps: attempt.fps, durationInFrames: attempt.frameCount,
-        backgroundSrc: await this.assetDataUrl(background.asset.storagePath, background.asset.mimeType),
+        backgroundSrc: await this.assetDataUrl(visualBase.asset.storagePath, visualBase.asset.mimeType),
         foregroundSrc: foreground ? await this.assetDataUrl(foreground.storagePath, foreground.mimeType) : null,
         characters, lyricText: attempt.shot.lyricText, motionPreset: attempt.shot.motionPreset,
         transitionIn: attempt.shot.transitionIn, transitionOut: attempt.shot.transitionOut, beatFrames: beats
@@ -280,7 +282,8 @@ export class ChildrenClipProcessor {
       const manifest = {
         renderer: 'remotion', rendererVersion: 1, renderAttemptId, shotId: attempt.shotId,
         fps: attempt.fps, frameCount: attempt.frameCount, width: attempt.width, height: attempt.height,
-        backgroundShotAssetId: background.id, foregroundShotAssetId: foreground ? attempt.shot.assets.find((item) => item.assetId === foreground.id)?.id : null,
+        backgroundShotAssetId: visualBase.id, storyboardShotAssetId: storyboard?.id ?? null,
+        foregroundShotAssetId: foreground ? attempt.shot.assets.find((item) => item.assetId === foreground.id)?.id : null,
         characterVersionIds: characters.map((item) => item.id), timedWordCount: timedWords.length,
         mouthFrameCount: baseMouthFrames.length, beatFrames: beats, motionPreset: attempt.shot.motionPreset
       };
@@ -328,6 +331,11 @@ export class ChildrenClipProcessor {
       include: {
         shot: {
           include: {
+            assets: {
+              where: { assetId: { not: null }, status: { in: ['ready_for_review', 'approved'] } },
+              include: { asset: true },
+              orderBy: { createdAt: 'desc' }
+            },
             location: { include: { masterBackgroundAsset: { include: { childrenClipShotAsset: true } } } },
             project: {
               include: {
@@ -395,9 +403,9 @@ export class ChildrenClipProcessor {
     const masterLink = masterAsset?.childrenClipShotAsset;
     const masterMetadata = masterLink?.generationMetadata && typeof masterLink.generationMetadata === 'object' && !Array.isArray(masterLink.generationMetadata)
       ? masterLink.generationMetadata as Record<string, unknown> : {};
-    const masterCompatible = Boolean(styleProfile && masterLink?.status === 'approved' && (
+    const masterCompatible = Boolean(styleProfile && masterLink && ['ready_for_review', 'approved'].includes(masterLink.status) && (
       masterLink.origin === 'uploaded'
-        ? masterLink.approvedAt && masterLink.approvedAt >= styleProfile.lockedAt
+        ? masterLink.status === 'approved' && masterLink.approvedAt && masterLink.approvedAt >= styleProfile.lockedAt
         : masterMetadata.styleProfileVersion === styleProfile.versionNumber
     ));
     await this.prisma.$transaction([
@@ -425,17 +433,56 @@ export class ChildrenClipProcessor {
       });
       const positivePrompt = builtPrompt.positivePrompt;
       const negativePrompt = [shotAsset.negativePrompt, builtPrompt.negativePrompt].filter(Boolean).join(', ');
-      const usedReference = builtPrompt.referenceAssets[0] ?? null;
+      const backgroundReference = shotAsset.role === 'storyboard_frame'
+        ? shotAsset.shot.assets.find((item) => item.role === 'background' && item.asset)?.asset ?? null
+        : null;
+      if (shotAsset.role === 'storyboard_frame' && !backgroundReference) {
+        throw new Error('O storyboard requer o background da tomada gerado primeiro');
+      }
+      const locationReference = shotAsset.role === 'background'
+        ? builtPrompt.referenceAssets.find((item) => item.purpose === 'location-content') ?? null
+        : null;
+      const entityReferences = shotAsset.role === 'storyboard_frame'
+        ? builtPrompt.referenceAssets.filter((item) => item.purpose === 'entity-content' && item.versionId)
+        : [];
+      const placements = this.characterPlacements(shotAsset.shot.characterPlacement);
+      const regionalReferenceImages = entityReferences.map((reference, index) => {
+        const placement = placements.find((item) => item.versionId === reference.versionId);
+        const fallbackX = entityReferences.length === 1 ? 50 : 20 + (60 * index) / Math.max(1, entityReferences.length - 1);
+        const scale = placement?.scalePercent ?? 48;
+        const widthPercent = Math.max(18, Math.min(50, scale * 0.68));
+        const heightPercent = Math.max(28, Math.min(78, scale));
+        const centerX = placement?.xPercent ?? fallbackX;
+        const baselineY = placement?.yPercent ?? 76;
+        return {
+          path: this.storage.getAbsolutePath(reference.storagePath),
+          xPercent: Math.max(0, centerX - widthPercent / 2),
+          yPercent: Math.max(0, baselineY - heightPercent),
+          widthPercent,
+          heightPercent,
+          weight: 0.82
+        };
+      });
+      const contentReferenceAssetIds = [
+        ...(backgroundReference ? [backgroundReference.id] : []),
+        ...(locationReference ? [locationReference.id] : []),
+        ...entityReferences.map((item) => item.id)
+      ];
 
       await this.assetProgress(job, 8, 'STARTING', 'Worker iniciou a producao do asset da tomada.');
       await this.assetProgress(job, 18, 'LOADING_MODEL', `Carregando checkpoint ${checkpointName}.`);
-      await this.assetProgress(job, 25, 'GENERATING', `Gerando ${shotAsset.role} em ${dimensions.width}x${dimensions.height}.`);
+      await this.assetProgress(job, 25, 'GENERATING', shotAsset.role === 'storyboard_frame'
+        ? `Compondo a tomada com ${entityReferences.length} referencia(s) de personagem em ${dimensions.width}x${dimensions.height}.`
+        : `Gerando ${shotAsset.role} em ${dimensions.width}x${dimensions.height}.`);
       const result = await this.comfyUi.generateStillImage({
         positivePrompt, negativePrompt, checkpointName, ...dimensions, steps, cfg, sampler, scheduler, seed,
         filenamePrefix: `children-clips/shot-${shotAsset.shot.index + 1}-${shotAsset.role}-v${shotAsset.versionNumber}`,
         loraName: loraName || null, loraStrength,
-        referenceImagePath: usedReference ? this.storage.getAbsolutePath(usedReference.storagePath) : null,
-        denoise: usedReference ? (usedReference.purpose === 'location-content' ? 0.48 : 0.68) : undefined,
+        referenceImagePath: backgroundReference
+          ? this.storage.getAbsolutePath(backgroundReference.storagePath)
+          : locationReference ? this.storage.getAbsolutePath(locationReference.storagePath) : null,
+        regionalReferenceImages,
+        denoise: backgroundReference ? 0.62 : locationReference ? 0.48 : undefined,
         onGpuWaiting: (owner) => this.assetProgress(
           job,
           22,
@@ -455,7 +502,7 @@ export class ChildrenClipProcessor {
           data: {
             organizationId, projectId, type: AssetType.image, mimeType: 'image/png', storagePath, sizeBytes,
             width: dimensions.width, height: dimensions.height,
-            metadata: { source: 'comfyui', shotAssetId, shotId: shotAsset.shotId, role: shotAsset.role, promptId: result.promptId, checkpointName, seed, steps, cfg, sampler, scheduler, loraName: loraName || null, loraStrength, positivePrompt, negativePrompt, contentReferenceAssetIds: usedReference ? [usedReference.id] : [], contentReferencePurpose: usedReference?.purpose ?? null, styleReferenceAssetIds: builtPrompt.styleReferenceAssetIds, styleProfileVersion: builtPrompt.styleProfileVersion, allowedEntityVersionIds: builtPrompt.allowedEntityVersionIds, forbiddenEntityVersionIds: builtPrompt.forbiddenEntityVersionIds }
+            metadata: { source: 'comfyui', shotAssetId, shotId: shotAsset.shotId, role: shotAsset.role, promptId: result.promptId, checkpointName, seed, steps, cfg, sampler, scheduler, loraName: loraName || null, loraStrength, positivePrompt, negativePrompt, contentReferenceAssetIds, contentReferencePurpose: backgroundReference ? 'shot-background-and-entities' : locationReference?.purpose ?? null, styleReferenceAssetIds: builtPrompt.styleReferenceAssetIds, styleProfileVersion: builtPrompt.styleProfileVersion, allowedEntityVersionIds: builtPrompt.allowedEntityVersionIds, forbiddenEntityVersionIds: builtPrompt.forbiddenEntityVersionIds }
           }
         });
         await tx.childrenClipShotAsset.update({
@@ -463,10 +510,16 @@ export class ChildrenClipProcessor {
           data: {
             assetId: asset.id, status: ChildrenClipShotAssetStatus.ready_for_review,
             generationEndedAt: new Date(), errorMessage: null,
-            generationMetadata: { provider: result.provider, promptId: result.promptId, checkpointName, ...dimensions, seed, steps, cfg, sampler, scheduler, loraName: loraName || null, loraStrength, positivePrompt, negativePrompt, contentReferenceAssetIds: usedReference ? [usedReference.id] : [], contentReferencePurpose: usedReference?.purpose ?? null, styleReferenceAssetIds: builtPrompt.styleReferenceAssetIds, styleProfileVersion: builtPrompt.styleProfileVersion, allowedEntityVersionIds: builtPrompt.allowedEntityVersionIds, forbiddenEntityVersionIds: builtPrompt.forbiddenEntityVersionIds },
+            generationMetadata: { provider: result.provider, promptId: result.promptId, checkpointName, ...dimensions, seed, steps, cfg, sampler, scheduler, loraName: loraName || null, loraStrength, positivePrompt, negativePrompt, contentReferenceAssetIds, contentReferencePurpose: backgroundReference ? 'shot-background-and-entities' : locationReference?.purpose ?? null, styleReferenceAssetIds: builtPrompt.styleReferenceAssetIds, styleProfileVersion: builtPrompt.styleProfileVersion, allowedEntityVersionIds: builtPrompt.allowedEntityVersionIds, forbiddenEntityVersionIds: builtPrompt.forbiddenEntityVersionIds },
             reviewReason: null
           }
         });
+        if (shotAsset.role === 'background' && shotAsset.shot.locationId) {
+          await tx.childrenClipLocation.updateMany({
+            where: { id: shotAsset.shot.locationId, masterBackgroundAssetId: null },
+            data: { masterBackgroundAssetId: asset.id }
+          });
+        }
       });
       await this.assetProgress(job, 100, 'READY_FOR_REVIEW', 'Asset da tomada pronto para revisao.', ProcessingJobStatus.completed);
       this.logger.log(`Shot asset generated project=${projectId} shotAsset=${shotAssetId}`);
@@ -1460,6 +1513,23 @@ export class ChildrenClipProcessor {
 
   private stringArray(value: Prisma.JsonValue | null): string[] {
     return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+  }
+
+  private characterPlacements(value: Prisma.JsonValue | null) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+    const subjects = (value as Record<string, Prisma.JsonValue>).subjects;
+    if (!Array.isArray(subjects)) return [];
+    return subjects.flatMap((item) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
+      const subject = item as Record<string, Prisma.JsonValue>;
+      if (typeof subject.versionId !== 'string') return [];
+      return [{
+        versionId: subject.versionId,
+        xPercent: typeof subject.xPercent === 'number' ? subject.xPercent : 50,
+        yPercent: typeof subject.yPercent === 'number' ? subject.yPercent : 76,
+        scalePercent: typeof subject.scalePercent === 'number' ? subject.scalePercent : 48
+      }];
+    });
   }
 
   private timedWords(

@@ -71,6 +71,9 @@ export class ChildrenClipAssetsService {
     const approvedBackgrounds = shots.filter((shot) =>
       shot.assets.some((asset) => asset.role === 'background' && asset.status === 'approved' && asset.styleCompatible)
     ).length;
+    const approvedStoryboards = shots.filter((shot) =>
+      shot.assets.some((asset) => asset.role === 'storyboard_frame' && asset.status === 'approved')
+    ).length;
     return {
       styleLock: project.childrenClipStyleProfile,
       locations,
@@ -78,7 +81,9 @@ export class ChildrenClipAssetsService {
       summary: {
         totalShots: shots.length,
         approvedBackgrounds,
-        readyForAnimation: shots.length > 0 && approvedBackgrounds === shots.length
+        approvedStoryboards,
+        requiredStoryboards: shots.length,
+        readyForAnimation: shots.length > 0 && approvedBackgrounds === shots.length && approvedStoryboards === shots.length
       }
     };
   }
@@ -191,9 +196,7 @@ export class ChildrenClipAssetsService {
     });
 
     const refreshed = await this.getOwnedProject(projectId, organizationId);
-    for (const location of this.buildLocationWorkflow(refreshed)) {
-      await this.enqueueLocationTargets(refreshed, location, projectId, organizationId, userId);
-    }
+    await this.enqueueCompleteStep4(refreshed, projectId, organizationId, userId);
     return this.get(projectId, organizationId);
   }
 
@@ -508,6 +511,31 @@ export class ChildrenClipAssetsService {
         role: 'background', prompt: shot.backgroundPrompt,
         label: location.master ? `${location.name} - vista da tomada ${shot.index + 1}` : `${location.name} - master`
       });
+    }
+  }
+
+  private async enqueueCompleteStep4(
+    project: Awaited<ReturnType<ChildrenClipAssetsService['getOwnedProject']>>,
+    projectId: string,
+    organizationId: string,
+    userId: string
+  ) {
+    for (const location of this.buildLocationWorkflow(project)) {
+      for (const workflowShot of location.shots) {
+        const shot = project.childrenClipShots.find((item) => item.id === workflowShot.id)!;
+        await this.createAndEnqueue(projectId, organizationId, userId, shot.id, {
+          role: 'background',
+          prompt: shot.backgroundPrompt,
+          label: workflowShot.id === location.anchorShotId
+            ? `${location.name} - master`
+            : `${location.name} - vista da tomada ${shot.index + 1}`
+        });
+        await this.createAndEnqueue(projectId, organizationId, userId, shot.id, {
+          role: 'storyboard_frame',
+          prompt: shot.description,
+          label: `Tomada ${shot.index + 1} - composicao completa com personagens`
+        });
+      }
     }
   }
 

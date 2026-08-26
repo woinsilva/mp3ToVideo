@@ -299,7 +299,7 @@ export interface ChildrenClipProductionAssetsStatus {
   } | null;
   locations: ChildrenClipProductionLocation[];
   shots: Array<ChildrenClipShot & { assets: ChildrenClipShotAsset[] }>;
-  summary: { totalShots: number; approvedBackgrounds: number; readyForAnimation: boolean };
+  summary: { totalShots: number; approvedBackgrounds: number; approvedStoryboards: number; requiredStoryboards: number; readyForAnimation: boolean };
 }
 
 export interface ChildrenClipProductionLocation {
@@ -342,6 +342,7 @@ export interface ChildrenClipAnimationStatus {
     durationSeconds: number;
     renderMode: 'animation_2d' | 'wan' | 'hybrid';
     hasApprovedBackground: boolean;
+    hasApprovedStoryboard: boolean;
     latestAttempt: ChildrenClipShotRenderAttempt | null;
   }>;
   summary: { total2dShots: number; completed2dShots: number };

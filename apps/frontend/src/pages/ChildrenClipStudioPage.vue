@@ -237,8 +237,8 @@
 
       <section v-if="planStatus?.plan?.status === 'approved'" class="surface-card studio-width plan-panel production-assets-panel">
         <div class="panel-heading">
-          <div><p class="page-eyebrow">Etapa 4</p><h3>Cenarios e assets das tomadas</h3><p>Gere fundos sem personagens, envie elementos próprios e aprove cada versão antes da animação.</p></div>
-          <span v-if="productionAssets" class="version-status" :class="{ 'version-status--approved': productionAssets.summary.readyForAnimation }">{{ productionAssets.summary.approvedBackgrounds }}/{{ productionAssets.summary.totalShots }} fundos aprovados</span>
+          <div><p class="page-eyebrow">Etapa 4</p><h3>Cenários e assets das tomadas</h3><p>Cada tomada recebe um cenário limpo e uma prévia completa que usa as referências dos personagens permitidos.</p></div>
+          <span v-if="productionAssets" class="version-status" :class="{ 'version-status--approved': productionAssets.summary.readyForAnimation }">{{ productionAssets.summary.approvedBackgrounds }}/{{ productionAssets.summary.totalShots }} cenários · {{ productionAssets.summary.approvedStoryboards }}/{{ productionAssets.summary.requiredStoryboards }} prévias</span>
         </div>
         <v-alert v-if="productionAssets?.styleLock" class="style-lock-card" :type="productionAssets.styleLock.status === 'locked' ? 'success' : 'warning'" variant="tonal">
           <strong>Project Style Lock v{{ productionAssets.styleLock.versionNumber }} · {{ productionAssets.styleLock.status === 'locked' ? 'ATIVO' : 'DESATUALIZADO' }}</strong>
@@ -331,7 +331,7 @@
               <video v-if="shot.latestAttempt?.hasVideo && renderUrls[shot.latestAttempt.id]" class="shot-render-preview" controls preload="metadata" :src="renderUrls[shot.latestAttempt.id]" />
               <div v-if="shot.latestAttempt && ['queued', 'rendering'].includes(shot.latestAttempt.status)" class="asset-job-progress"><v-progress-linear :model-value="shot.latestAttempt.progress" color="warning" /><small>{{ shot.latestAttempt.stage || 'QUEUED' }} · {{ shot.latestAttempt.progress }}%</small></div>
               <v-alert v-if="shot.latestAttempt?.status === 'failed'" density="compact" type="error" variant="tonal">{{ shot.latestAttempt.errorMessage || 'Falha no render 2D.' }}</v-alert>
-              <div class="version-actions"><button v-if="!shot.latestAttempt" class="app-button app-button--secondary" type="button" :disabled="!shot.hasApprovedBackground" @click="renderShot(shot.id)">Renderizar tomada</button><button v-if="shot.latestAttempt?.status === 'failed'" class="app-button app-button--secondary" type="button" @click="retryShotRender(shot.latestAttempt.id)">Tentar novamente</button><button v-if="shot.latestAttempt?.status === 'completed'" class="app-button app-button--secondary" type="button" @click="renderShot(shot.id)">Nova versao</button></div>
+              <div class="version-actions"><button v-if="!shot.latestAttempt" class="app-button app-button--secondary" type="button" :disabled="!shot.hasApprovedBackground || !shot.hasApprovedStoryboard" @click="renderShot(shot.id)">Renderizar tomada</button><button v-if="shot.latestAttempt?.status === 'failed'" class="app-button app-button--secondary" type="button" @click="retryShotRender(shot.latestAttempt.id)">Tentar novamente</button><button v-if="shot.latestAttempt?.status === 'completed'" class="app-button app-button--secondary" type="button" @click="renderShot(shot.id)">Nova versao</button></div>
               <details v-if="shot.latestAttempt?.renderManifest"><summary>Manifesto reproduzivel</summary><pre class="render-manifest">{{ JSON.stringify(shot.latestAttempt.renderManifest, null, 2) }}</pre></details>
             </template>
           </article>
@@ -751,7 +751,7 @@ export default class ChildrenClipStudioPage extends Vue {
   requestStep4Reset() {
     if (this.resettingStep4) return;
     const confirmed = window.confirm(
-      'Gerar toda a Etapa 4 do zero? Os cenários, assets e renders atuais serão arquivados e não serão reutilizados. O sistema atualizará o Style Lock e gerará novos masters usando as referências atuais dos personagens.'
+      'Gerar toda a Etapa 4 do zero? Os cenários, assets e renders atuais serão arquivados e não serão reutilizados. O sistema gerará um cenário limpo e uma prévia completa para cada tomada, aplicando as referências atuais de todos os personagens permitidos.'
     );
     if (confirmed) void this.resetStep4();
   }
@@ -772,7 +772,7 @@ export default class ChildrenClipStudioPage extends Vue {
       this.finalRenderUrl = null;
       this.animationStatus = null;
       this.outputStatus = null;
-      this.step4Feedback = { type: 'success', message: 'Etapa 4 reiniciada. Os novos backgrounds master foram enfileirados com o Style Lock atual.' };
+      this.step4Feedback = { type: 'success', message: `Etapa 4 reiniciada. ${this.productionAssets.summary.totalShots} cenários e ${this.productionAssets.summary.requiredStoryboards} prévias completas foram enfileirados com as referências atuais dos personagens.` };
       this.step4FeedbackVisible = true;
       await this.projectsStore.fetchProject(this.projectId, this.authStore.token);
     } catch (error) {
@@ -841,7 +841,7 @@ export default class ChildrenClipStudioPage extends Vue {
   async approveShotAsset(assetId: string) { if (!this.authStore.token) return; try { this.productionAssets = await projectsService.approveChildrenClipShotAsset(this.projectId, assetId, this.authStore.token); if (this.productionAssets.summary.readyForAnimation) await Promise.all([this.loadAnimation(), this.loadOutput()]); } catch (error) { this.captureError(error, 'Falha ao aprovar asset'); } }
   async rejectShotAsset(assetId: string) { if (!this.authStore.token) return; try { this.productionAssets = await projectsService.rejectChildrenClipShotAsset(this.projectId, assetId, this.authStore.token); } catch (error) { this.captureError(error, 'Falha ao rejeitar asset'); } }
   async retryShotAsset(assetId: string) { if (!this.authStore.token) return; try { this.productionAssets = await projectsService.retryChildrenClipShotAsset(this.projectId, assetId, this.authStore.token); } catch (error) { this.captureError(error, 'Falha ao reiniciar geracao do asset'); } }
-  shotAssetRoleLabel(role: ChildrenClipShotAssetRole) { return ({ background: 'Fundo', foreground: 'Primeiro plano', prop: 'Objeto', character_pose: 'Pose de personagem', storyboard_frame: 'Storyboard' })[role]; }
+  shotAssetRoleLabel(role: ChildrenClipShotAssetRole) { return ({ background: 'Cenário limpo', foreground: 'Primeiro plano', prop: 'Objeto', character_pose: 'Pose de personagem', storyboard_frame: 'Prévia completa' })[role]; }
   shotAssetStatusLabel(status: ChildrenClipShotAsset['status']) { return ({ draft: 'Rascunho', queued: 'Enfileirado', generating: 'Gerando', ready_for_review: 'Revisar', approved: 'Aprovado', rejected: 'Rejeitado', failed: 'Falhou' })[status]; }
   async renderMissingShots() { if (!this.authStore.token) return; this.renderingMissingShots = true; try { this.animationStatus = await projectsService.renderMissingChildrenClipShots(this.projectId, this.authStore.token); } catch (error) { this.captureError(error, 'Falha ao enfileirar animacoes'); } finally { this.renderingMissingShots = false; } }
   async renderShot(shotId: string) { if (!this.authStore.token) return; try { this.animationStatus = await projectsService.renderChildrenClipShot(this.projectId, shotId, this.authStore.token); } catch (error) { this.captureError(error, 'Falha ao enfileirar tomada 2D'); } }

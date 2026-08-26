@@ -141,27 +141,31 @@ latencia sem remover validacao, fallback ou os heartbeats exibidos durante a esp
 
 ### Producao de assets por tomada
 
-Com o plano aprovado, o estudio libera a etapa 4. Cada tomada pode receber fundos, primeiro plano,
-objetos, poses enviadas e quadros de storyboard. Fundos ausentes podem ser enfileirados em lote;
-novas geracoes e uploads sempre criam uma versao, sem substituir a versao aprovada.
+Com o plano aprovado, o estudio libera a etapa 4. Cada tomada recebe dois artefatos centrais: um
+cenario limpo, sem personagens, e uma previa completa de storyboard com todos os personagens
+permitidos. Primeiro plano, objetos e poses isoladas continuam opcionais. Novas geracoes e uploads
+sempre criam uma versao, sem substituir arquivos anteriores.
 
 O job `children-clip.asset.generate` usa o ComfyUI nativo do Windows, registra prompt positivo e
 negativo, checkpoint, LoRA, seed, sampler, scheduler, dimensoes e `promptId`. Fundos sao solicitados
-sem personagens e preparados como placas para composicao em camadas. O worker publica os estados
+sem personagens e preparados como placas para composicao. A previa usa o fundo da propria tomada
+como base img2img e aplica cada referencia canonica aprovada por IPAdapter SDXL, com uma mascara
+regional derivada de `characterPlacement`; referencias de elenco multiplo sao encadeadas e nenhuma
+delas e descartada. O worker publica os estados
 `QUEUED`, `STARTING`, `LOADING_MODEL`, `GENERATING`, `SAVING_ASSET`, `READY_FOR_REVIEW`, `RETRYING`
 e `FAILED` no BullMQ e no `ProcessingJob`.
 
 O usuario ve preview autenticado, progresso e erro por versao, pode reenfileirar falhas, enviar uma
 imagem propria e aprovar uma versao por funcao e tomada. A animacao somente fica liberada quando
-todas as tomadas possuem um fundo aprovado. Geracao textual de pose nao e tratada como preservacao
-de identidade; poses de personagem exigem upload nesta etapa ate o workflow com referencia ficar
-disponivel.
+todas as tomadas possuem um cenario limpo e uma previa completa aprovados. O reset integral da
+Etapa 4 arquiva as versoes anteriores e enfileira cenario + previa para todas as tomadas, em ordem e
+com concorrencia de GPU igual a um.
 
 ### Animacao 2D e lip sync
 
 Tomadas `animation_2d` e a base 2D de tomadas `hybrid` sao renderizadas pelo pacote isolado
 `@video/children-clip-renderer`, com React e Remotion. O job `children-clip.shot.render2d` monta um
-manifesto imutavel com fundo e primeiro plano aprovados, versoes de personagem, poses, grade de
+manifesto imutavel com a previa completa aprovada, primeiro plano, versoes de personagem, grade de
 batidas, cues de palavras, formas de boca, movimento de camera, FPS, dimensoes e frame count.
 
 O motor aplica pan/zoom, profundidade de primeiro plano, movimento ocioso e pulsos nas batidas. A
@@ -170,9 +174,10 @@ formas `A`, `E`, `O`, `U` e `closed`. Quando o personagem possui `mouth_shape` r
 sobreposta na pose. Sem sprites de boca, a tomada continua renderizavel e preserva os cues no
 manifesto para posterior complementacao.
 
-Uploads de boca exigem um rotulo reconhecido (`A`, `E`, `O`, `U`, `closed` ou `rest`). Uma pose
-enviada para uma tomada e vinculada explicitamente a versao do personagem; assim, tomadas com
-elenco multiplo mantem uma pose aprovada independente para cada integrante.
+Uploads de boca exigem um rotulo reconhecido (`A`, `E`, `O`, `U`, `closed` ou `rest`). A prancha
+canonica `primary_reference` nunca e usada como sprite bruto. Se uma tomada legada nao tiver previa
+completa, o fallback exige uma pose isolada ou vista frontal aprovada para cada personagem e falha
+com mensagem explicita quando isso nao existir.
 
 Cada tentativa gera um MP4 H.264 separado e passa por FFprobe para validar dimensoes, FPS, frames e
 duracao. Falhas mantem erro e historico, o retry cria outra tentativa, e a interface exibe progresso,
@@ -269,7 +274,7 @@ O modulo sera considerado completo quando um usuario puder, sem operacao manual 
 - A Etapa 4 separa três níveis: Bíblia/Narrativa globais, Shot Plan estruturado por tomada e prompt final por papel de asset.
 - Cada tomada persiste propósito, localização reutilizável, foco, horário, emoção, intenção de movimento, continuidade e listas de entidades permitidas/proibidas.
 - O background é sempre um plate ambiental vazio. Personagens, animais, criaturas, mascotes, veículos e demais entidades cadastradas são compostos depois e não entram no prompt nem nas referências do fundo.
-- Prompts de storyboard, foreground e prop recebem somente identidades e referências aprovadas das entidades permitidas. Entidades proibidas entram no negative prompt.
+- Prompts de storyboard, foreground e prop recebem somente identidades e referências aprovadas das entidades permitidas. Na prévia completa, cada referência é aplicada por IPAdapter em sua região planejada. Entidades proibidas entram no negative prompt.
 - O fallback usa seção, letra sincronizada, story beat, enquadramento e localização; summary/logline global nunca vira descrição de tomada.
 - `Replanejar tomadas` mantém IDs e arquivos existentes. Um background aprovado cujo Shot Plan mudou volta para revisão com motivo explícito, sem apagar o asset.
 - Antes de aprovar ou gerar, o sistema rejeita conflitos allowed/forbidden, entidades desconhecidas ou duplicadas, plano legado sem semântica, descrição igual à narrativa global e background que mencione entidade cadastrada.
@@ -282,7 +287,7 @@ O modulo sera considerado completo quando um usuario puder, sem operacao manual 
 - Imagens de personagens são registradas como `styleReferenceAssetIds`, mas nunca são enviadas ao latent `img2img` de background. A integração atual do ComfyUI não separa style de content com segurança; por isso o Style Profile é a camada intermediária obrigatória.
 - Alterar uma fonte aprovada marca o lock como `stale`; nenhuma regeneração o substitui silenciosamente. A Etapa 4 mostra o motivo e oferece atualização explícita, criando uma nova versão.
 - Cada tomada persiste `characterPlacement`, `backgroundSafeZones` e `groundingRules`. O cenário reserva espaço desobstruído, chão, horizonte, perspectiva, escala e direção de movimento para a composição posterior.
-- A primeira imagem de background aprovada torna-se o master imutável da `ChildrenClipLocation`. Novas vistas da mesma Location podem usá-la como referência de conteúdo com denoise controlado, preservando arquitetura, layout, cores, iluminação e perspectiva.
+- A primeira imagem de background gerada torna-se o master provisório da `ChildrenClipLocation`; a aprovação a consolida. Novas vistas da mesma Location a usam como referência de conteúdo com denoise controlado, preservando arquitetura, layout, cores, iluminação e perspectiva.
 - A Etapa 4 é organizada por Location, não por uma lista plana de fundos. Cada grupo mostra o `Shot Background Anchor`, a vista master, o total de vistas aprovadas e as tomadas derivadas.
-- A geração é sequencial por conceito: sem master, somente a tomada-âncora pode ser gerada ou enviada; enquanto ela está gerando/em revisão, as demais ficam bloqueadas; depois da aprovação, apenas as variações pendentes são enfileiradas com o master como referência. O comando global avança cada Location somente até a próxima etapa válida, evitando gerar todas as tomadas de forma independente.
+- A geração manual continua guiada por Location e aprovação. Já o reset integral cria, para cada tomada e em ordem, o background seguido da prévia completa; o master provisório produzido pela âncora permite que as vistas seguintes mantenham coerência sem limitar o reset à primeira cena.
 - Geração widescreen usa resolução 16:9 nativa (`1344x768`); não depende de recorte de uma imagem quadrada.

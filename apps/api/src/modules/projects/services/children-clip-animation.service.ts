@@ -21,6 +21,7 @@ export class ChildrenClipAnimationService {
         id: shot.id, index: shot.index, title: shot.title, startSeconds: shot.startSeconds,
         endSeconds: shot.endSeconds, durationSeconds: shot.durationSeconds, renderMode: shot.renderMode,
         hasApprovedBackground: shot.assets.some((asset) => asset.role === 'background' && asset.status === 'approved'),
+        hasApprovedStoryboard: shot.assets.some((asset) => asset.role === 'storyboard_frame' && asset.status === 'approved'),
         latestAttempt: shot.renderAttempts[0] ? this.presentAttempt(shot.renderAttempts[0]) : null
       })),
       summary: {
@@ -35,10 +36,14 @@ export class ChildrenClipAnimationService {
     this.assertPlan(project.childrenClipPlan?.status);
     const targets = project.childrenClipShots.filter((shot) =>
       shot.renderMode !== 'wan' && shot.assets.some((asset) => asset.role === 'background' && asset.status === 'approved') &&
+      shot.assets.some((asset) => asset.role === 'storyboard_frame' && asset.status === 'approved') &&
       !shot.renderAttempts.some((attempt) => ['queued', 'rendering', 'completed'].includes(attempt.status))
     );
-    const missingBackground = project.childrenClipShots.some((shot) => shot.renderMode !== 'wan' && !shot.assets.some((asset) => asset.role === 'background' && asset.status === 'approved'));
-    if (missingBackground) throw new BadRequestException('Aprove um fundo para cada tomada 2D antes de renderizar em lote');
+    const missingVisual = project.childrenClipShots.some((shot) => shot.renderMode !== 'wan' && (
+      !shot.assets.some((asset) => asset.role === 'background' && asset.status === 'approved')
+      || !shot.assets.some((asset) => asset.role === 'storyboard_frame' && asset.status === 'approved')
+    ));
+    if (missingVisual) throw new BadRequestException('Aprove o cenario limpo e a previa completa de cada tomada 2D antes de renderizar em lote');
     for (const shot of targets) await this.createAttempt(project, shot.id, organizationId, userId);
     return this.get(projectId, organizationId);
   }
@@ -51,6 +56,9 @@ export class ChildrenClipAnimationService {
     if (shot.renderMode === 'wan') throw new BadRequestException('Tomadas Wan usam a etapa de tomadas especiais');
     if (!shot.assets.some((asset) => asset.role === 'background' && asset.status === 'approved')) {
       throw new BadRequestException('Aprove o fundo desta tomada antes de renderizar');
+    }
+    if (!shot.assets.some((asset) => asset.role === 'storyboard_frame' && asset.status === 'approved')) {
+      throw new BadRequestException('Aprove a previa completa com os personagens desta tomada antes de renderizar');
     }
     if (shot.renderAttempts[0] && ['queued', 'rendering'].includes(shot.renderAttempts[0].status)) {
       throw new BadRequestException('A tomada ja esta sendo renderizada');

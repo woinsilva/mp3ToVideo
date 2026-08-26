@@ -477,6 +477,17 @@ describe('Projects integration', () => {
       .post(`/projects/${projectResponse.body.id}/children-clip/production-assets/${poseAsset.id}/approve`)
       .set('Authorization', `Bearer ${authToken}`)
       .expect(201);
+    const storyboardResponse = await request(app.getHttpServer())
+      .post(`/projects/${projectResponse.body.id}/children-clip/production-assets/shots/${shots[0].id}/upload`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .field('role', 'storyboard_frame')
+      .attach('file', png, { filename: 'tomada-completa.png', contentType: 'image/png' })
+      .expect(201);
+    const storyboardAsset = storyboardResponse.body.shots[0].assets.find((asset: { role: string }) => asset.role === 'storyboard_frame');
+    await request(app.getHttpServer())
+      .post(`/projects/${projectResponse.body.id}/children-clip/production-assets/${storyboardAsset.id}/approve`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .expect(201);
     const propResponse = await request(app.getHttpServer())
       .post(`/projects/${projectResponse.body.id}/children-clip/production-assets/shots/${shots[0].id}/upload`)
       .set('Authorization', `Bearer ${authToken}`)
