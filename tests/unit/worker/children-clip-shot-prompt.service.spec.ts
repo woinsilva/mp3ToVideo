@@ -47,6 +47,8 @@ describe('ChildrenClipShotPromptService', () => {
 
   it('builds a background-only prompt with no entity references or character bible', () => {
     const input = context('background');
+    input.visualBible = { style: '2D colorido, olhos grandes e expressoes alegres dos personagens' };
+    input.shot.backgroundPrompt = 'Estacao colorida vazia, personagens como foco principal, plataforma e colinas.';
     input.styleProfile!.profile = {
       medium: 'flat 2D cel animation',
       lineStyle: 'contornos inspirados na Alba',
@@ -59,6 +61,7 @@ describe('ChildrenClipShotPromptService', () => {
     expect(result.referenceAssets).toEqual([]);
     expect(result.positivePrompt).not.toContain('Alba');
     expect(result.positivePrompt).not.toContain('Futuro');
+    expect(result.positivePrompt).not.toMatch(/olhos grandes|personagens como foco/i);
     expect(result.positivePrompt).toContain('background plate');
     expect(result.positivePrompt).toContain('project style lock version 2');
     expect(result.positivePrompt).toContain('safe zones');

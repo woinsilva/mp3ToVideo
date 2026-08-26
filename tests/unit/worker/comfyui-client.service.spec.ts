@@ -27,7 +27,7 @@ describe('ComfyUiClientService', () => {
     expect(workflow['3'].inputs).toMatchObject({ denoise: 0.4, latent_image: ['5', 0] });
   });
 
-  it('chains regional IPAdapter references with separate masks', async () => {
+  it('removes backgrounds from exact approved references and composites their isolated layers', async () => {
     const config = { get: vi.fn((key: string, fallback: unknown) => ({
       'visual.provider': 'comfyui'
     } as Record<string, unknown>)[key] ?? fallback) };
@@ -46,18 +46,22 @@ describe('ComfyUiClientService', () => {
       width: 1000, height: 800, steps: 30, cfg: 6.5, sampler: 'dpmpp_2m', scheduler: 'karras', seed: 43,
       filenamePrefix: 'shot', referenceImagePath: 'C:/background.png', denoise: 0.62,
       regionalReferenceImages: [
-        { path: 'C:/lia.png', xPercent: 10, yPercent: 20, widthPercent: 30, heightPercent: 60 },
-        { path: 'C:/toto.png', xPercent: 60, yPercent: 25, widthPercent: 25, heightPercent: 55 }
+        { path: 'C:/lia.png', prompt: 'render only Lia', xPercent: 10, yPercent: 20, widthPercent: 30, heightPercent: 60, crop: { width: 400, height: 1000, x: 0, y: 0 } },
+        { path: 'C:/toto.png', prompt: 'render only Toto', xPercent: 60, yPercent: 25, widthPercent: 25, heightPercent: 55 }
       ]
     });
 
     const workflow = service.submitWorkflow.mock.calls[0][0];
-    expect(workflow['20']).toMatchObject({ class_type: 'IPAdapterModelLoader' });
-    expect(workflow['21']).toMatchObject({ class_type: 'CLIPVisionLoader' });
-    expect(workflow['33']).toMatchObject({ class_type: 'MaskComposite', inputs: { x: 100, y: 160 } });
-    expect(workflow['34']).toMatchObject({ class_type: 'IPAdapterAdvanced', inputs: { model: ['4', 0], attn_mask: ['33', 0] } });
-    expect(workflow['39']).toMatchObject({ class_type: 'IPAdapterAdvanced', inputs: { model: ['34', 0], attn_mask: ['38', 0] } });
-    expect(workflow['3'].inputs.model).toEqual(['39', 0]);
+    expect(workflow['22']).toMatchObject({ class_type: 'LoadBackgroundRemovalModel', inputs: { bg_removal_name: 'birefnet.safetensors' } });
+    expect(workflow['31']).toMatchObject({ class_type: 'ImageCrop', inputs: { width: 400, height: 1000, x: 0, y: 0 } });
+    expect(workflow['32']).toMatchObject({ class_type: 'RemoveBackground', inputs: { bg_removal_model: ['22', 0], image: ['31', 0] } });
+    expect(workflow['37']).toMatchObject({ class_type: 'ImageCompositeMasked', inputs: { destination: ['12', 0], x: 100, y: 160, mask: ['36', 0] } });
+    expect(workflow['40']).toMatchObject({ class_type: 'RemoveBackground', inputs: { bg_removal_model: ['22', 0], image: ['38', 0] } });
+    expect(workflow['45']).toMatchObject({ class_type: 'ImageCompositeMasked', inputs: { destination: ['37', 0], x: 600, y: 200, mask: ['44', 0] } });
+    expect(workflow['20']).toBeUndefined();
+    expect(workflow['21']).toBeUndefined();
+    expect(workflow['3']).toBeUndefined();
+    expect(workflow['9'].inputs.images).toEqual(['45', 0]);
   });
 
   it('accepts SaveVideo outputs that store the mp4 asset under images', () => {

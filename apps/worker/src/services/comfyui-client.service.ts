@@ -89,11 +89,13 @@ export interface GenerateStillImageInput {
   referenceImagePath?: string | null;
   regionalReferenceImages?: Array<{
     path: string;
+    prompt: string;
     xPercent: number;
     yPercent: number;
     widthPercent: number;
     heightPercent: number;
     weight?: number;
+    crop?: { width: number; height: number; x: number; y: number };
   }>;
   denoise?: number;
 }
@@ -223,53 +225,59 @@ export class ComfyUiClientService {
       };
     }
     if (regionalReferences.length) {
-      workflow['20'] = {
-        class_type: 'IPAdapterModelLoader',
-        inputs: { ipadapter_file: 'ip-adapter-plus_sdxl_vit-h.safetensors' }
+      if (!referenceImageFilename) throw new Error('Regional reference generation requires a base image');
+      workflow['22'] = {
+        class_type: 'LoadBackgroundRemovalModel',
+        inputs: { bg_removal_name: 'birefnet.safetensors' }
       };
-      workflow['21'] = {
-        class_type: 'CLIPVisionLoader',
-        inputs: { clip_name: 'CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors' }
-      };
-      let conditionedModel: [string, number] = modelSource;
+      let currentImage: [string, number] = ['12', 0];
       regionalReferences.forEach((reference, index) => {
-        const nodeBase = 30 + index * 5;
+        const nodeBase = 30 + index * 8;
         const loadId = String(nodeBase);
-        const emptyMaskId = String(nodeBase + 1);
-        const regionMaskId = String(nodeBase + 2);
-        const compositeMaskId = String(nodeBase + 3);
-        const adapterId = String(nodeBase + 4);
+        const cropId = String(nodeBase + 1);
+        const removeBackgroundId = String(nodeBase + 2);
+        const scaleImageId = String(nodeBase + 3);
+        const maskImageId = String(nodeBase + 4);
+        const scaleMaskImageId = String(nodeBase + 5);
+        const scaledMaskId = String(nodeBase + 6);
+        const compositeId = String(nodeBase + 7);
         const regionWidth = Math.max(8, Math.round(input.width * this.clampPercent(reference.widthPercent) / 100));
         const regionHeight = Math.max(8, Math.round(input.height * this.clampPercent(reference.heightPercent) / 100));
         const x = Math.max(0, Math.min(input.width - regionWidth, Math.round(input.width * this.clampPercent(reference.xPercent) / 100)));
         const y = Math.max(0, Math.min(input.height - regionHeight, Math.round(input.height * this.clampPercent(reference.yPercent) / 100)));
         workflow[loadId] = { class_type: 'LoadImage', inputs: { image: reference.filename } };
-        workflow[emptyMaskId] = { class_type: 'SolidMask', inputs: { value: 0, width: input.width, height: input.height } };
-        workflow[regionMaskId] = { class_type: 'SolidMask', inputs: { value: 1, width: regionWidth, height: regionHeight } };
-        workflow[compositeMaskId] = {
-          class_type: 'MaskComposite',
-          inputs: { destination: [emptyMaskId, 0], source: [regionMaskId, 0], x, y, operation: 'add' }
+        const referenceImage: [string, number] = reference.crop ? [cropId, 0] : [loadId, 0];
+        if (reference.crop) {
+          workflow[cropId] = {
+            class_type: 'ImageCrop',
+            inputs: { image: [loadId, 0], ...reference.crop }
+          };
+        }
+        workflow[removeBackgroundId] = {
+          class_type: 'RemoveBackground',
+          inputs: { bg_removal_model: ['22', 0], image: referenceImage }
         };
-        workflow[adapterId] = {
-          class_type: 'IPAdapterAdvanced',
-          inputs: {
-            model: conditionedModel,
-            ipadapter: ['20', 0],
-            image: [loadId, 0],
-            weight: reference.weight ?? 0.82,
-            weight_type: 'linear',
-            combine_embeds: 'average',
-            start_at: 0,
-            end_at: 0.88,
-            embeds_scaling: 'K+V w/ C penalty',
-            attn_mask: [compositeMaskId, 0],
-            clip_vision: ['21', 0]
-          }
+        workflow[scaleImageId] = {
+          class_type: 'ImageScale',
+          inputs: { image: referenceImage, upscale_method: 'lanczos', width: regionWidth, height: regionHeight, crop: 'disabled' }
         };
-        conditionedModel = [adapterId, 0];
+        workflow[maskImageId] = { class_type: 'MaskToImage', inputs: { mask: [removeBackgroundId, 0] } };
+        workflow[scaleMaskImageId] = {
+          class_type: 'ImageScale',
+          inputs: { image: [maskImageId, 0], upscale_method: 'bilinear', width: regionWidth, height: regionHeight, crop: 'disabled' }
+        };
+        workflow[scaledMaskId] = { class_type: 'ImageToMask', inputs: { image: [scaleMaskImageId, 0], channel: 'red' } };
+        workflow[compositeId] = {
+          class_type: 'ImageCompositeMasked',
+          inputs: { destination: currentImage, source: [scaleImageId, 0], x, y, resize_source: false, mask: [scaledMaskId, 0] }
+        };
+        currentImage = [compositeId, 0];
       });
-      const sampler = workflow['3'] as { inputs: Record<string, unknown> };
-      sampler.inputs.model = conditionedModel;
+      delete workflow['3'];
+      delete workflow['5'];
+      delete workflow['8'];
+      const output = workflow['9'] as { inputs: Record<string, unknown> };
+      output.inputs.images = currentImage;
     }
     const promptId = await this.submitWorkflow(workflow);
     const historyEntry = await this.waitForHistory(promptId);

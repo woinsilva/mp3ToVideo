@@ -5,7 +5,7 @@ export interface ShotPromptEntity {
   name: string;
   type: string;
   identity: string;
-  referenceAsset?: { id: string; storagePath: string } | null;
+  referenceAsset?: { id: string; storagePath: string; width?: number | null; height?: number | null; generatedTurnaround?: boolean } | null;
 }
 
 export interface ShotPromptContext {
@@ -40,7 +40,7 @@ export interface ShotPromptContext {
 export interface BuiltShotImagePrompt {
   positivePrompt: string;
   negativePrompt: string;
-  referenceAssets: Array<{ id: string; storagePath: string; purpose: 'entity-content' | 'location-content'; versionId?: string }>;
+  referenceAssets: Array<{ id: string; storagePath: string; purpose: 'entity-content' | 'location-content'; versionId?: string; width?: number | null; height?: number | null; generatedTurnaround?: boolean }>;
   styleReferenceAssetIds: string[];
   styleProfileVersion: number | null;
   allowedEntityVersionIds: string[];
@@ -71,25 +71,27 @@ export class ChildrenClipShotPromptService {
       if (!context.styleProfile || context.styleProfile.status !== 'locked') throw new Error('Background requer um Project Style Lock ativo');
       const namedEntity = context.entities.find((entity) => this.containsName(basePrompt, entity.name));
       if (namedEntity) throw new Error(`Background-only nao pode solicitar a entidade ${namedEntity.name}`);
-      const safeStyle = this.withoutNamedFragments(style, context.entities.map((entity) => entity.name));
-      const safeLockedStyle = this.withoutNamedFragments(lockedStyle.positive, context.entities.map((entity) => entity.name));
+      const safeStyle = this.withoutSubjectFragments(this.withoutNamedFragments(style, context.entities.map((entity) => entity.name)));
+      const safeLockedStyle = this.withoutSubjectFragments(this.withoutNamedFragments(lockedStyle.positive, context.entities.map((entity) => entity.name)));
+      const safeEnvironment = this.withoutSubjectFragments(this.withoutNamedFragments(context.shot.environment, context.entities.map((entity) => entity.name)));
       const positivePrompt = this.withoutNamedFragments([
-        'original polished 2D children animation background plate, clean layered environment, clear foreground middle ground and background',
-        safeLockedStyle,
-        safeStyle,
-        basePrompt,
+        'original polished flat vector 2D cel animation environment background plate, bold clean outlines, simple rounded shapes, no volumetric rendering, unoccupied establishing shot',
+        safeEnvironment ? `(required depicted location with all named architecture and landmarks clearly visible: ${safeEnvironment}:1.55)` : null,
+        'the requested place is the main visual subject; do not replace it with a generic park, road, courtyard or room',
+        this.limit(safeLockedStyle, 420),
+        this.limit(safeStyle, 320),
         context.shot.timeOfDay,
         context.shot.continuityFromPreviousShot,
         `environmental composition only: ${context.shot.framing}; ${context.shot.cameraMovement}`,
         this.compositionRules(context.shot),
-        'empty staging area for later 2D composition; no registered entities; no characters; no vehicles; no text'
+        'completely empty staging area for later 2D composition; architecture and landscape only; zero people; zero children; zero characters; zero animals; zero mascots; zero vehicles; no faces; no eyes; no text'
       ].filter(Boolean).join(', '), context.entities.map((entity) => entity.name));
       const leakedEntity = context.entities.find((entity) => this.containsName(positivePrompt, entity.name));
       if (leakedEntity) throw new Error(`Background-only positivo inclui a entidade ${leakedEntity.name}`);
       return {
         positivePrompt,
         negativePrompt: [
-          'person, people, child, human, character, animal, creature, mascot, vehicle, duplicate subject',
+          '(person:2.0), (people:2.0), (child:2.0), (boy:2.0), (girl:2.0), (human:2.0), (face:2.0), (eyes:2.0), (character:2.0), (animal:2.0), (creature:2.0), (mascot:2.0), (vehicle:2.0), portrait, body, silhouette, duplicate subject',
           ...context.entities.map((item) => item.name),
           ...lockedStyle.negative,
           'photorealistic, 3d render, text, letters, logo, watermark, signature, scary, violence, weapon, malformed, low quality'
@@ -115,6 +117,9 @@ export class ChildrenClipShotPromptService {
     const references = orderedAllowed.filter((item) => item.referenceAsset).map((item) => ({
       id: item.referenceAsset!.id,
       storagePath: item.referenceAsset!.storagePath,
+      width: item.referenceAsset!.width,
+      height: item.referenceAsset!.height,
+      generatedTurnaround: item.referenceAsset!.generatedTurnaround,
       versionId: item.versionId,
       purpose: 'entity-content' as const
     }));
@@ -198,6 +203,12 @@ export class ChildrenClipShotPromptService {
   private withoutNamedFragments(value: string, names: string[]) {
     return value.split(/(?<=[.!?;])\s+|,\s+/)
       .filter((fragment) => fragment.trim() && !names.some((name) => this.containsName(fragment, name)))
+      .join(', ');
+  }
+  private withoutSubjectFragments(value: string) {
+    const subjectTerms = /\b(person|people|child|children|boy|girl|human|character|characters|animal|animals|creature|mascot|vehicle|vehicles|face|faces|eye|eyes|expression|expressions|pessoa|pessoas|crianca|criancas|menino|menina|humano|personagem|personagens|animal|animais|criatura|mascote|mascotes|veiculo|veiculos|rosto|rostos|olho|olhos|expressao|expressoes)\b/i;
+    return value.split(/(?<=[.!?;])\s+|,\s+/)
+      .filter((fragment) => fragment.trim() && !subjectTerms.test(this.normalize(fragment)))
       .join(', ');
   }
   private limit(value: string, length: number) { return value.length > length ? `${value.slice(0, length - 3)}...` : value; }
