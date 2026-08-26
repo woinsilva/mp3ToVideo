@@ -428,7 +428,13 @@ Esta seção é apenas um snapshot operacional. As demais seções descrevem a s
 - A versão do ComfyUI Desktop e dos modelos instalados no Windows deve ser registrada quando o ambiente for promovido para produção.
 - Para builds totalmente reproduzíveis, recomenda-se fixar a versão/tag ou o digest do Ollama.
 
-## 13. Arquivos de referência
+## 13. Video remoto opcional
+
+- SnapGen e um provider remoto opcional do pipeline de clipe infantil; ComfyUI no Windows continua sendo o provider local.
+- Segredos ficam exclusivamente na API/worker. Configure `SNAPGEN_API_KEY`; base URL, polling, timeouts e concorrencia possuem variaveis documentadas no `.env.example`.
+- O provider remoto nao faz parte do Docker Compose e nao substitui nem adquire a GPU/lease dos componentes locais.
+
+## 14. Arquivos de referência
 
 - `package.json` e `pnpm-lock.yaml`;
 - `apps/api/package.json`;

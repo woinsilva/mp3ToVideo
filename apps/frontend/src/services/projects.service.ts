@@ -394,12 +394,12 @@ class ProjectsService {
     return apiService.request<ChildrenClipOutputStatus>(`/projects/${projectId}/children-clip/output`, {}, token);
   }
 
-  generateChildrenClipHeroShot(projectId: string, shotId: string, token: string) {
-    return apiService.request<ChildrenClipOutputStatus>(`/projects/${projectId}/children-clip/output/shots/${shotId}/wan`, { method: 'POST' }, token);
+  generateChildrenClipHeroShot(projectId: string, shotId: string, input: import('../types/project.types').ChildrenClipVideoGenerationRequest, token: string) {
+    return apiService.request<ChildrenClipOutputStatus>(`/projects/${projectId}/children-clip/output/shots/${shotId}/generate`, { method: 'POST', body: JSON.stringify(input) }, token);
   }
 
-  retryChildrenClipHeroShot(projectId: string, attemptId: string, token: string) {
-    return apiService.request<ChildrenClipOutputStatus>(`/projects/${projectId}/children-clip/output/hero-attempts/${attemptId}/retry`, { method: 'POST' }, token);
+  retryChildrenClipHeroShot(projectId: string, attemptId: string, input: import('../types/project.types').ChildrenClipVideoGenerationRequest, token: string) {
+    return apiService.request<ChildrenClipOutputStatus>(`/projects/${projectId}/children-clip/output/hero-attempts/${attemptId}/retry`, { method: 'POST', body: JSON.stringify(input) }, token);
   }
 
   approveChildrenClipHeroShot(projectId: string, attemptId: string, token: string) {
@@ -420,6 +420,10 @@ class ProjectsService {
 
   downloadChildrenClipHeroShot(projectId: string, attemptId: string, token: string) {
     return apiService.download(`/projects/${projectId}/children-clip/output/hero-attempts/${attemptId}/file`, token);
+  }
+
+  downloadChildrenClipVideoReference(projectId: string, assetId: string, token: string) {
+    return apiService.download(`/projects/${projectId}/children-clip/output/references/${assetId}/file`, token);
   }
 
   downloadChildrenClipFinal(projectId: string, finalRenderId: string, token: string) {

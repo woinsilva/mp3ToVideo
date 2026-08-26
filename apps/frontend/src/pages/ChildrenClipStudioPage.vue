@@ -210,7 +210,7 @@
               <summary><span><strong>{{ shot.index + 1 }}. {{ shot.title }}</strong><small>{{ formatTimePrecise(shot.startSeconds) }} - {{ formatTimePrecise(shot.endSeconds) }} · {{ shot.renderMode === 'animation_2d' ? '2D' : shot.renderMode }}</small></span><span>{{ shot.lyricText || 'Instrumental' }}</span></summary>
               <div class="shot-form">
                 <label class="auth-input-group"><span class="auth-input-label">Titulo</span><input v-model="shot.title" class="auth-input" :disabled="planStatus.plan.status === 'approved'" /></label>
-                <label class="auth-input-group"><span class="auth-input-label">Modo</span><select v-model="shot.renderMode" class="auth-input" :disabled="planStatus.plan.status === 'approved'"><option value="animation_2d">Animacao 2D</option><option value="wan">Tomada Wan</option><option value="hybrid">Hibrida</option></select></label>
+                <label class="auth-input-group"><span class="auth-input-label">Modo</span><select v-model="shot.renderMode" class="auth-input" :disabled="planStatus.plan.status === 'approved'"><option value="animation_2d">Animacao 2D</option><option value="wan">Tomada Wan</option><option value="snapgen">SnapGen (Veo 3.1 Fast)</option><option value="hybrid">Hibrida</option></select></label>
                 <label class="auth-input-group"><span class="auth-input-label">Inicio (s)</span><input v-model.number="shot.startSeconds" class="auth-input" type="number" min="0" step="0.001" :disabled="planStatus.plan.status === 'approved'" /></label>
                 <label class="auth-input-group"><span class="auth-input-label">Fim (s)</span><input v-model.number="shot.endSeconds" class="auth-input" type="number" min="0.1" step="0.001" :disabled="planStatus.plan.status === 'approved'" /></label>
                 <label class="auth-input-group"><span class="auth-input-label">Enquadramento</span><input v-model="shot.framing" class="auth-input" :disabled="planStatus.plan.status === 'approved'" /></label>
@@ -326,7 +326,7 @@
         <div class="production-assets-actions"><button class="app-button" type="button" :disabled="renderingMissingShots" @click="renderMissingShots">{{ renderingMissingShots ? 'Enfileirando...' : 'Renderizar tomadas 2D pendentes' }}</button></div>
         <div v-if="animationStatus" class="animation-shot-list">
           <article v-for="shot in animationStatus.shots" :key="shot.id" class="animation-shot-card">
-            <header><div><strong>{{ shot.index + 1 }}. {{ shot.title }}</strong><small>{{ shot.renderMode === 'hybrid' ? '2D + tomada especial' : shot.renderMode === 'wan' ? 'Tomada especial Wan' : 'Animacao 2D' }}</small></div><span v-if="shot.latestAttempt" class="version-status" :class="`version-status--${shot.latestAttempt.status}`">{{ renderStatusLabel(shot.latestAttempt.status) }}</span></header>
+            <header><div><strong>{{ shot.index + 1 }}. {{ shot.title }}</strong><small>{{ shot.renderMode === 'hybrid' ? '2D + tomada especial' : shot.renderMode === 'wan' ? 'Tomada especial Wan' : shot.renderMode === 'snapgen' ? 'Tomada especial SnapGen' : 'Animacao 2D' }}</small></div><span v-if="shot.latestAttempt" class="version-status" :class="`version-status--${shot.latestAttempt.status}`">{{ renderStatusLabel(shot.latestAttempt.status) }}</span></header>
             <template v-if="shot.renderMode !== 'wan'">
               <video v-if="shot.latestAttempt?.hasVideo && renderUrls[shot.latestAttempt.id]" class="shot-render-preview" controls preload="metadata" :src="renderUrls[shot.latestAttempt.id]" />
               <div v-if="shot.latestAttempt && ['queued', 'rendering'].includes(shot.latestAttempt.status)" class="asset-job-progress"><v-progress-linear :model-value="shot.latestAttempt.progress" color="warning" /><small>{{ shot.latestAttempt.stage || 'QUEUED' }} · {{ shot.latestAttempt.progress }}%</small></div>
@@ -339,14 +339,36 @@
       </section>
 
       <section v-if="productionAssets?.summary.readyForAnimation" class="surface-card studio-width plan-panel output-panel">
-        <div class="panel-heading"><div><p class="page-eyebrow">Etapas 6 a 9</p><h3>Tomadas especiais e clipe final</h3><p>Wan e opcional nas tomadas hibridas. O render final normaliza todas as fontes e aplica a musica original.</p></div></div>
+        <div class="panel-heading"><div><p class="page-eyebrow">Etapas 6 a 9</p><h3>Tomadas especiais e clipe final</h3><p>Escolha entre ComfyUI/Wan local e Veo 3.1 Fast pela SnapGen. O render final normaliza todas as fontes e aplica a musica original.</p></div></div>
         <div v-if="outputStatus?.heroShots.length" class="hero-shot-list">
           <article v-for="shot in outputStatus.heroShots" :key="shot.id" class="animation-shot-card">
-            <header><div><strong>{{ shot.index + 1 }}. {{ shot.title }}</strong><small>{{ shot.renderMode === 'wan' ? 'Wan obrigatorio para esta tomada' : 'Wan opcional; a base 2D continua valida' }}</small></div><span v-if="shot.latestAttempt" class="version-status" :class="`version-status--${shot.latestAttempt.status}`">{{ shot.latestAttempt.status }}</span></header>
+            <header><div><strong>{{ shot.index + 1 }}. {{ shot.title }}</strong><small>{{ ['wan', 'snapgen'].includes(shot.renderMode) ? 'IA generativa obrigatoria para esta tomada' : 'IA generativa opcional; a base 2D continua valida' }}</small></div><span v-if="shot.latestAttempt" class="version-status" :class="`version-status--${shot.latestAttempt.status}`">{{ shot.latestAttempt.status }}</span></header>
             <video v-if="shot.latestAttempt?.assetId && heroUrls[shot.latestAttempt.id]" class="shot-render-preview" controls preload="metadata" :src="heroUrls[shot.latestAttempt.id]" />
             <div v-if="shot.latestAttempt && ['queued', 'generating', 'validating'].includes(shot.latestAttempt.status)" class="asset-job-progress"><v-progress-linear :model-value="shot.latestAttempt.progress" color="warning" /><small>{{ shot.latestAttempt.stage }} · {{ shot.latestAttempt.progress }}%</small></div>
             <v-alert v-if="shot.latestAttempt?.status === 'failed'" type="error" variant="tonal" density="compact">{{ shot.latestAttempt.errorMessage }}</v-alert>
-            <div class="version-actions"><button v-if="!shot.latestAttempt || ['ready_for_review', 'approved', 'rejected'].includes(shot.latestAttempt.status)" class="app-button app-button--secondary" type="button" @click="generateHeroShot(shot.id)">{{ shot.latestAttempt ? 'Gerar outra versao Wan' : 'Gerar tomada Wan' }}</button><button v-if="shot.latestAttempt?.status === 'ready_for_review'" class="app-button" type="button" @click="approveHeroShot(shot.latestAttempt.id)">Aprovar Wan</button><button v-if="shot.latestAttempt?.status === 'ready_for_review'" class="app-button app-button--secondary" type="button" @click="rejectHeroShot(shot.latestAttempt.id)">Rejeitar</button><button v-if="shot.latestAttempt?.status === 'failed'" class="app-button app-button--secondary" type="button" @click="retryHeroShot(shot.latestAttempt.id)">Tentar novamente</button><span v-if="shot.latestAttempt?.status === 'approved'" class="approved-copy"><v-icon icon="mdi-lock-check" /> Wan aprovado</span></div>
+            <div v-if="shot.latestAttempt" class="attempt-facts"><span><strong>Provider:</strong> {{ shot.latestAttempt.provider === 'snapgen' ? 'SnapGen' : 'ComfyUI / Wan' }}</span><span><strong>Attempt:</strong> {{ shot.latestAttempt.attemptNumber }}</span><span v-if="attemptRequest(shot.latestAttempt).model"><strong>Modelo:</strong> {{ attemptRequest(shot.latestAttempt).model }}</span><span v-if="attemptRequest(shot.latestAttempt).resolution"><strong>Resolucao:</strong> {{ attemptRequest(shot.latestAttempt).resolution }}</span><span v-if="attemptRequest(shot.latestAttempt).referenceMode"><strong>Referencias:</strong> {{ attemptRequest(shot.latestAttempt).referenceMode }}</span><span v-if="attemptMetric(shot.latestAttempt, 'estimatedCredit') != null"><strong>Custo estimado:</strong> {{ attemptMetric(shot.latestAttempt, 'estimatedCredit') }} creditos</span><span v-if="attemptMetric(shot.latestAttempt, 'usedCredit') != null"><strong>Custo real:</strong> {{ attemptMetric(shot.latestAttempt, 'usedCredit') }} creditos</span><span v-if="shot.latestAttempt.durationMs"><strong>Tempo:</strong> {{ Math.round(shot.latestAttempt.durationMs / 1000) }}s</span></div>
+            <details v-if="!shot.latestAttempt || !['queued', 'generating', 'validating'].includes(shot.latestAttempt.status)" class="video-provider-panel" open>
+              <summary>Configurar geracao de video</summary>
+              <div class="provider-options">
+                <label :class="{ selected: heroConfig(shot.id).provider === 'local' }"><input v-model="heroConfig(shot.id).provider" type="radio" value="local" /> Local — ComfyUI / Wan</label>
+                <label :class="{ selected: heroConfig(shot.id).provider === 'snapgen' }"><input v-model="heroConfig(shot.id).provider" type="radio" value="snapgen" /> Nuvem — SnapGen / Veo 3.1 Fast</label>
+              </div>
+              <v-alert v-if="heroConfig(shot.id).provider === 'snapgen' && !outputStatus.snapgen.configured" density="compact" type="warning" variant="tonal">Configure SNAPGEN_API_KEY no servidor para habilitar este provider.</v-alert>
+              <div v-if="heroConfig(shot.id).provider === 'snapgen'" class="provider-fields">
+                <label>Modelo<select v-model="heroConfig(shot.id).model"><option value="veo-3.1-fast">Veo 3.1 Fast</option></select></label>
+                <label>Resolucao<select v-model="heroConfig(shot.id).resolution"><option value="720p">720p</option><option value="1080p">1080p</option></select></label>
+                <label>Duracao<input value="8 segundos (fixa)" disabled /></label>
+                <label>Uso das imagens<select v-model="heroConfig(shot.id).referenceMode"><option value="frame">First / Last Frame</option><option value="ingredient">Ingredient Images (1 a 3)</option></select></label>
+              </div>
+              <div v-if="heroConfig(shot.id).referenceMode !== 'ingredient' || heroConfig(shot.id).provider === 'local'" class="provider-fields">
+                <label>First Image<select v-model="heroConfig(shot.id).firstImageAssetId"><option value="">Selecione</option><option v-for="reference in outputStatus.availableReferences" :key="reference.id" :value="reference.id">{{ reference.name }}</option></select></label>
+                <label v-if="heroConfig(shot.id).provider === 'snapgen'">Last Image (opcional)<select v-model="heroConfig(shot.id).lastImageAssetId"><option value="">Nenhuma</option><option v-for="reference in outputStatus.availableReferences" :key="reference.id" :value="reference.id">{{ reference.name }}</option></select></label>
+              </div>
+              <div v-else class="reference-picker"><strong>Ingredient Images — selecione de 1 a 3</strong><div class="reference-grid"><button v-for="reference in outputStatus.availableReferences" :key="reference.id" type="button" :class="{ selected: isIngredientSelected(shot.id, reference.id) }" @click="toggleIngredient(shot.id, reference.id)"><img v-if="referenceUrls[reference.id]" :src="referenceUrls[reference.id]" :alt="reference.name" /><span>{{ reference.name }}</span></button></div></div>
+              <label class="provider-prompt">Prompt de movimento<textarea v-model="heroConfig(shot.id).prompt" rows="5" maxlength="6000" placeholder="Deixe vazio para usar o prompt automatico da tomada." /></label>
+            </details>
+            <div class="version-actions"><button v-if="!shot.latestAttempt || ['ready_for_review', 'approved', 'rejected'].includes(shot.latestAttempt.status)" class="app-button app-button--secondary" type="button" :disabled="heroConfig(shot.id).provider === 'snapgen' && !outputStatus.snapgen.configured" @click="generateHeroShot(shot.id)">{{ shot.latestAttempt ? 'Gerar outra versao' : 'Gerar tomada especial' }}</button><button v-if="shot.latestAttempt?.status === 'ready_for_review'" class="app-button" type="button" @click="approveHeroShot(shot.latestAttempt.id)">Aprovar</button><button v-if="shot.latestAttempt?.status === 'ready_for_review'" class="app-button app-button--secondary" type="button" @click="rejectHeroShot(shot.latestAttempt.id)">Rejeitar</button><button v-if="shot.latestAttempt?.status === 'failed'" class="app-button app-button--secondary" type="button" @click="retryHeroShot(shot.latestAttempt.id, shot.id)">Tentar novamente</button><span v-if="shot.latestAttempt?.status === 'approved'" class="approved-copy"><v-icon icon="mdi-lock-check" /> Aprovado</span></div>
+            <details v-if="shot.latestAttempt?.generationManifest"><summary>Manifesto da tentativa</summary><pre class="render-manifest">{{ JSON.stringify(shot.latestAttempt.generationManifest, null, 2) }}</pre></details>
           </article>
         </div>
         <div v-if="outputStatus" class="final-render-card">
@@ -382,7 +404,7 @@ import AppLayout from '@/layouts/AppLayout.vue';
 import { projectsService } from '@/services/projects.service';
 import { useAuthStore } from '@/stores/auth.store';
 import { useProjectsStore } from '@/stores/projects.store';
-import type { CharacterAssetRole, ChildrenClipAnimationStatus, ChildrenClipAudioStatus, ChildrenClipCharacter, ChildrenClipCharacterVersion, ChildrenClipLibraryCharacter, ChildrenClipOutputStatus, ChildrenClipPlanStatus, ChildrenClipProductionAssetsStatus, ChildrenClipProductionLocation, ChildrenClipShot, ChildrenClipShotAsset, ChildrenClipShotAssetRole, ChildrenClipShotRenderAttempt } from '@/types/project.types';
+import type { CharacterAssetRole, ChildrenClipAnimationStatus, ChildrenClipAudioStatus, ChildrenClipCharacter, ChildrenClipCharacterVersion, ChildrenClipLibraryCharacter, ChildrenClipOutputStatus, ChildrenClipPlanStatus, ChildrenClipProductionAssetsStatus, ChildrenClipProductionLocation, ChildrenClipShot, ChildrenClipShotAsset, ChildrenClipShotAssetRole, ChildrenClipShotRenderAttempt, ChildrenClipVideoGenerationRequest } from '@/types/project.types';
 
 @Component({ components: { AppLayout } })
 export default class ChildrenClipStudioPage extends Vue {
@@ -435,6 +457,8 @@ export default class ChildrenClipStudioPage extends Vue {
   renderingMissingShots = false;
   renderUrls: Record<string, string> = {};
   heroUrls: Record<string, string> = {};
+  referenceUrls: Record<string, string> = {};
+  heroConfigs: Record<string, ChildrenClipVideoGenerationRequest> = {};
   finalRenderUrl: string | null = null;
 
   get authStore(): any { return useAuthStore(); }
@@ -469,6 +493,7 @@ export default class ChildrenClipStudioPage extends Vue {
     Object.values(this.shotAssetUrls).forEach((url) => URL.revokeObjectURL(url));
     Object.values(this.renderUrls).forEach((url) => URL.revokeObjectURL(url));
     Object.values(this.heroUrls).forEach((url) => URL.revokeObjectURL(url));
+    Object.values(this.referenceUrls).forEach((url) => URL.revokeObjectURL(url));
     if (this.finalRenderUrl) URL.revokeObjectURL(this.finalRenderUrl);
   }
 
@@ -517,10 +542,16 @@ export default class ChildrenClipStudioPage extends Vue {
     if (!this.authStore.token) return;
     this.outputStatus = await projectsService.getChildrenClipOutput(this.projectId, this.authStore.token);
     for (const shot of this.outputStatus.heroShots) {
+      if (!this.heroConfigs[shot.id]) this.heroConfigs = { ...this.heroConfigs, [shot.id]: { provider: shot.videoGenerationConfig?.provider ?? (shot.renderMode === 'snapgen' ? 'snapgen' : 'local'), model: 'veo-3.1-fast', resolution: shot.videoGenerationConfig?.resolution ?? '720p', referenceMode: shot.videoGenerationConfig?.referenceMode ?? 'frame', firstImageAssetId: shot.videoGenerationConfig?.firstImageAssetId ?? shot.approvedStoryboardAssetId ?? '', lastImageAssetId: shot.videoGenerationConfig?.lastImageAssetId ?? '', ingredientAssetIds: shot.videoGenerationConfig?.ingredientAssetIds ?? [], prompt: shot.videoGenerationConfig?.prompt ?? shot.automaticPrompt } };
       const attempt = shot.latestAttempt;
       if (!attempt?.assetId || this.heroUrls[attempt.id]) continue;
       const blob = await projectsService.downloadChildrenClipHeroShot(this.projectId, attempt.id, this.authStore.token);
       this.heroUrls = { ...this.heroUrls, [attempt.id]: URL.createObjectURL(blob) };
+    }
+    for (const reference of this.outputStatus.availableReferences) {
+      if (this.referenceUrls[reference.id]) continue;
+      const blob = await projectsService.downloadChildrenClipVideoReference(this.projectId, reference.id, this.authStore.token);
+      this.referenceUrls = { ...this.referenceUrls, [reference.id]: URL.createObjectURL(blob) };
     }
     if (this.outputStatus.finalRender?.hasVideo && !this.finalRenderUrl) {
       const blob = await projectsService.downloadChildrenClipFinal(this.projectId, this.outputStatus.finalRender.id, this.authStore.token);
@@ -847,8 +878,13 @@ export default class ChildrenClipStudioPage extends Vue {
   async renderShot(shotId: string) { if (!this.authStore.token) return; try { this.animationStatus = await projectsService.renderChildrenClipShot(this.projectId, shotId, this.authStore.token); } catch (error) { this.captureError(error, 'Falha ao enfileirar tomada 2D'); } }
   async retryShotRender(attemptId: string) { if (!this.authStore.token) return; try { this.animationStatus = await projectsService.retryChildrenClipShotRender(this.projectId, attemptId, this.authStore.token); } catch (error) { this.captureError(error, 'Falha ao reiniciar render 2D'); } }
   renderStatusLabel(status: ChildrenClipShotRenderAttempt['status']) { return ({ queued: 'Enfileirado', rendering: 'Renderizando', completed: 'Concluido', failed: 'Falhou' })[status]; }
-  async generateHeroShot(shotId: string) { if (!this.authStore.token) return; try { this.outputStatus = await projectsService.generateChildrenClipHeroShot(this.projectId, shotId, this.authStore.token); } catch (error) { this.captureError(error, 'Falha ao gerar tomada Wan'); } }
-  async retryHeroShot(attemptId: string) { if (!this.authStore.token) return; try { this.outputStatus = await projectsService.retryChildrenClipHeroShot(this.projectId, attemptId, this.authStore.token); } catch (error) { this.captureError(error, 'Falha ao reiniciar tomada Wan'); } }
+  heroConfig(shotId: string) { return this.heroConfigs[shotId] || { provider: 'local' as const, model: 'veo-3.1-fast' as const, resolution: '720p' as const, referenceMode: 'frame' as const, ingredientAssetIds: [] }; }
+  attemptRequest(attempt: { requestMetadata: ChildrenClipVideoGenerationRequest | null }) { return attempt.requestMetadata || { provider: 'local' as const }; }
+  attemptMetric(attempt: { generationManifest: Record<string, unknown> | null }, key: string) { return attempt.generationManifest?.[key] ?? null; }
+  isIngredientSelected(shotId: string, assetId: string) { return this.heroConfig(shotId).ingredientAssetIds?.includes(assetId) ?? false; }
+  toggleIngredient(shotId: string, assetId: string) { const config = this.heroConfig(shotId); const selected = config.ingredientAssetIds || []; if (selected.includes(assetId)) config.ingredientAssetIds = selected.filter((id) => id !== assetId); else if (selected.length < 3) config.ingredientAssetIds = [...selected, assetId]; }
+  async generateHeroShot(shotId: string) { if (!this.authStore.token) return; try { this.outputStatus = await projectsService.generateChildrenClipHeroShot(this.projectId, shotId, this.heroConfig(shotId), this.authStore.token); } catch (error) { this.captureError(error, 'Falha ao gerar tomada especial'); } }
+  async retryHeroShot(attemptId: string, shotId: string) { if (!this.authStore.token) return; try { this.outputStatus = await projectsService.retryChildrenClipHeroShot(this.projectId, attemptId, this.heroConfig(shotId), this.authStore.token); } catch (error) { this.captureError(error, 'Falha ao reiniciar tomada especial'); } }
   async approveHeroShot(attemptId: string) { if (!this.authStore.token) return; try { this.outputStatus = await projectsService.approveChildrenClipHeroShot(this.projectId, attemptId, this.authStore.token); } catch (error) { this.captureError(error, 'Falha ao aprovar tomada Wan'); } }
   async rejectHeroShot(attemptId: string) { if (!this.authStore.token) return; try { this.outputStatus = await projectsService.rejectChildrenClipHeroShot(this.projectId, attemptId, this.authStore.token); } catch (error) { this.captureError(error, 'Falha ao rejeitar tomada Wan'); } }
   async renderFinalClip() { if (!this.authStore.token) return; try { if (this.finalRenderUrl) { URL.revokeObjectURL(this.finalRenderUrl); this.finalRenderUrl = null; } this.outputStatus = await projectsService.renderChildrenClipFinal(this.projectId, this.authStore.token); } catch (error) { this.captureError(error, 'Falha ao iniciar render final'); } }
@@ -988,6 +1024,21 @@ export default class ChildrenClipStudioPage extends Vue {
 .shot-render-preview { width: min(640px, 100%); max-height: 360px; border-radius: 12px; background: #111; }
 .render-manifest { max-height: 260px; overflow: auto; padding: 12px; border-radius: 8px; background: #1e2430; color: #e8edf5; font-size: .72rem; white-space: pre-wrap; }
 .hero-shot-list, .final-render-card { display: grid; gap: 12px; margin-top: 18px; }
+.video-provider-panel { margin-top: 12px; padding: 12px; border: 1px solid #e4e6eb; border-radius: 12px; background: #fafbfc; }
+.video-provider-panel summary { cursor: pointer; font-weight: 800; }
+.provider-options, .provider-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+.provider-options label { padding: 12px; border: 1px solid #d9dce2; border-radius: 10px; cursor: pointer; }
+.provider-options label.selected { border-color: #1769ff; background: #eef4ff; }
+.provider-fields label, .provider-prompt { display: grid; gap: 5px; color: #4c5058; font-size: .84rem; font-weight: 700; }
+.provider-fields select, .provider-fields input, .provider-prompt textarea { width: 100%; padding: 9px 10px; border: 1px solid #cfd3da; border-radius: 8px; background: white; color: #202124; }
+.provider-prompt { margin-top: 12px; }
+.reference-picker { display: grid; gap: 8px; margin-top: 12px; }
+.reference-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.reference-grid button { display: grid; gap: 6px; padding: 7px; border: 2px solid transparent; border-radius: 10px; background: white; text-align: left; }
+.reference-grid button.selected { border-color: #1769ff; background: #eef4ff; }
+.reference-grid img { width: 100%; height: 82px; object-fit: cover; border-radius: 6px; }
+.reference-grid span { font-size: .75rem; line-height: 1.2; }
+.attempt-facts { display: flex; flex-wrap: wrap; gap: 7px 14px; margin-top: 10px; color: #565b65; font-size: .78rem; }
 .final-render-preview { width: min(820px, 100%); max-height: 460px; border-radius: 14px; background: #111; }
 .final-download { width: fit-content; text-decoration: none; }
 .asset-lightbox { position: fixed; inset: 0; z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgb(3 7 18 / 88%); backdrop-filter: blur(4px); }

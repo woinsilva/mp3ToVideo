@@ -41,5 +41,8 @@ export const configuration = () => ({
     comfyuiStoryboardCfg: Number(process.env.COMFYUI_STORYBOARD_CFG ?? 5),
     comfyuiStoryboardSampler: process.env.COMFYUI_STORYBOARD_SAMPLER ?? 'uni_pc',
     comfyuiStoryboardScheduler: process.env.COMFYUI_STORYBOARD_SCHEDULER ?? 'simple'
+  },
+  snapgen: {
+    configured: Boolean(process.env.SNAPGEN_API_KEY?.trim())
   }
 });

@@ -81,6 +81,7 @@ enum ChildrenClipShotStatus {
 enum ChildrenClipRenderMode {
   animation_2d
   wan
+  snapgen
   hybrid
 }
 
@@ -658,6 +659,7 @@ model ChildrenClipShot {
   durationSeconds            Float
   status                     ChildrenClipShotStatus          @default(draft)
   renderMode                 ChildrenClipRenderMode          @default(animation_2d)
+  videoGenerationConfig      Json?
   framing                    String
   cameraMovement             String
   characterAction            String
@@ -757,6 +759,9 @@ model ChildrenClipHeroShotAttempt {
   status              ChildrenClipHeroShotStatus @default(queued)
   bullJobId           String?
   promptId            String?
+  provider            String                     @default("comfyui-video")
+  externalJobId       String?
+  requestMetadata     Json?
   seed                Int
   fps                 Int
   width               Int
@@ -768,6 +773,10 @@ model ChildrenClipHeroShotAttempt {
   errorMessage        String?
   generationStartedAt DateTime?
   generationEndedAt   DateTime?
+  submittedAt         DateTime?
+  firstExternalSeenAt DateTime?
+  lastHeartbeatAt     DateTime?
+  durationMs          Int?
   approvedAt          DateTime?
   createdAt           DateTime                   @default(now())
   updatedAt           DateTime                   @updatedAt
@@ -777,6 +786,8 @@ model ChildrenClipHeroShotAttempt {
   @@unique([shotId, attemptNumber])
   @@index([shotId, status])
   @@index([bullJobId])
+  @@index([provider, status])
+  @@index([externalJobId])
 }
 
 model ChildrenClipFinalRender {

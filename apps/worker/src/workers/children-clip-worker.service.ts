@@ -62,7 +62,7 @@ export class ChildrenClipWorkerService implements OnModuleInit, OnModuleDestroy 
       },
       {
         connection,
-        concurrency: 1,
+        concurrency: config.get<number>('worker.childrenClipQueueConcurrency', 2),
         lockDuration: config.get<number>('worker.lockDurationMs', 1800000),
         stalledInterval: config.get<number>('worker.stalledIntervalMs', 30000)
       }

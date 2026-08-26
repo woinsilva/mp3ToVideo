@@ -5,6 +5,19 @@ export const PROJECT_PROCESS_JOB_NAME = 'project.process';
 export const FRAME_INTERPOLATION_QUEUE_NAME = 'frame-interpolation';
 export const FRAME_INTERPOLATION_JOB_NAME = 'render.interpolate';
 export const CHILDREN_CLIP_QUEUE_NAME = 'children-clip-production';
+
+export const SNAPGEN_VIDEO_MODELS = {
+  'veo-3.1-fast': {
+    label: 'Veo 3.1 Fast',
+    durations: [8] as const,
+    resolutions: ['720p', '1080p'] as const,
+    aspectRatios: ['16:9', '9:16'] as const,
+    referenceModes: ['frame', 'ingredient'] as const,
+    maxIngredientImages: 3
+  }
+} as const;
+
+export type SnapGenVideoModel = keyof typeof SNAPGEN_VIDEO_MODELS;
 export const CHILDREN_CLIP_CHARACTER_GENERATE_JOB_NAME = 'children-clip.character.generate';
 export const CHILDREN_CLIP_AUDIO_ANALYZE_JOB_NAME = 'children-clip.audio.analyze';
 export const CHILDREN_CLIP_PLAN_GENERATE_JOB_NAME = 'children-clip.plan.generate';

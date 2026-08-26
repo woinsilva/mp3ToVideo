@@ -37,6 +37,20 @@ interface ShotPlanningDraft {
   repairs?: CreativePlanResponse[];
 }
 
+interface HeroVideoRequest {
+  provider: 'local' | 'snapgen';
+  prompt: string;
+  referenceAssetIds: string[];
+  firstImageAssetId?: string | null;
+  lastImageAssetId?: string | null;
+  ingredientAssetIds?: string[];
+  model?: 'veo-3.1-fast';
+  resolution?: '720p' | '1080p';
+  durationSeconds?: 8;
+  aspectRatio?: '16:9' | '9:16';
+  referenceMode?: 'frame' | 'ingredient';
+}
+
 @Injectable()
 export class ChildrenClipProcessor {
   private readonly logger = new Logger(ChildrenClipProcessor.name);
@@ -68,11 +82,16 @@ export class ChildrenClipProcessor {
       include: { shot: { include: { assets: { where: { status: 'approved' }, include: { asset: true } }, project: { include: { childrenClip: true, childrenClipPlan: true, childrenClipStyleProfile: true } } } } }
     });
     if (!attempt) throw new Error(`Hero shot attempt ${heroAttemptId} not found`);
-    const reference = attempt.shot.assets.find((item) => item.role === 'storyboard_frame' && item.asset)?.asset ?? attempt.shot.assets.find((item) => item.role === 'background' && item.asset)?.asset;
-    if (!reference) throw new Error('A tomada Wan precisa de um fundo ou storyboard aprovado como referencia');
+    const request = attempt.requestMetadata as unknown as HeroVideoRequest | null;
+    if (!request?.provider || !request.prompt || !request.referenceAssetIds?.length) throw new Error('A tentativa nao possui uma configuracao de video valida');
+    const references = await this.prisma.asset.findMany({ where: { id: { in: request.referenceAssetIds }, projectId, organizationId } });
+    const referenceMap = new Map(references.map((asset) => [asset.id, asset]));
+    const orderedReferences = request.referenceAssetIds.map((id) => referenceMap.get(id)).filter((asset): asset is NonNullable<typeof asset> => Boolean(asset));
+    if (orderedReferences.length !== request.referenceAssetIds.length) throw new Error('Uma ou mais referencias da tentativa nao estao mais disponiveis');
+    const reference = orderedReferences[0];
     const lockedStyle = this.styleLockPrompt(attempt.shot.project.childrenClipStyleProfile);
     const prompt = {
-      positivePrompt: [lockedStyle.positive, attempt.shot.description, attempt.shot.characterAction, attempt.shot.environment, 'original safe children animation, preserve the supplied visual identity and composition, smooth subtle motion'].filter(Boolean).join('. '),
+      positivePrompt: request.prompt || [lockedStyle.positive, attempt.shot.description, attempt.shot.characterAction, attempt.shot.environment, 'original safe children animation, preserve the supplied visual identity and composition, smooth subtle motion'].filter(Boolean).join('. '),
       negativePrompt: [...lockedStyle.negative, 'photorealistic, scary, violence, text, watermark, morphing, identity change, extra limbs, deformed anatomy, scene transition, camera shake'].join(', ')
     } as ScenePrompt;
     const settings = this.videoSettings.resolve(prompt, attempt.shot.durationSeconds, {
@@ -80,20 +99,36 @@ export class ChildrenClipProcessor {
       cfg: attempt.shot.project.generationCfg, steps: attempt.shot.project.generationSteps,
       imageToVideo: true, stabilityTest: true
     });
+    const isSnapGen = request.provider === 'snapgen';
+
     let submittedPromptId: string | null = null;
+    const startedAt = new Date();
+    let firstExternalSeenAt = attempt.firstExternalSeenAt;
     await this.prisma.$transaction([
-      this.prisma.childrenClipHeroShotAttempt.update({ where: { id: heroAttemptId }, data: { status: 'generating', progress: 3, stage: 'STARTING', errorMessage: null, generationStartedAt: new Date(), generationEndedAt: null } }),
+      this.prisma.childrenClipHeroShotAttempt.update({ where: { id: heroAttemptId }, data: { status: 'generating', progress: 3, stage: 'STARTING', errorMessage: null, generationStartedAt: startedAt, generationEndedAt: null } }),
       this.prisma.childrenClip.update({ where: { projectId }, data: { productionStatus: 'generating_hero_shots' } })
     ]);
     try {
-      await this.heroProgress(job, heroAttemptId, 3, 'STARTING', 'Worker iniciou a tomada especial Wan.');
-      await this.heroProgress(job, heroAttemptId, 10, 'PREPARING_REFERENCE', 'Preparando o asset aprovado como referencia de identidade.');
+      await this.heroProgress(job, heroAttemptId, 3, 'STARTING', `Worker iniciou a tomada especial ${isSnapGen ? 'SnapGen' : 'Wan'}.`);
+      await this.heroProgress(job, heroAttemptId, 10, 'PREPARING_REFERENCE', `Preparando ${orderedReferences.length} referencia(s) aprovada(s).`);
+
       const result = await this.sceneVideo.generate({
         ...settings, sceneId: attempt.shotId, positivePrompt: settings.positivePrompt,
         negativePrompt: settings.negativePrompt, width: settings.width, height: settings.height,
         durationSeconds: settings.effectiveDurationSeconds,
         referenceImagePath: this.storage.getAbsolutePath(reference.storagePath),
-        onGpuWaiting: (owner) => this.heroProgress(
+        provider: isSnapGen ? 'snapgen' : 'comfyui',
+        ...(isSnapGen ? {
+          snapGenSettings: {
+            model: request.model ?? 'veo-3.1-fast',
+            resolution: request.resolution ?? '720p',
+            durationSeconds: 8 as const,
+            aspectRatio: request.aspectRatio ?? '16:9',
+            modeImage: request.referenceMode ?? 'frame',
+            referenceImagePaths: orderedReferences.map((asset) => this.storage.getAbsolutePath(asset.storagePath))
+          }
+        } : {}),
+        onGpuWaiting: isSnapGen ? undefined : (owner) => this.heroProgress(
           job,
           heroAttemptId,
           12,
@@ -102,35 +137,55 @@ export class ChildrenClipProcessor {
         ),
         onSubmitted: async (promptId) => {
           submittedPromptId = promptId;
-          await this.prisma.childrenClipHeroShotAttempt.update({ where: { id: heroAttemptId }, data: { promptId, stage: 'SUBMITTED', progress: 18 } });
-          await this.heroProgress(job, heroAttemptId, 18, 'SUBMITTED', `Workflow Wan enviado ao ComfyUI (${promptId}).`);
+          await this.prisma.childrenClipHeroShotAttempt.update({ where: { id: heroAttemptId }, data: { promptId, externalJobId: isSnapGen ? promptId : null, submittedAt: new Date(), stage: 'SUBMITTED', progress: 18 } });
+          await this.heroProgress(job, heroAttemptId, 18, 'SUBMITTED', `Workflow enviado ao ${isSnapGen ? 'SnapGen' : 'ComfyUI'} (${promptId}).`);
         },
         onHeartbeat: async (heartbeat) => {
-          const progress = Math.min(78, 20 + heartbeat.pollCount);
-          await this.heroProgress(job, heroAttemptId, progress, heartbeat.state === 'waiting' ? 'WAITING_EXTERNAL' : 'CONFIRMED_EXTERNAL_ACTIVE', `ComfyUI processando a tomada Wan ha ${Math.round(heartbeat.elapsedMs / 1000)}s.`);
+          const progress = heartbeat.statusPercentage == null ? Math.min(78, 20 + heartbeat.pollCount) : Math.min(78, Math.max(20, Math.round(20 + heartbeat.statusPercentage * 0.58)));
+          if (heartbeat.state === 'history_seen' && !firstExternalSeenAt) firstExternalSeenAt = new Date();
+          await this.prisma.childrenClipHeroShotAttempt.update({ where: { id: heroAttemptId }, data: {
+            lastHeartbeatAt: new Date(), firstExternalSeenAt: heartbeat.state === 'history_seen' ? firstExternalSeenAt : undefined,
+            generationManifest: { request, externalJobId: heartbeat.promptId, externalStatus: heartbeat.externalStatus ?? null, statusPercentage: heartbeat.statusPercentage ?? null, estimatedCredit: heartbeat.estimatedCredit ?? null, usedCredit: heartbeat.usedCredit ?? null, elapsedMs: heartbeat.elapsedMs } as unknown as Prisma.InputJsonValue
+          } });
+          await this.heroProgress(job, heroAttemptId, progress, heartbeat.state === 'waiting' ? 'WAITING_EXTERNAL' : 'CONFIRMED_EXTERNAL_ACTIVE', `${isSnapGen ? 'SnapGen' : 'ComfyUI'} processando a tomada ha ${Math.round(heartbeat.elapsedMs / 1000)}s.`);
         }
       });
-      if (!result) throw new Error('O provider Wan nao retornou um video');
-      await this.heroProgress(job, heroAttemptId, 82, 'SAVING_VIDEO', 'Salvando a tomada Wan versionada.');
+
+      if (!result) throw new Error(`O provider ${isSnapGen ? 'SnapGen' : 'Wan'} nao retornou um video`);
+      await this.heroProgress(job, heroAttemptId, 82, 'SAVING_VIDEO', `Salvando a tomada ${isSnapGen ? 'SnapGen' : 'Wan'} versionada.`);
       const outputPath = this.storage.buildChildrenClipHeroShotPath(organizationId, projectId, attempt.shotId, attempt.attemptNumber);
       const absolutePath = await this.storage.ensureParentDirectory(outputPath);
+
       await writeFile(absolutePath, result.buffer);
+
       await this.prisma.childrenClipHeroShotAttempt.update({ where: { id: heroAttemptId }, data: { status: 'validating', progress: 90, stage: 'VALIDATING' } });
-      await this.heroProgress(job, heroAttemptId, 90, 'VALIDATING', 'Validando o video retornado pelo Wan.');
+      await this.heroProgress(job, heroAttemptId, 90, 'VALIDATING', `Validando o video retornado pelo ${isSnapGen ? 'SnapGen' : 'Wan'}.`);
+
       const metadata = await this.videoProbe.probe(absolutePath);
-      if (!metadata.frameCount || !metadata.durationSeconds || !metadata.width || !metadata.height) throw new Error('O video Wan retornado e invalido ou incompleto');
+      if (!metadata.frameCount || !metadata.durationSeconds || !metadata.width || !metadata.height) throw new Error(`O video ${isSnapGen ? 'SnapGen' : 'Wan'} retornado e invalido ou incompleto`);
       const sizeBytes = Number((await stat(absolutePath)).size);
-      const manifest = { provider: result.provider, promptId: submittedPromptId, referenceAssetId: reference.id, ...settings, validation: metadata };
+
+      const manifest: Record<string, unknown> = { provider: result.provider, externalJobId: submittedPromptId, request, referenceAssetIds: request.referenceAssetIds, ...settings, ...result.metadata, validation: metadata };
+
       await this.prisma.$transaction(async (tx) => {
+        if (result.lastFrame) {
+          const lastFramePath = this.storage.buildChildrenClipHeroLastFramePath(organizationId, projectId, attempt.shotId, attempt.attemptNumber, result.lastFrame.mimeType);
+          const lastFrameAbsolutePath = await this.storage.ensureParentDirectory(lastFramePath);
+          await writeFile(lastFrameAbsolutePath, result.lastFrame.buffer);
+          const lastFrameAsset = await tx.asset.create({ data: { organizationId, projectId, type: 'image', mimeType: result.lastFrame.mimeType, storagePath: lastFramePath, sizeBytes: result.lastFrame.buffer.byteLength, metadata: { source: 'snapgen-last-frame', heroAttemptId } } });
+          manifest.lastFrameAssetId = lastFrameAsset.id;
+        }
         const asset = await tx.asset.create({ data: { organizationId, projectId, type: 'video_scene', mimeType: 'video/mp4', storagePath: outputPath, sizeBytes, width: metadata.width, height: metadata.height, metadata: manifest as unknown as Prisma.InputJsonValue } });
-        await tx.childrenClipHeroShotAttempt.update({ where: { id: heroAttemptId }, data: { assetId: asset.id, status: 'ready_for_review', progress: 100, stage: 'READY_FOR_REVIEW', generationManifest: manifest as unknown as Prisma.InputJsonValue, generationEndedAt: new Date(), errorMessage: null } });
+        const endedAt = new Date();
+        await tx.childrenClipHeroShotAttempt.update({ where: { id: heroAttemptId }, data: { assetId: asset.id, status: 'ready_for_review', progress: 100, stage: 'READY_FOR_REVIEW', generationManifest: manifest as unknown as Prisma.InputJsonValue, generationEndedAt: endedAt, durationMs: endedAt.getTime() - startedAt.getTime(), errorMessage: null } });
       });
-      await this.heroProgress(job, heroAttemptId, 100, 'READY_FOR_REVIEW', 'Tomada Wan pronta para revisao.', ProcessingJobStatus.completed);
+      await this.heroProgress(job, heroAttemptId, 100, 'READY_FOR_REVIEW', `Tomada ${isSnapGen ? 'SnapGen' : 'Wan'} pronta para revisao.`, ProcessingJobStatus.completed);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const willRetry = job.attemptsMade + 1 < (job.opts.attempts ?? 1);
-      await this.prisma.childrenClipHeroShotAttempt.update({ where: { id: heroAttemptId }, data: { status: willRetry ? 'queued' : 'failed', progress: 0, stage: willRetry ? 'RETRYING' : 'FAILED', errorMessage: message, generationEndedAt: willRetry ? null : new Date() } });
-      await this.heroProgress(job, heroAttemptId, 0, willRetry ? 'RETRYING' : 'FAILED', willRetry ? `Wan falhou; o BullMQ tentara novamente: ${message}` : `Falha na tomada Wan: ${message}`, willRetry ? ProcessingJobStatus.retrying : ProcessingJobStatus.failed, message);
+      const endedAt = new Date();
+      await this.prisma.childrenClipHeroShotAttempt.update({ where: { id: heroAttemptId }, data: { status: willRetry ? 'queued' : 'failed', progress: 0, stage: willRetry ? 'RETRYING' : 'FAILED', errorMessage: message, generationEndedAt: willRetry ? null : endedAt, durationMs: willRetry ? null : endedAt.getTime() - startedAt.getTime(), generationManifest: { request, externalJobId: submittedPromptId, error: { code: this.heroErrorCode(message), message } } as unknown as Prisma.InputJsonValue } });
+      await this.heroProgress(job, heroAttemptId, 0, willRetry ? 'RETRYING' : 'FAILED', willRetry ? `${isSnapGen ? 'SnapGen' : 'Wan'} falhou; o BullMQ tentara novamente: ${message}` : `Falha na tomada ${isSnapGen ? 'SnapGen' : 'Wan'}: ${message}`, willRetry ? ProcessingJobStatus.retrying : ProcessingJobStatus.failed, message);
       throw error;
     }
   }
@@ -145,9 +200,9 @@ export class ChildrenClipProcessor {
     const shots = render.project.childrenClipShots.map((shot) => {
       const hero = shot.heroShotAttempts[0]?.asset;
       const twoD = shot.renderAttempts[0]?.asset;
-      const asset = shot.renderMode === 'wan' ? hero : hero ?? twoD;
+      const asset = ['wan', 'snapgen'].includes(shot.renderMode) ? hero : hero ?? twoD;
       if (!asset) throw new Error(`A tomada ${shot.index + 1} nao possui render aprovado`);
-      return { shot, asset, source: hero ? 'wan' : 'animation_2d' };
+      return { shot, asset, source: hero ? (shot.heroShotAttempts[0]?.provider ?? 'comfyui-video') : 'animation_2d' };
     });
     const fps = render.project.generationFps || 16;
     const portrait = render.project.childrenClip?.aspectRatio === 'portrait_9_16';
@@ -395,7 +450,13 @@ export class ChildrenClipProcessor {
         name: link.character.name,
         type: typeof rule?.type === 'string' ? rule.type : 'character',
         identity: typeof rule?.identity === 'string' ? rule.identity : link.selectedVersion.description,
-        referenceAsset: reference?.asset ? { id: reference.asset.id, storagePath: reference.asset.storagePath } : null
+        referenceAsset: reference?.asset ? {
+          id: reference.asset.id,
+          storagePath: reference.asset.storagePath,
+          width: reference.asset.width,
+          height: reference.asset.height,
+          generatedTurnaround: reference.origin === 'generated' && reference.role === 'primary_reference'
+        } : null
       }];
     });
     const styleProfile = shotAsset.shot.project.childrenClipStyleProfile;
@@ -433,11 +494,24 @@ export class ChildrenClipProcessor {
       });
       const positivePrompt = builtPrompt.positivePrompt;
       const negativePrompt = [shotAsset.negativePrompt, builtPrompt.negativePrompt].filter(Boolean).join(', ');
-      const backgroundReference = shotAsset.role === 'storyboard_frame'
-        ? shotAsset.shot.assets.find((item) => item.role === 'background' && item.asset)?.asset ?? null
+      let backgroundReference = shotAsset.role === 'storyboard_frame'
+        ? [...shotAsset.shot.assets]
+          .filter((item) => item.role === 'background' && item.asset && ['ready_for_review', 'approved'].includes(item.status))
+          .sort((left, right) => right.versionNumber - left.versionNumber)[0]?.asset ?? null
         : null;
       if (shotAsset.role === 'storyboard_frame' && !backgroundReference) {
-        throw new Error('O storyboard requer o background da tomada gerado primeiro');
+        await this.assetProgress(job, 20, 'WAITING_BACKGROUND', 'Aguardando o background desta tomada ficar pronto antes de compor o storyboard.');
+        const dependencyDeadline = Date.now() + 5 * 60_000;
+        while (!backgroundReference && Date.now() < dependencyDeadline) {
+          await new Promise((resolve) => setTimeout(resolve, 3_000));
+          const background = await this.prisma.childrenClipShotAsset.findFirst({
+            where: { shotId: shotAsset.shotId, role: 'background', status: { in: ['ready_for_review', 'approved'] }, assetId: { not: null } },
+            orderBy: { versionNumber: 'desc' }, include: { asset: true }
+          });
+          backgroundReference = background?.asset ?? null;
+          if (!backgroundReference) await this.assetProgress(job, 20, 'WAITING_BACKGROUND', 'O background continua em processamento; o storyboard sera composto assim que ele terminar.');
+        }
+        if (!backgroundReference) throw new Error('O background da tomada nao ficou pronto dentro de 5 minutos');
       }
       const locationReference = shotAsset.role === 'background'
         ? builtPrompt.referenceAssets.find((item) => item.purpose === 'location-content') ?? null
@@ -448,19 +522,43 @@ export class ChildrenClipProcessor {
       const placements = this.characterPlacements(shotAsset.shot.characterPlacement);
       const regionalReferenceImages = entityReferences.map((reference, index) => {
         const placement = placements.find((item) => item.versionId === reference.versionId);
+        const entity = entities.find((item) => item.versionId === reference.versionId)!;
         const fallbackX = entityReferences.length === 1 ? 50 : 20 + (60 * index) / Math.max(1, entityReferences.length - 1);
         const scale = placement?.scalePercent ?? 48;
-        const widthPercent = Math.max(18, Math.min(50, scale * 0.68));
-        const heightPercent = Math.max(28, Math.min(78, scale));
+        const isWideEntity = ['vehicle', 'train', 'car', 'bus'].includes(entity.type.toLowerCase());
+        const isContactSheet = Boolean(reference.width && reference.height && reference.width / reference.height >= 1.35);
+        const crop = isContactSheet && reference.width && reference.height
+          ? isWideEntity
+            ? { width: reference.width, height: Math.max(1, Math.round(reference.height * 0.34)), x: 0, y: 0 }
+            : { width: Math.max(1, Math.round(reference.width * 0.25)), height: reference.height, x: 0, y: 0 }
+          : undefined;
+        const sourceAspect = crop
+          ? crop.width / crop.height
+          : reference.width && reference.height ? reference.width / reference.height : isWideEntity ? 2.8 : 0.5;
+        const widthPercent = isWideEntity
+          ? Math.max(34, Math.min(68, scale * 1.25))
+          : Math.max(8, Math.min(32, (Math.max(28, Math.min(78, scale)) * dimensions.height * sourceAspect) / dimensions.width));
+        const heightPercent = isWideEntity
+          ? Math.max(16, Math.min(48, ((widthPercent * dimensions.width) / sourceAspect) / dimensions.height))
+          : Math.max(28, Math.min(78, scale));
         const centerX = placement?.xPercent ?? fallbackX;
         const baselineY = placement?.yPercent ?? 76;
         return {
           path: this.storage.getAbsolutePath(reference.storagePath),
+          prompt: [
+            'polished original 2D children animation, exact same identity, colors, proportions, clothing and accessories as the reference image',
+            `render exactly one ${entity.type} named ${entity.name}, isolated and centered on a pure white studio background`,
+            entity.identity,
+            shotAsset.shot.characterAction,
+            placement ? `position ${placement.xPercent}% horizontal, feet or wheels grounded at ${placement.yPercent}% height` : null,
+            'single subject, full body completely visible, clean silhouette with generous white margin, front or three-quarter view, no scenery, no props unless intrinsic to the identity, no other character, no duplicate, no text'
+          ].filter(Boolean).join(', '),
           xPercent: Math.max(0, centerX - widthPercent / 2),
           yPercent: Math.max(0, baselineY - heightPercent),
           widthPercent,
           heightPercent,
-          weight: 0.82
+          weight: 1,
+          crop
         };
       });
       const contentReferenceAssetIds = [
@@ -1384,6 +1482,15 @@ export class ChildrenClipProcessor {
       this.prisma.childrenClipHeroShotAttempt.update({ where: { id: heroAttemptId }, data: { progress, stage, errorMessage } })
     ]);
     this.logger.log(`[${String(job.id)}] ${stage} ${progress}%: ${message}`);
+  }
+
+  private heroErrorCode(message: string) {
+    const httpStatus = message.match(/SnapGen HTTP (\d{3})/)?.[1];
+    if (httpStatus) return `SNAPGEN_HTTP_${httpStatus}`;
+    if (/limite|timeout|excedeu/i.test(message)) return 'GENERATION_TIMEOUT';
+    if (/cancel/i.test(message)) return 'GENERATION_CANCELLED';
+    if (/video|FFprobe|invalido|incompleto/i.test(message)) return 'INVALID_VIDEO_RESULT';
+    return 'VIDEO_GENERATION_FAILED';
   }
 
   private async finalProgress(

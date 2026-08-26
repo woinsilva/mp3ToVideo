@@ -28,5 +28,6 @@ export const envValidationSchema = Joi.object({
   COMFYUI_STORYBOARD_CFG: Joi.number().positive().default(5),
   COMFYUI_STORYBOARD_SAMPLER: Joi.string().default('uni_pc'),
   COMFYUI_STORYBOARD_SCHEDULER: Joi.string().default('simple'),
+  SNAPGEN_API_KEY: Joi.string().allow('').default(''),
   DATABASE_URL: Joi.string().default('postgresql://postgres:postgres@localhost:5432/video_saas')
 });

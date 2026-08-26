@@ -106,6 +106,12 @@ export class RenderStorageService {
     return join(root, 'children-clips', organizationId, projectId, 'shots', shotId, 'renders', `wan-attempt-${attemptNumber}.mp4`).replace(/\\/g, '/');
   }
 
+  buildChildrenClipHeroLastFramePath(organizationId: string, projectId: string, shotId: string, attemptNumber: number, mimeType: string): string {
+    const root = this.configService.get<string>('storage.root', './storage');
+    const extension = mimeType.includes('jpeg') ? '.jpg' : mimeType.includes('webp') ? '.webp' : '.png';
+    return join(root, 'children-clips', organizationId, projectId, 'shots', shotId, 'renders', `external-last-frame-${attemptNumber}${extension}`).replace(/\\/g, '/');
+  }
+
   buildChildrenClipFinalRenderPath(organizationId: string, projectId: string, versionNumber: number): string {
     const root = this.configService.get<string>('storage.root', './storage');
     return join(root, 'children-clips', organizationId, projectId, 'final', `children-clip-v${versionNumber}.mp4`).replace(/\\/g, '/');

@@ -233,7 +233,7 @@ export interface ChildrenClipShot {
   endSeconds: number;
   durationSeconds: number;
   status: 'draft' | 'approved' | 'needs_revision';
-  renderMode: 'animation_2d' | 'wan' | 'hybrid';
+  renderMode: 'animation_2d' | 'wan' | 'hybrid' | 'snapgen';
   framing: string;
   cameraMovement: string;
   characterAction: string;
@@ -340,7 +340,7 @@ export interface ChildrenClipAnimationStatus {
     startSeconds: number;
     endSeconds: number;
     durationSeconds: number;
-    renderMode: 'animation_2d' | 'wan' | 'hybrid';
+    renderMode: 'animation_2d' | 'wan' | 'hybrid' | 'snapgen';
     hasApprovedBackground: boolean;
     hasApprovedStoryboard: boolean;
     latestAttempt: ChildrenClipShotRenderAttempt | null;
@@ -357,10 +357,40 @@ export interface ChildrenClipHeroShotAttempt {
   errorMessage: string | null;
   generationManifest: Record<string, unknown> | null;
   assetId: string | null;
+  provider: 'comfyui-video' | 'snapgen';
+  requestMetadata: ChildrenClipVideoGenerationRequest | null;
+  externalJobId: string | null;
+  submittedAt: string | null;
+  lastHeartbeatAt: string | null;
+  durationMs: number | null;
+}
+
+export interface ChildrenClipVideoGenerationRequest {
+  provider: 'local' | 'snapgen';
+  model?: 'veo-3.1-fast';
+  resolution?: '720p' | '1080p';
+  referenceMode?: 'frame' | 'ingredient';
+  prompt?: string;
+  firstImageAssetId?: string | null;
+  lastImageAssetId?: string | null;
+  ingredientAssetIds?: string[];
+}
+
+export interface ChildrenClipVideoReference {
+  id: string;
+  name: string;
+  type: string;
+  origin: string;
+  version: number;
+  shotId?: string;
+  characterName?: string;
+  mimeType: string;
 }
 
 export interface ChildrenClipOutputStatus {
-  heroShots: Array<{ id: string; index: number; title: string; renderMode: 'wan' | 'hybrid'; latestAttempt: ChildrenClipHeroShotAttempt | null }>;
+  heroShots: Array<{ id: string; index: number; title: string; durationSeconds: number; renderMode: 'wan' | 'hybrid' | 'snapgen'; videoGenerationConfig: ChildrenClipVideoGenerationRequest | null; automaticPrompt: string; approvedStoryboardAssetId: string | null; latestAttempt: ChildrenClipHeroShotAttempt | null }>;
+  availableReferences: ChildrenClipVideoReference[];
+  snapgen: { configured: boolean; models: Record<string, { label: string; durations: readonly number[]; resolutions: readonly string[]; aspectRatios: readonly string[]; referenceModes: readonly string[]; maxIngredientImages: number }> };
   finalRender: null | {
     id: string; versionNumber: number; status: 'queued' | 'compositing' | 'encoding' | 'validating' | 'completed' | 'failed';
     progress: number; stage: string | null; errorMessage: string | null; renderManifest: Record<string, unknown> | null; hasVideo: boolean;

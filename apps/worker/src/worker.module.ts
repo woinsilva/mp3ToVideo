@@ -33,6 +33,7 @@ import { ScenePlanningService } from './services/scene-planning.service';
 import { ScenePromptGenerationService } from './services/scene-prompt-generation.service';
 import { ScenePromptService } from './services/scene-prompt.service';
 import { SceneVideoGenerationService } from './services/scene-video-generation.service';
+import { SnapGenClientService } from './services/snapgen-client.service';
 import { StoryboardGenerationService } from './services/storyboard-generation.service';
 import { StoryboardFallbackService } from './services/storyboard-fallback.service';
 import { VideoGenerationSettingsService } from './services/video-generation-settings.service';
@@ -85,6 +86,7 @@ import { ChildrenClipWorkerService } from './workers/children-clip-worker.servic
     RenderStorageService,
     SceneImageGenerationService,
     SceneVideoGenerationService,
+    SnapGenClientService,
     ScenePlanningService,
     ScenePromptGenerationService,
     ScenePromptService,

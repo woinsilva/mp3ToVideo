@@ -291,3 +291,13 @@ O modulo sera considerado completo quando um usuario puder, sem operacao manual 
 - A Etapa 4 é organizada por Location, não por uma lista plana de fundos. Cada grupo mostra o `Shot Background Anchor`, a vista master, o total de vistas aprovadas e as tomadas derivadas.
 - A geração manual continua guiada por Location e aprovação. Já o reset integral cria, para cada tomada e em ordem, o background seguido da prévia completa; o master provisório produzido pela âncora permite que as vistas seguintes mantenham coerência sem limitar o reset à primeira cena.
 - Geração widescreen usa resolução 16:9 nativa (`1344x768`); não depende de recorte de uma imagem quadrada.
+
+#### Providers de video por tomada
+
+- Tomadas generativas preservam o provider local `ComfyUI/Wan` e podem usar `SnapGen / Veo 3.1 Fast` por tentativa. A escolha nao e global e o retry sempre cria uma nova tentativa.
+- O preset SnapGen confirmado usa 720p por default, 8 segundos fixos, proporcao 16:9 ou 9:16 e referencias `frame` ou `ingredient` (maximo de tres). Projetos quadrados e tomadas acima de 8 segundos falham antes do consumo de creditos.
+- A preview completa aprovada da propria tomada e a First Image recomendada. Ingredient Images aceitam apenas assets aprovados do projeto e versoes de personagem travadas no projeto.
+- A API local apenas enfileira. O worker submete, acompanha o UUID, baixa imediatamente MP4 e ultimo frame, valida o video com FFprobe e persiste tudo no storage interno; URLs assinadas externas nao sao mantidas como artefato final.
+- `ChildrenClipHeroShotAttempt` guarda provider e lifecycle pesquisavel. Prompt, modelo, referencias, resolucao, status externo e creditos ficam nos manifests JSON versionados.
+- SnapGen possui concorrencia propria (`SNAPGEN_VIDEO_CONCURRENCY`, default 1) e nao adquire o lease da GPU local. A fila infantil pode processar uma operacao remota em paralelo com uma operacao local quando `CHILDREN_CLIP_QUEUE_CONCURRENCY` for maior que 1.
+- A composicao final continua recortando/normalizando cada resultado para a duracao musical original da tomada; um resultado Veo de 8 segundos nao altera a timeline.

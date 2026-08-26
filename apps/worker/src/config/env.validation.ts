@@ -68,5 +68,13 @@ export const envValidationSchema = Joi.object({
   WORKER_STALLED_INTERVAL_MS: Joi.number().integer().positive().default(30000),
   GPU_LEASE_TTL_MS: Joi.number().integer().min(15000).default(180000),
   GPU_LEASE_POLL_MS: Joi.number().integer().min(100).default(1000),
+  SNAPGEN_API_KEY: Joi.string().allow('').default(''),
+  SNAPGEN_API_BASE_URL: Joi.string().uri({ scheme: ['https'] }).default('https://api.snapgen.ai/uapi/v1'),
+  SNAPGEN_POLL_INTERVAL_MS: Joi.number().integer().min(3000).default(10000),
+  SNAPGEN_TIMEOUT_MS: Joi.number().integer().min(60000).default(900000),
+  SNAPGEN_REQUEST_TIMEOUT_MS: Joi.number().integer().min(5000).default(30000),
+  SNAPGEN_DOWNLOAD_TIMEOUT_MS: Joi.number().integer().min(10000).default(120000),
+  SNAPGEN_VIDEO_CONCURRENCY: Joi.number().integer().min(1).max(10).default(1),
+  CHILDREN_CLIP_QUEUE_CONCURRENCY: Joi.number().integer().min(1).max(10).default(2),
   DATABASE_URL: Joi.string().default('postgresql://postgres:postgres@localhost:5432/video_saas')
 });

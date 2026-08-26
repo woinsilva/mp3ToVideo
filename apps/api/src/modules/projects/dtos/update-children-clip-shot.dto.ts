@@ -5,7 +5,7 @@ export class UpdateChildrenClipShotDto {
   @IsOptional() @IsString() @MaxLength(2000) description?: string;
   @IsOptional() @IsNumber() @Min(0) startSeconds?: number;
   @IsOptional() @IsNumber() @Min(0.1) endSeconds?: number;
-  @IsOptional() @IsIn(['animation_2d', 'wan', 'hybrid']) renderMode?: 'animation_2d' | 'wan' | 'hybrid';
+  @IsOptional() @IsIn(['animation_2d', 'wan', 'snapgen', 'hybrid']) renderMode?: 'animation_2d' | 'wan' | 'snapgen' | 'hybrid';
   @IsOptional() @IsString() @MaxLength(120) framing?: string;
   @IsOptional() @IsString() @MaxLength(120) cameraMovement?: string;
   @IsOptional() @IsString() @MaxLength(1000) characterAction?: string;

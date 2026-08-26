@@ -89,11 +89,21 @@ export const configuration = () => ({
   },
   worker: {
     lockDurationMs: Number(process.env.WORKER_LOCK_DURATION_MS ?? 1800000),
-    stalledIntervalMs: Number(process.env.WORKER_STALLED_INTERVAL_MS ?? 30000)
+    stalledIntervalMs: Number(process.env.WORKER_STALLED_INTERVAL_MS ?? 30000),
+    childrenClipQueueConcurrency: Number(process.env.CHILDREN_CLIP_QUEUE_CONCURRENCY ?? 2)
   },
   gpu: {
     leaseTtlMs: Number(process.env.GPU_LEASE_TTL_MS ?? 180000),
     leasePollMs: Number(process.env.GPU_LEASE_POLL_MS ?? 1000)
+  },
+  snapgen: {
+    apiKey: process.env.SNAPGEN_API_KEY ?? '',
+    baseUrl: process.env.SNAPGEN_API_BASE_URL ?? 'https://api.snapgen.ai/uapi/v1',
+    pollIntervalMs: Number(process.env.SNAPGEN_POLL_INTERVAL_MS ?? 10000),
+    timeoutMs: Number(process.env.SNAPGEN_TIMEOUT_MS ?? 900000),
+    requestTimeoutMs: Number(process.env.SNAPGEN_REQUEST_TIMEOUT_MS ?? 30000),
+    downloadTimeoutMs: Number(process.env.SNAPGEN_DOWNLOAD_TIMEOUT_MS ?? 120000),
+    videoConcurrency: Number(process.env.SNAPGEN_VIDEO_CONCURRENCY ?? 1)
   },
   database: {
     url: process.env.DATABASE_URL ?? 'postgresql://postgres:postgres@localhost:5432/video_saas'
