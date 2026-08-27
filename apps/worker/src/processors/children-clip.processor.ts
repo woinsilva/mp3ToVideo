@@ -35,6 +35,7 @@ interface ShotPlanningDraft {
   globalCreative?: CreativePlanResponse | null;
   batches: Array<{ batchIndex: number; response: CreativePlanResponse }>;
   repairs?: CreativePlanResponse[];
+  audits?: Array<{ batchIndex: number; response: CreativePlanResponse }>;
 }
 
 interface HeroVideoRequest {
@@ -709,7 +710,7 @@ export class ChildrenClipProcessor {
         globalCreative = await this.withPlanHeartbeat(job, this.ollama.generateJson<CreativePlanResponse>([
           {
             role: 'system',
-            content: 'Return concise JSON with visualBible and narrative for an original safe 2D children music video. visualBible must include style, palette, lighting, backgroundStyle, continuityRules and characterRules with exact name, type and identity. narrative must include summary, storyBeats, characterIntroductionOrder and continuityRules. Do not create shotPlans yet.'
+            content: 'Return concise JSON with visualBible and narrative for an original safe 2D children music video. visualBible must include style, palette, lighting, backgroundStyle, continuityRules and characterRules with exact name, type and identity. narrative must include summary, characterIntroductionOrder as an array of exact entity names, entityIntroductions as an array of { entityName, firstShotIndex }, storyBeats as an array of { section, focus, purpose, visualGuidance }, and continuityRules. Every firstShotIndex must reflect the lyrics and story beats. Do not create shotPlans yet.'
           },
           {
             role: 'user',
@@ -829,10 +830,67 @@ export class ChildrenClipProcessor {
         }
         if (Array.isArray(repair.shotPlans)) generatedShotPlans.push(...repair.shotPlans);
       }
-      const creative: CreativePlanResponse | null = globalCreative || generatedShotPlans.length || generatedLocations.size
-        ? { ...globalCreative, locations: [...generatedLocations.values()], shotPlans: generatedShotPlans }
+      const auditedShotPlans: NonNullable<CreativePlanResponse['shotPlans']> = [];
+      for (let batchIndex = 0; batchIndex < batches.length; batchIndex += 1) {
+        const batch = batches[batchIndex];
+        const indexes = new Set(batch.map((shot) => shot.index));
+        const sourcePlans = batch.flatMap((shot) => {
+          const plan = [...generatedShotPlans].reverse().find((candidate) => candidate.shotIndex === shot.index);
+          return plan ? [plan] : [];
+        });
+        if (sourcePlans.length !== batch.length) throw new Error(`Auditoria bloqueada: faltam tomadas no lote ${batchIndex + 1}`);
+        const cachedAudit = planningDraft.audits?.find((item) => item.batchIndex === batchIndex)?.response;
+        const auditProgress = 48 + Math.floor((batchIndex / Math.max(1, batches.length)) * 18);
+        let audit = cachedAudit ? this.normalizeCreativePlanResponse(cachedAudit) : null;
+        if (!audit) {
+          await this.planProgress(job, auditProgress, 'AUDITING_SHOT_BATCH', `Segunda IA revisando coerencia das tomadas ${batch[0].index + 1} a ${batch[batch.length - 1].index + 1} (${batchIndex + 1}/${batches.length}).`);
+          const rawAudit = await this.withPlanHeartbeat(job, this.ollama.generateJson<CreativePlanResponse>([
+            {
+              role: 'system',
+              content: [
+                'You are the mandatory second-pass continuity and semantic auditor for a children music video Shot Plan.',
+                'Return concise JSON only with shotPlans. Return exactly one corrected complete shotPlan for every supplied shotIndex and no other index.',
+                'Do not merely comment on problems: rewrite each shotPlan so it is internally consistent.',
+                'Use exact approved entity names only. allowedEntities and forbiddenEntities must be disjoint.',
+                'primaryFocus must be present in allowedEntities when it names an approved entity.',
+                'Every approved entity described as visible, acting, framed, followed by the camera, positioned or focused must be in allowedEntities.',
+                'No entity in forbiddenEntities may be described as visible or acting in action, composition, camera, purpose, motionIntent, continuity or characterPlacement.',
+                'Respect characterIntroductionOrder and the synchronized lyric moment. Do not introduce future entities early.',
+                'Location name and description contain environment only. Preserve valid creative intent, timing and location continuity.',
+                'Every shotPlan must include: shotIndex, purpose, locationKey, locationName, locationDescription, timeOfDay, primaryFocus, allowedEntities, forbiddenEntities, objects, action, composition, camera, emotion, motionIntent, continuityFromPreviousShot, characterPlacement, backgroundSafeZones, grounding.'
+              ].join(' ')
+            },
+            {
+              role: 'user',
+              content: JSON.stringify({
+                title: project.title,
+                approvedEntities: characters.map((character) => ({ name: character.name, role: character.roleName, description: this.limitText(character.description, 220) })),
+                narrativeContext: this.compactNarrativeContext(baseNarrative, batch.map((item) => item.sectionTitle)),
+                shots: batch,
+                shotPlansToAudit: sourcePlans,
+                revisionInstruction: revisionInstruction || null
+              })
+            }
+          ]), auditProgress, Math.min(67, auditProgress + 2), `A segunda IA continua auditando o lote ${batchIndex + 1}/${batches.length}.`);
+          if (!rawAudit) throw new Error(`A segunda IA nao retornou uma auditoria para o lote ${batchIndex + 1}`);
+          audit = this.normalizeCreativePlanResponse(rawAudit);
+          planningDraft.audits = [...(planningDraft.audits ?? []).filter((item) => item.batchIndex !== batchIndex), { batchIndex, response: audit }];
+          await persistDraft();
+        } else {
+          await this.planProgress(job, auditProgress, 'REUSING_SHOT_AUDIT', `Reutilizando auditoria das tomadas ${batch[0].index + 1} a ${batch[batch.length - 1].index + 1}.`);
+        }
+        const audited = (audit.shotPlans ?? []).filter((plan) => typeof plan.shotIndex === 'number' && indexes.has(plan.shotIndex));
+        const auditedIndexes = new Set(audited.map((plan) => plan.shotIndex));
+        if (audited.length !== batch.length || auditedIndexes.size !== batch.length || (audit.shotPlans ?? []).some((plan) => typeof plan.shotIndex !== 'number' || !indexes.has(plan.shotIndex))) {
+          throw new Error(`A segunda IA retornou uma auditoria incompleta ou com indices invalidos no lote ${batchIndex + 1}`);
+        }
+        auditedShotPlans.push(...audited);
+      }
+      const creative: CreativePlanResponse | null = globalCreative || auditedShotPlans.length || generatedLocations.size
+        ? { ...globalCreative, locations: [...generatedLocations.values()], shotPlans: auditedShotPlans }
         : null;
-      await this.planProgress(job, 48, 'PLANNING_SECTIONS', `Direcao narrativa definida para ${project.musicSections.length} secoes.`);
+      await this.planProgress(job, 68, 'SHOT_AUDIT_COMPLETED', `${auditedShotPlans.length} tomadas passaram pela segunda rodada de IA.`);
+      await this.planProgress(job, 70, 'PLANNING_SECTIONS', `Direcao narrativa definida para ${project.musicSections.length} secoes.`);
       const planningCreative = creative && mode === 'shots_only' ? { ...creative, visualBible: undefined, narrative: undefined } : creative;
       const result = this.planning.build({
         title: project.title,
@@ -853,7 +911,7 @@ export class ChildrenClipProcessor {
           musicSectionId: shot.musicSectionId ?? project.musicSections[0]?.id ?? '', lyricText: shot.lyricText
         })) : undefined
       });
-      await this.planProgress(job, 72, 'BUILDING_TIMELINE', `Montando ${result.shots.length} tomadas na grade musical.`);
+      await this.planProgress(job, 74, 'BUILDING_TIMELINE', `Montando ${result.shots.length} tomadas na grade musical.`);
       this.validateTimeline(result.shots, project.childrenClipAudioAnalysis.durationSeconds!);
       await this.planProgress(job, 88, 'VALIDATING', 'Validando cobertura, continuidade e identidades aprovadas.');
 
@@ -926,11 +984,12 @@ export class ChildrenClipProcessor {
             visualBible: result.visualBible as Prisma.InputJsonValue,
             narrative: result.narrative as Prisma.InputJsonValue,
             generationMetadata: {
-              provider: creative ? 'ollama-shot-plans+deterministic-validation' : 'deterministic-shot-fallback',
+              provider: creative ? 'ollama-shot-plans+ollama-audit+deterministic-validation' : 'deterministic-shot-fallback',
               mode,
               shotCount: result.shots.length,
               ollamaBatchCount: batches.length,
               ollamaShotPlanCount: new Set(generatedShotPlans.map((shot) => shot.shotIndex).filter((index): index is number => typeof index === 'number')).size,
+              ollamaAuditedShotCount: new Set(auditedShotPlans.map((shot) => shot.shotIndex).filter((index): index is number => typeof index === 'number')).size,
               deterministicFallbackShotCount: result.shots.length - new Set(generatedShotPlans.map((shot) => shot.shotIndex).filter((index): index is number => typeof index === 'number')).size,
               characterVersionIds: project.characterLinks.map((link) => link.selectedVersion!.id),
               generatedAt: new Date().toISOString()
@@ -947,6 +1006,12 @@ export class ChildrenClipProcessor {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const willRetry = job.attemptsMade + 1 < (job.opts.attempts ?? 1);
+      if (willRetry && (/Shot Plan invalido|segunda IA|Auditoria bloqueada/i.test(message))) {
+        const currentData = job.data as ChildrenClipPlanGenerationJobPayload & { shotPlanningDraft?: ShotPlanningDraft };
+        if (currentData.shotPlanningDraft) {
+          await job.updateData({ ...currentData, shotPlanningDraft: { ...currentData.shotPlanningDraft, audits: [] } } as ChildrenClipPlanGenerationJobPayload);
+        }
+      }
       await this.prisma.childrenClipPlan.update({
         where: { projectId },
         data: { status: willRetry ? 'queued' : 'failed', errorMessage: message, generationEndedAt: willRetry ? null : new Date() }
@@ -1566,16 +1631,24 @@ export class ChildrenClipProcessor {
   private compactNarrativeContext(value: unknown, sectionTitles: string[]) {
     const narrative = this.jsonRecord(value);
     const normalizedSections = new Set(sectionTitles.map((item) => item.toLowerCase()));
-    const storyBeats = Array.isArray(narrative.storyBeats)
-      ? narrative.storyBeats.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object' && !Array.isArray(item)))
-        .filter((item) => typeof item.section !== 'string' || normalizedSections.has(item.section.toLowerCase()))
-        .map((item) => ({
-          section: item.section,
-          focus: item.focus,
-          purpose: this.limitText(item.purpose, 180),
-          visualGuidance: this.limitText(item.visualGuidance, 320)
-        }))
-      : [];
+    const storyBeats: unknown[] = [];
+    if (Array.isArray(narrative.storyBeats)) {
+      for (const item of narrative.storyBeats) {
+        if (typeof item === 'string') {
+          storyBeats.push(this.limitText(item, 320));
+          continue;
+        }
+        if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+        const beat = item as Record<string, unknown>;
+        if (typeof beat.section === 'string' && !normalizedSections.has(beat.section.toLowerCase())) continue;
+        storyBeats.push({
+          section: beat.section,
+          focus: beat.focus,
+          purpose: this.limitText(beat.purpose, 180),
+          visualGuidance: this.limitText(beat.visualGuidance, 320)
+        });
+      }
+    }
     return {
       storyBeats,
       characterIntroductionOrder: Array.isArray(narrative.characterIntroductionOrder) ? narrative.characterIntroductionOrder : [],

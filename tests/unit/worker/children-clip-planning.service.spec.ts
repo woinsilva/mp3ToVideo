@@ -140,4 +140,79 @@ describe('ChildrenClipPlanningService', () => {
     expect(result.shots[0].framing).toContain('Lia');
     expect(result.shots[0].cameraMovement).toContain('Lia');
   });
+
+  it('rejects a shot that focuses and describes a forbidden approved entity', () => {
+    const service = new ChildrenClipPlanningService();
+    const input = {
+      title: 'Pipo Express', concept: 'Uma viagem musical', visualStyle: '2D colorido', audienceAgeMin: 2, audienceAgeMax: 6,
+      durationSeconds: 7, beatGrid: [0, 7],
+      sections: [{ id: 'intro', title: 'Intro', type: 'intro', startSeconds: 0, endSeconds: 7, lyricsExcerpt: null, energy: 0.5 }],
+      cues: [{ text: 'O trem vai sair', startSeconds: 0, endSeconds: 7 }],
+      characters: [
+        { name: 'Lia', roleName: 'Guia', versionId: 'lia-v1', description: 'menina guia' },
+        { name: 'Pipo Express', roleName: 'Trem', versionId: 'pipo-v1', description: 'trem colorido' }
+      ],
+      creative: {
+        narrative: { entityIntroductions: [{ entityName: 'Lia', firstShotIndex: 0 }, { entityName: 'Pipo Express', firstShotIndex: 1 }] },
+        shotPlans: [{
+          shotIndex: 0,
+          allowedEntities: ['Lia'],
+          forbiddenEntities: ['Pipo Express'],
+          primaryFocus: 'Pipo Express',
+          action: 'Pipo Express aparece em primeiro plano enquanto Lia observa.',
+          composition: 'Pipo Express no centro do quadro',
+          camera: 'A camera acompanha Pipo Express'
+        }]
+      }
+    };
+
+    expect(() => service.build(input)).toThrow(/foco Pipo Express nao esta nas entidades permitidas/);
+  });
+
+  it('does not treat the generated Nao aparecem list as positive presence', () => {
+    const service = new ChildrenClipPlanningService();
+    const result = service.build({
+      title: 'Pipo Express', concept: 'Uma viagem musical', visualStyle: '2D colorido', audienceAgeMin: 2, audienceAgeMax: 6,
+      durationSeconds: 7, beatGrid: [0, 7],
+      sections: [{ id: 'intro', title: 'Intro', type: 'intro', startSeconds: 0, endSeconds: 7, lyricsExcerpt: null, energy: 0.5 }],
+      cues: [],
+      characters: [
+        { name: 'Lia', roleName: 'Guia', versionId: 'lia-v1', description: 'menina guia' },
+        { name: 'Pipo Express', roleName: 'Trem', versionId: 'pipo-v1', description: 'trem colorido' }
+      ],
+      creative: {
+        narrative: { entityIntroductions: [{ entityName: 'Lia', firstShotIndex: 0 }, { entityName: 'Pipo Express', firstShotIndex: 1 }] },
+        shotPlans: [{ shotIndex: 0, allowedEntities: ['Lia'], primaryFocus: 'Lia', action: 'Lia acena alegremente.' }]
+      }
+    });
+
+    expect(result.shots[0].description).toContain('Nao aparecem: Pipo Express');
+  });
+
+  it('uses textual story beats to determine when an entity is introduced', () => {
+    const service = new ChildrenClipPlanningService();
+    const result = service.build({
+      title: 'Pipo Express', concept: 'Uma viagem musical', visualStyle: '2D colorido', audienceAgeMin: 2, audienceAgeMax: 6,
+      durationSeconds: 14, beatGrid: [0, 7, 14],
+      sections: [{ id: 'intro', title: 'Intro', type: 'intro', startSeconds: 0, endSeconds: 14, lyricsExcerpt: null, energy: 0.5 }],
+      cues: [],
+      characters: [
+        { name: 'Lia', roleName: 'Guia', versionId: 'lia-v1', description: 'menina guia' },
+        { name: 'Pipo Express', roleName: 'Trem', versionId: 'pipo-v1', description: 'trem colorido' }
+      ],
+      creative: {
+        narrative: {
+          storyBeats: ['Lia apresenta o inicio da aventura.', 'Pipo Express e apresentado como o trem da viagem.'],
+          characterIntroductionOrder: ['Lia', 'Pipo Express']
+        },
+        shotPlans: [
+          { shotIndex: 0, allowedEntities: ['Lia'], primaryFocus: 'Lia', action: 'Lia acena.' },
+          { shotIndex: 1, allowedEntities: ['Pipo Express'], primaryFocus: 'Pipo Express', action: 'Pipo Express chega a plataforma.' }
+        ]
+      }
+    });
+
+    expect(result.shots[0].forbiddenEntityVersionIds).toContain('pipo-v1');
+    expect(result.shots[1].characterVersionIds).toContain('pipo-v1');
+  });
 });

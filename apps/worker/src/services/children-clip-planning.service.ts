@@ -136,6 +136,27 @@ export class ChildrenClipPlanningService {
       if (globalTexts.includes(normalizedDescription)) errors.push(`Tomada ${shot.index + 1}: descricao repete a narrativa global`);
       const background = this.normalize(shot.backgroundPrompt);
       for (const character of characters) if (this.containsName(background, character.name)) errors.push(`Tomada ${shot.index + 1}: background inclui a entidade ${character.name}`);
+
+      const normalizedFocus = this.normalize(shot.primaryFocus);
+      const positiveDescription = normalizedDescription.split(/\bnao aparecem\s*:/, 1)[0];
+      const positiveSemantics = [
+        positiveDescription,
+        this.normalize(shot.purpose),
+        this.normalize(shot.framing),
+        this.normalize(shot.cameraMovement),
+        this.normalize(shot.characterAction),
+        this.normalize(shot.motionIntent),
+        this.normalize(shot.continuityFromPreviousShot),
+        this.normalize(JSON.stringify(shot.characterPlacement))
+      ].filter(Boolean).join(' ');
+      for (const character of characters) {
+        if (this.containsName(normalizedFocus, character.name) && !allowed.has(character.versionId)) {
+          errors.push(`Tomada ${shot.index + 1}: foco ${character.name} nao esta nas entidades permitidas`);
+        }
+        if (this.containsName(positiveSemantics, character.name) && !allowed.has(character.versionId)) {
+          errors.push(`Tomada ${shot.index + 1}: ${character.name} e descrito como presente ou ativo, mas nao esta nas entidades permitidas`);
+        }
+      }
     }
     if (errors.length) throw new Error(`Shot Plan invalido: ${errors.join('; ')}`);
   }
@@ -281,17 +302,29 @@ export class ChildrenClipPlanningService {
   private introductionShotIndexes(skeletons: ChildrenClipShotSkeleton[], entities: EntityDescriptor[], narrative: Record<string, unknown>) {
     const introductions = new Map<string, number>();
     const explicit = this.arrayOfRecords(narrative.entityIntroductions);
-    const storyBeats = this.arrayOfRecords(narrative.storyBeats);
-    const sectionIds = [...new Set(skeletons.map((item) => item.sectionId))];
+    const storyBeats = Array.isArray(narrative.storyBeats) ? narrative.storyBeats : [];
+    const introductionOrder = Array.isArray(narrative.characterIntroductionOrder) ? narrative.characterIntroductionOrder : [];
     entities.forEach((entity, entityIndex) => {
       const explicitRule = explicit.find((item) => this.sameText(item.entityName, entity.name));
       const explicitShot = Number(explicitRule?.firstShotIndex);
       if (Number.isInteger(explicitShot) && explicitShot >= 0) { introductions.set(entity.versionId, explicitShot); return; }
       const lyricMention = skeletons.find((shot) => this.normalize(shot.lyricText).includes(this.normalize(entity.name)));
-      const beat = storyBeats.find((item) => this.stringArray(item.focus).some((name) => this.sameText(name, entity.name)));
-      const beatShot = beat ? skeletons.find((shot) => this.sameText(shot.sectionTitle, beat.section)) : undefined;
-      const sectionIndex = Math.min(entityIndex, Math.max(0, sectionIds.length - 1));
-      const orderFallback = skeletons.find((shot) => shot.sectionId === sectionIds[sectionIndex]);
+      const beatIndex = storyBeats.findIndex((item) => typeof item === 'string'
+        ? this.containsName(this.normalize(item), entity.name)
+        : this.isRecord(item) && (
+          this.stringArray(item.focus).some((name) => this.sameText(name, entity.name))
+          || this.containsName(this.normalize(item.purpose), entity.name)
+          || this.containsName(this.normalize(item.visualGuidance), entity.name)
+        ));
+      const beat = beatIndex >= 0 && this.isRecord(storyBeats[beatIndex]) ? storyBeats[beatIndex] : null;
+      const beatShot = beat
+        ? skeletons.find((shot) => this.sameText(shot.sectionTitle, beat.section)) ?? skeletons[Math.min(beatIndex, skeletons.length - 1)]
+        : beatIndex >= 0 ? skeletons[Math.min(beatIndex, skeletons.length - 1)] : undefined;
+      const orderedIndex = introductionOrder.findIndex((item) => typeof item === 'string'
+        ? this.sameText(item, entity.name)
+        : this.isRecord(item) && this.sameText(item.name ?? item.entityName, entity.name));
+      const fallbackIndex = orderedIndex >= 0 ? orderedIndex : entityIndex;
+      const orderFallback = skeletons[Math.min(fallbackIndex, Math.max(0, skeletons.length - 1))];
       introductions.set(entity.versionId, lyricMention?.index ?? beatShot?.index ?? orderFallback?.index ?? 0);
     });
     return introductions;

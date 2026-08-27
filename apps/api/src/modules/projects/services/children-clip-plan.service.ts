@@ -232,6 +232,26 @@ export class ChildrenClipPlanService {
       if (summaries.includes(this.normalize(shot.description))) throw new BadRequestException(`Tomada ${shot.index + 1}: a descricao repete a narrativa global.`);
       const entity = selected.find((item) => this.containsName(shot.backgroundPrompt, item.name));
       if (entity) throw new BadRequestException(`Tomada ${shot.index + 1}: o fundo inclui a entidade ${entity.name}.`);
+
+      const positiveDescription = this.normalize(shot.description).split(/\bnao aparecem\s*:/, 1)[0];
+      const positiveSemantics = [
+        positiveDescription,
+        this.normalize(shot.purpose),
+        this.normalize(shot.framing),
+        this.normalize(shot.cameraMovement),
+        this.normalize(shot.characterAction),
+        this.normalize(shot.motionIntent),
+        this.normalize(shot.continuityFromPreviousShot),
+        this.normalize(JSON.stringify(shot.characterPlacement))
+      ].filter(Boolean).join(' ');
+      for (const candidate of selected) {
+        if (this.containsName(shot.primaryFocus ?? '', candidate.name) && !allowed.includes(candidate.id)) {
+          throw new BadRequestException(`Tomada ${shot.index + 1}: o foco ${candidate.name} nao esta nas entidades permitidas.`);
+        }
+        if (this.containsName(positiveSemantics, candidate.name) && !allowed.includes(candidate.id)) {
+          throw new BadRequestException(`Tomada ${shot.index + 1}: ${candidate.name} aparece na descricao da acao, mas nao esta nas entidades permitidas.`);
+        }
+      }
     }
   }
 
