@@ -215,4 +215,38 @@ describe('ChildrenClipPlanningService', () => {
     expect(result.shots[0].forbiddenEntityVersionIds).toContain('pipo-v1');
     expect(result.shots[1].characterVersionIds).toContain('pipo-v1');
   });
+
+  it('reconciles visible entities after the second AI audit before final validation', () => {
+    const service = new ChildrenClipPlanningService();
+    const characters = [
+      { name: 'Lia', roleName: 'Guia', versionId: 'lia-v1', description: 'menina guia' },
+      { name: 'Pipo Express', roleName: 'Trem', versionId: 'pipo-v1', description: 'trem colorido' }
+    ];
+    const audited = service.reconcileAuditedShotPlan({
+      shotIndex: 0,
+      allowedEntities: ['Lia'],
+      forbiddenEntities: ['Pipo Express'],
+      primaryFocus: 'Pipo Express',
+      action: 'Pipo Express chega enquanto Lia acena.',
+      composition: 'Pipo Express no centro'
+    }, characters);
+
+    expect(audited.allowedEntities).toEqual(['Lia', 'Pipo Express']);
+    expect(audited.forbiddenEntities).not.toContain('Pipo Express');
+    expect(audited.semanticAuditPassed).toBe(true);
+
+    const result = service.build({
+      title: 'Pipo Express', concept: 'Uma viagem musical', visualStyle: '2D colorido', audienceAgeMin: 2, audienceAgeMax: 6,
+      durationSeconds: 7, beatGrid: [0, 7],
+      sections: [{ id: 'intro', title: 'Intro', type: 'intro', startSeconds: 0, endSeconds: 7, lyricsExcerpt: null, energy: 0.5 }],
+      cues: [], characters,
+      creative: {
+        narrative: { entityIntroductions: [{ entityName: 'Pipo Express', firstShotIndex: 1 }] },
+        shotPlans: [audited]
+      }
+    });
+
+    expect(result.shots[0].characterVersionIds).toContain('pipo-v1');
+    expect(result.shots[0].forbiddenEntityVersionIds).not.toContain('pipo-v1');
+  });
 });

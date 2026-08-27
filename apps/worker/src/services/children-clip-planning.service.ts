@@ -13,6 +13,7 @@ export interface CreativeShotPlan {
   characterPlacement?: Array<{ entity?: string; zone?: string; xPercent?: number; yPercent?: number; scalePercent?: number; facing?: string }>;
   backgroundSafeZones?: Array<{ name?: string; xPercent?: number; yPercent?: number; widthPercent?: number; heightPercent?: number; purpose?: string }>;
   grounding?: { groundLinePercent?: number; horizonPercent?: number; perspective?: string; movementDirection?: string };
+  semanticAuditPassed?: boolean;
 }
 
 export interface CreativePlanResponse {
@@ -58,6 +59,38 @@ interface EntityDescriptor extends PlanningCharacter { type: string; identity: s
 
 @Injectable()
 export class ChildrenClipPlanningService {
+  reconcileAuditedShotPlan(plan: CreativeShotPlan, characters: PlanningCharacter[]): CreativeShotPlan {
+    const allowedNames = this.uniqueStrings([
+      ...this.stringArray(plan.allowedEntities),
+      ...this.stringArray(plan.characters)
+    ]);
+    const positiveSemantics = this.normalize([
+      plan.primaryFocus,
+      plan.purpose,
+      plan.action,
+      plan.composition,
+      plan.camera,
+      plan.motionIntent,
+      plan.continuityFromPreviousShot,
+      JSON.stringify(plan.characterPlacement ?? [])
+    ].filter((item): item is string => typeof item === 'string').join(' '));
+    for (const character of characters) {
+      if (this.containsName(positiveSemantics, character.name)
+        && !allowedNames.some((name) => this.sameText(name, character.name))) {
+        allowedNames.push(character.name);
+      }
+    }
+    const forbiddenNames = this.stringArray(plan.forbiddenEntities)
+      .filter((name) => !allowedNames.some((allowed) => this.sameText(allowed, name)));
+    return {
+      ...plan,
+      allowedEntities: allowedNames,
+      characters: allowedNames,
+      forbiddenEntities: forbiddenNames,
+      semanticAuditPassed: true
+    };
+  }
+
   build(input: BuildPlanInput) {
     const existingVisualBible = this.record(input.existingVisualBible);
     const existingNarrative = this.record(input.existingNarrative);
@@ -198,7 +231,8 @@ export class ChildrenClipPlanningService {
       const requestedNames = this.uniqueStrings([...this.stringArray(generated.allowedEntities), ...this.stringArray(generated.characters), ...(generated.primaryFocus ? [generated.primaryFocus] : [])]);
       const fallbackFocus = this.stringArray(storyBeat?.focus);
       const selectedNames = requestedNames.length ? requestedNames : fallbackFocus;
-      const allowed = entities.filter((entity) => introduced.some((item) => item.versionId === entity.versionId) && selectedNames.some((name) => this.sameText(name, entity.name)));
+      const allowed = entities.filter((entity) => (generated.semanticAuditPassed === true || introduced.some((item) => item.versionId === entity.versionId))
+        && selectedNames.some((name) => this.sameText(name, entity.name)));
       const explicitForbidden = this.stringArray(generated.forbiddenEntities);
       const forbidden = entities.filter((entity) => !allowed.some((item) => item.versionId === entity.versionId) || explicitForbidden.some((name) => this.sameText(name, entity.name)));
       const primaryFocus = this.clean(generated.primaryFocus) || allowed[0]?.name || this.stringArray(storyBeat?.focus)[0] || null;

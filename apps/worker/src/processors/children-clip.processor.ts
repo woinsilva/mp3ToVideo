@@ -885,7 +885,7 @@ export class ChildrenClipProcessor {
         if (audited.length !== batch.length || auditedIndexes.size !== batch.length || (audit.shotPlans ?? []).some((plan) => typeof plan.shotIndex !== 'number' || !indexes.has(plan.shotIndex))) {
           throw new Error(`A segunda IA retornou uma auditoria incompleta ou com indices invalidos no lote ${batchIndex + 1}`);
         }
-        auditedShotPlans.push(...audited);
+        auditedShotPlans.push(...audited.map((plan) => this.planning.reconcileAuditedShotPlan(plan, characters)));
       }
       const creative: CreativePlanResponse | null = globalCreative || auditedShotPlans.length || generatedLocations.size
         ? { ...globalCreative, locations: [...generatedLocations.values()], shotPlans: auditedShotPlans }
