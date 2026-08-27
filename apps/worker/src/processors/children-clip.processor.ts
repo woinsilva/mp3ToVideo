@@ -831,8 +831,9 @@ export class ChildrenClipProcessor {
         if (Array.isArray(repair.shotPlans)) generatedShotPlans.push(...repair.shotPlans);
       }
       const auditedShotPlans: NonNullable<CreativePlanResponse['shotPlans']> = [];
-      for (let batchIndex = 0; batchIndex < batches.length; batchIndex += 1) {
-        const batch = batches[batchIndex];
+      const auditBatches = skeletons.map((shot) => [shot]);
+      for (let batchIndex = 0; batchIndex < auditBatches.length; batchIndex += 1) {
+        const batch = auditBatches[batchIndex];
         const indexes = new Set(batch.map((shot) => shot.index));
         const sourcePlans = batch.flatMap((shot) => {
           const plan = [...generatedShotPlans].reverse().find((candidate) => candidate.shotIndex === shot.index);
@@ -840,10 +841,10 @@ export class ChildrenClipProcessor {
         });
         if (sourcePlans.length !== batch.length) throw new Error(`Auditoria bloqueada: faltam tomadas no lote ${batchIndex + 1}`);
         const cachedAudit = planningDraft.audits?.find((item) => item.batchIndex === batchIndex)?.response;
-        const auditProgress = 48 + Math.floor((batchIndex / Math.max(1, batches.length)) * 18);
+        const auditProgress = 48 + Math.floor((batchIndex / Math.max(1, auditBatches.length)) * 18);
         let audit = cachedAudit ? this.normalizeCreativePlanResponse(cachedAudit) : null;
         if (!audit) {
-          await this.planProgress(job, auditProgress, 'AUDITING_SHOT_BATCH', `Segunda IA revisando coerencia das tomadas ${batch[0].index + 1} a ${batch[batch.length - 1].index + 1} (${batchIndex + 1}/${batches.length}).`);
+          await this.planProgress(job, auditProgress, 'AUDITING_SHOT', `Segunda IA revisando a tomada ${batch[0].index + 1} (${batchIndex + 1}/${auditBatches.length}).`);
           const rawAudit = await this.withPlanHeartbeat(job, this.ollama.generateJson<CreativePlanResponse>([
             {
               role: 'system',
@@ -871,13 +872,13 @@ export class ChildrenClipProcessor {
                 revisionInstruction: revisionInstruction || null
               })
             }
-          ]), auditProgress, Math.min(67, auditProgress + 2), `A segunda IA continua auditando o lote ${batchIndex + 1}/${batches.length}.`);
+          ]), auditProgress, Math.min(67, auditProgress + 1), `A segunda IA continua auditando a tomada ${batch[0].index + 1} (${batchIndex + 1}/${auditBatches.length}).`);
           if (!rawAudit) throw new Error(`A segunda IA nao retornou uma auditoria para o lote ${batchIndex + 1}`);
           audit = this.normalizeCreativePlanResponse(rawAudit);
           planningDraft.audits = [...(planningDraft.audits ?? []).filter((item) => item.batchIndex !== batchIndex), { batchIndex, response: audit }];
           await persistDraft();
         } else {
-          await this.planProgress(job, auditProgress, 'REUSING_SHOT_AUDIT', `Reutilizando auditoria das tomadas ${batch[0].index + 1} a ${batch[batch.length - 1].index + 1}.`);
+          await this.planProgress(job, auditProgress, 'REUSING_SHOT_AUDIT', `Reutilizando auditoria da tomada ${batch[0].index + 1}.`);
         }
         const audited = (audit.shotPlans ?? []).filter((plan) => typeof plan.shotIndex === 'number' && indexes.has(plan.shotIndex));
         const auditedIndexes = new Set(audited.map((plan) => plan.shotIndex));
@@ -988,6 +989,7 @@ export class ChildrenClipProcessor {
               mode,
               shotCount: result.shots.length,
               ollamaBatchCount: batches.length,
+              ollamaAuditCallCount: auditBatches.length,
               ollamaShotPlanCount: new Set(generatedShotPlans.map((shot) => shot.shotIndex).filter((index): index is number => typeof index === 'number')).size,
               ollamaAuditedShotCount: new Set(auditedShotPlans.map((shot) => shot.shotIndex).filter((index): index is number => typeof index === 'number')).size,
               deterministicFallbackShotCount: result.shots.length - new Set(generatedShotPlans.map((shot) => shot.shotIndex).filter((index): index is number => typeof index === 'number')).size,
