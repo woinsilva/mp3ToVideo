@@ -887,17 +887,64 @@ export class ChildrenClipProcessor {
           ]), auditProgress, Math.min(67, auditProgress + 1), `A segunda IA continua auditando a tomada ${batch[0].index + 1} (${batchIndex + 1}/${auditBatches.length}).`);
           if (!rawAudit) throw new Error(`A segunda IA nao retornou uma auditoria para o lote ${batchIndex + 1}`);
           audit = this.normalizeCreativePlanResponse(rawAudit);
-          planningDraft.audits = [...(planningDraft.audits ?? []).filter((item) => item.batchIndex !== batchIndex), { batchIndex, response: audit }];
-          await persistDraft();
         } else {
           await this.planProgress(job, auditProgress, 'REUSING_SHOT_AUDIT', `Reutilizando auditoria da tomada ${batch[0].index + 1}.`);
         }
-        const audited = (audit.shotPlans ?? []).filter((plan) => typeof plan.shotIndex === 'number' && indexes.has(plan.shotIndex));
+        let audited = (audit.shotPlans ?? []).filter((plan) => typeof plan.shotIndex === 'number' && indexes.has(plan.shotIndex));
         const auditedIndexes = new Set(audited.map((plan) => plan.shotIndex));
         if (audited.length !== batch.length || auditedIndexes.size !== batch.length || (audit.shotPlans ?? []).some((plan) => typeof plan.shotIndex !== 'number' || !indexes.has(plan.shotIndex))) {
           throw new Error(`A segunda IA retornou uma auditoria incompleta ou com indices invalidos no lote ${batchIndex + 1}`);
         }
-        auditedShotPlans.push(...audited.map((plan) => this.planning.reconcileAuditedShotPlan(plan, characters)));
+        let reconciled = audited.map((plan) => this.planning.reconcileAuditedShotPlan(plan, characters));
+        for (let repairAttempt = 0; repairAttempt < 3; repairAttempt += 1) {
+          const repeated = reconciled.find((plan) => {
+            const action = this.normalizeShotText(plan.action);
+            return action && auditedShotPlans.some((previous) => this.normalizeShotText(previous.action) === action);
+          });
+          if (!repeated) break;
+          const conflicting = auditedShotPlans.filter((previous) => this.normalizeShotText(previous.action) === this.normalizeShotText(repeated.action));
+          await this.planProgress(job, auditProgress, 'REPAIRING_SHOT_CONTINUITY', `Corrigindo acao repetida na tomada ${batch[0].index + 1} (tentativa ${repairAttempt + 1}/3).`);
+          const rawRepair = await this.withPlanHeartbeat(job, this.ollama.generateJson<CreativePlanResponse>([
+            {
+              role: 'system',
+              content: [
+                'You are repairing one rejected children music video shot plan. Return concise JSON only with shotPlans and exactly one complete shotPlan for the supplied shotIndex.',
+                'Preserve valid entity constraints, location continuity and approved identities, but rewrite the action, purpose, composition, camera, motionIntent and continuityFromPreviousShot as needed.',
+                'The action must be a new concrete filmable event tied to the synchronized lyric. It must differ semantically and verbatim from every prior action supplied.',
+                'Changing only adjectives, punctuation or word order is not sufficient. Change the visible beat through a distinct gesture, interaction, prop, staging or reaction.',
+                'No forbidden entity may appear in any positive prose or placement field. Return all fields from the rejected shot plan.'
+              ].join(' ')
+            },
+            {
+              role: 'user',
+              content: JSON.stringify({
+                title: project.title,
+                shot: batch[0],
+                rejectedShotPlan: repeated,
+                conflictingPriorShotPlans: conflicting,
+                allPriorActions: auditedShotPlans.map((plan) => ({ shotIndex: plan.shotIndex, action: plan.action })),
+                nextPlannedShotPlans: nextSourceShotPlans,
+                approvedEntityNames: characters.map((character) => character.name),
+                revisionInstruction: revisionInstruction || null
+              })
+            }
+          ]), auditProgress, Math.min(67, auditProgress + 1), `O Ollama esta corrigindo a continuidade da tomada ${batch[0].index + 1}.`);
+          if (!rawRepair) continue;
+          const normalizedRepair = this.normalizeCreativePlanResponse(rawRepair);
+          const repairPlans = (normalizedRepair.shotPlans ?? []).filter((plan) => plan.shotIndex === batch[0].index);
+          if (repairPlans.length !== 1 || (normalizedRepair.shotPlans ?? []).length !== 1) continue;
+          audited = repairPlans;
+          reconciled = repairPlans.map((plan) => this.planning.reconcileAuditedShotPlan(plan, characters));
+        }
+        const stillRepeated = reconciled.find((plan) => {
+          const action = this.normalizeShotText(plan.action);
+          return action && auditedShotPlans.some((previous) => this.normalizeShotText(previous.action) === action);
+        });
+        if (stillRepeated) throw new Error(`A segunda IA nao conseguiu criar uma acao unica para a tomada ${batch[0].index + 1} apos 3 reparos direcionados`);
+        audit = { shotPlans: reconciled };
+        planningDraft.audits = [...(planningDraft.audits ?? []).filter((item) => item.batchIndex !== batchIndex), { batchIndex, response: audit }];
+        await persistDraft();
+        auditedShotPlans.push(...reconciled);
       }
       const creative: CreativePlanResponse | null = globalCreative || auditedShotPlans.length || generatedLocations.size
         ? { ...globalCreative, locations: [...generatedLocations.values()], shotPlans: auditedShotPlans }
@@ -1640,6 +1687,12 @@ export class ChildrenClipProcessor {
     const record = value as unknown as Record<string, unknown>;
     if (typeof record.shotIndex === 'number') return { shotPlans: [record as unknown as CreativeShotPlan] };
     return value;
+  }
+
+  private normalizeShotText(value: unknown): string {
+    return typeof value === 'string'
+      ? value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
+      : '';
   }
 
   private compactNarrativeContext(value: unknown, sectionTitles: string[]) {
