@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 interface PlanningSection { id: string; title: string; type: string; startSeconds: number; endSeconds: number; lyricsExcerpt: string | null; energy: number | null; }
 interface PlanningCue { text: string; startSeconds: number; endSeconds: number; }
-interface PlanningCharacter { name: string; roleName: string | null; versionId: string; description: string; }
+export interface PlanningCharacter { name: string; roleName: string | null; versionId: string; description: string; }
 
 export interface CreativeShotPlan {
   shotIndex?: number; purpose?: string; locationKey?: string; locationName?: string;
@@ -129,7 +129,7 @@ export class ChildrenClipPlanningService {
       })
       : this.buildSkeletons(input);
     const { shots, locations } = this.buildShots(input, skeletons, visualBible, narrative);
-    this.validate(shots, input.characters, narrative);
+    this.validate(shots, input.characters, narrative, visualBible);
     return { visualBible, narrative, locations, shots };
   }
 
@@ -150,11 +150,29 @@ export class ChildrenClipPlanningService {
     return skeletons;
   }
 
-  validate(shots: PlannedChildrenClipShot[], characters: PlanningCharacter[], narrative: Record<string, unknown>) {
+  entityIntroductionSchedule(
+    skeletons: ChildrenClipShotSkeleton[],
+    characters: PlanningCharacter[],
+    visualBible: unknown,
+    narrative: unknown
+  ) {
+    const entities = this.entities(characters, this.record(visualBible));
+    const indexes = this.introductionShotIndexes(skeletons, entities, this.record(narrative));
+    return entities.map((entity) => ({
+      name: entity.name,
+      type: entity.type,
+      firstShotIndex: indexes.get(entity.versionId) ?? 0
+    }));
+  }
+
+  validate(shots: PlannedChildrenClipShot[], characters: PlanningCharacter[], narrative: Record<string, unknown>, visualBible: Record<string, unknown> = {}) {
     const knownIds = new Set(characters.map((item) => item.versionId));
     const globalTexts = [narrative.summary, narrative.logline].filter((item): item is string => typeof item === 'string').map((item) => this.normalize(item));
     const errors: string[] = [];
     const actionOwners = new Map<string, number>();
+    const vehicleNames = this.entities(characters, visualBible)
+      .filter((entity) => /\b(vehicle|veiculo|trem|train|bus|onibus)\b/.test(this.normalize(entity.type)))
+      .map((entity) => entity.name);
     for (const shot of shots) {
       const allowed = new Set(shot.characterVersionIds);
       const forbidden = new Set(shot.forbiddenEntityVersionIds);
@@ -167,6 +185,9 @@ export class ChildrenClipPlanningService {
       for (const id of forbidden) if (!knownIds.has(id)) errors.push(`Tomada ${shot.index + 1}: entidade proibida desconhecida`);
       const normalizedDescription = this.normalize(shot.description);
       const normalizedAction = this.normalize(shot.characterAction);
+      if (this.hasUnsafeVehicleStaging(normalizedAction, vehicleNames)) {
+        errors.push(`Tomada ${shot.index + 1}: acao coloca personagem em cima de um veiculo em movimento`);
+      }
       const previousActionOwner = actionOwners.get(normalizedAction);
       if (normalizedAction && previousActionOwner !== undefined) {
         errors.push(`Tomada ${shot.index + 1}: acao visual repete exatamente a tomada ${previousActionOwner + 1}`);
@@ -244,7 +265,7 @@ export class ChildrenClipPlanningService {
       const requestedNames = this.uniqueStrings([...this.stringArray(generated.allowedEntities), ...this.stringArray(generated.characters), ...(generated.primaryFocus ? [generated.primaryFocus] : [])]);
       const fallbackFocus = this.stringArray(storyBeat?.focus);
       const selectedNames = requestedNames.length ? requestedNames : fallbackFocus;
-      const allowed = entities.filter((entity) => (generated.semanticAuditPassed === true || introduced.some((item) => item.versionId === entity.versionId))
+      const allowed = entities.filter((entity) => introduced.some((item) => item.versionId === entity.versionId)
         && selectedNames.some((name) => this.sameText(name, entity.name)));
       const explicitForbidden = this.stringArray(generated.forbiddenEntities);
       const forbidden = entities.filter((entity) => !allowed.some((item) => item.versionId === entity.versionId) || explicitForbidden.some((name) => this.sameText(name, entity.name)));
@@ -404,6 +425,13 @@ export class ChildrenClipPlanningService {
   private normalize(value: unknown): string { return typeof value === 'string' ? value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim() : ''; }
   private containsName(normalizedText: string, name: string) { const target = this.normalize(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); return target.length > 1 && new RegExp(`(^|[^a-z0-9])${target}($|[^a-z0-9])`).test(normalizedText); }
   private sameText(left: unknown, right: unknown) { const a = this.normalize(left); const b = this.normalize(right); return Boolean(a && b && a === b); }
+  private hasUnsafeVehicleStaging(normalizedText: string, vehicleNames: string[]) {
+    if (/\b(em cima|sobre o teto) d[oa] (trem|veiculo|carro|onibus)\b/.test(normalizedText)) return true;
+    return vehicleNames.some((name) => {
+      const target = this.normalize(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(`\\b(em cima|sobre o teto) d[oa] ${target}\\b`).test(normalizedText);
+    });
+  }
   private slug(value: string) { return this.normalize(value).replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'location'; }
   private capitalize(value: string) { return value ? `${value.charAt(0).toUpperCase()}${value.slice(1)}` : value; }
   private percent(value: unknown, fallback: number) { const number = Number(value); return Number.isFinite(number) ? Math.max(0, Math.min(100, Math.round(number))) : fallback; }

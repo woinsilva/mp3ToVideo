@@ -271,12 +271,56 @@ describe('ChildrenClipPlanningService', () => {
       sections: [{ id: 'intro', title: 'Intro', type: 'intro', startSeconds: 0, endSeconds: 7, lyricsExcerpt: null, energy: 0.5 }],
       cues: [], characters,
       creative: {
-        narrative: { entityIntroductions: [{ entityName: 'Pipo Express', firstShotIndex: 1 }] },
+        narrative: { entityIntroductions: [{ entityName: 'Pipo Express', firstShotIndex: 0 }] },
         shotPlans: [audited]
       }
     });
 
     expect(result.shots[0].characterVersionIds).toContain('pipo-v1');
     expect(result.shots[0].forbiddenEntityVersionIds).not.toContain('pipo-v1');
+  });
+
+  it('does not let the AI audit flag bypass a future entity introduction', () => {
+    const service = new ChildrenClipPlanningService();
+    expect(() => service.build({
+      title: 'Pipo Express', concept: 'Uma viagem musical', visualStyle: '2D colorido', audienceAgeMin: 2, audienceAgeMax: 6,
+      durationSeconds: 7, beatGrid: [0, 7],
+      sections: [{ id: 'intro', title: 'Intro', type: 'intro', startSeconds: 0, endSeconds: 7, lyricsExcerpt: null, energy: 0.5 }],
+      cues: [],
+      characters: [
+        { name: 'Lia', roleName: 'Guia', versionId: 'lia-v1', description: 'menina guia' },
+        { name: 'Mimi', roleName: 'Gatinha', versionId: 'mimi-v1', description: 'gatinha lavanda' }
+      ],
+      creative: {
+        visualBible: { characterRules: [{ name: 'Mimi', type: 'animal' }] },
+        narrative: { entityIntroductions: [{ entityName: 'Lia', firstShotIndex: 0 }, { entityName: 'Mimi', firstShotIndex: 1 }] },
+        shotPlans: [{
+          shotIndex: 0, semanticAuditPassed: true, allowedEntities: ['Lia', 'Mimi'], primaryFocus: 'Lia',
+          action: 'Lia acena enquanto Mimi observa ao lado.'
+        }]
+      }
+    })).toThrow(/Mimi e descrito como presente ou ativo/);
+  });
+
+  it('rejects unsafe staging on top of an approved vehicle', () => {
+    const service = new ChildrenClipPlanningService();
+    expect(() => service.build({
+      title: 'Pipo Express', concept: 'Uma viagem musical', visualStyle: '2D colorido', audienceAgeMin: 2, audienceAgeMax: 6,
+      durationSeconds: 7, beatGrid: [0, 7],
+      sections: [{ id: 'intro', title: 'Intro', type: 'intro', startSeconds: 0, endSeconds: 7, lyricsExcerpt: null, energy: 0.5 }],
+      cues: [],
+      characters: [
+        { name: 'Lia', roleName: 'Guia', versionId: 'lia-v1', description: 'menina guia' },
+        { name: 'Pipo Express', roleName: 'Trem', versionId: 'pipo-v1', description: 'trem colorido' }
+      ],
+      creative: {
+        visualBible: { characterRules: [{ name: 'Pipo Express', type: 'veiculo' }] },
+        narrative: { entityIntroductions: [{ entityName: 'Lia', firstShotIndex: 0 }, { entityName: 'Pipo Express', firstShotIndex: 0 }] },
+        shotPlans: [{
+          shotIndex: 0, allowedEntities: ['Lia', 'Pipo Express'], primaryFocus: 'Lia',
+          action: 'Lia pula em cima do Pipo Express enquanto o trem parte.'
+        }]
+      }
+    })).toThrow(/em cima de um veiculo/);
   });
 });

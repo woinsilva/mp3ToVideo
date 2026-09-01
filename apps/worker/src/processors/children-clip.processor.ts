@@ -831,6 +831,7 @@ export class ChildrenClipProcessor {
         if (Array.isArray(repair.shotPlans)) generatedShotPlans.push(...repair.shotPlans);
       }
       const auditedShotPlans: NonNullable<CreativePlanResponse['shotPlans']> = [];
+      const entityIntroductionSchedule = this.planning.entityIntroductionSchedule(skeletons, characters, baseVisualBible, baseNarrative);
       const auditBatches = skeletons.map((shot) => [shot]);
       for (let batchIndex = 0; batchIndex < auditBatches.length; batchIndex += 1) {
         const batch = auditBatches[batchIndex];
@@ -881,6 +882,8 @@ export class ChildrenClipProcessor {
                 shotPlansToAudit: sourcePlans,
                 previousAuditedShotPlans,
                 nextPlannedShotPlans: nextSourceShotPlans,
+                eligibleEntityNames: entityIntroductionSchedule.filter((entity) => entity.firstShotIndex <= batch[0].index).map((entity) => entity.name),
+                futureEntityNames: entityIntroductionSchedule.filter((entity) => entity.firstShotIndex > batch[0].index).map((entity) => entity.name),
                 revisionInstruction: revisionInstruction || null
               })
             }
@@ -897,13 +900,11 @@ export class ChildrenClipProcessor {
         }
         let reconciled = audited.map((plan) => this.planning.reconcileAuditedShotPlan(plan, characters));
         for (let repairAttempt = 0; repairAttempt < 3; repairAttempt += 1) {
-          const repeated = reconciled.find((plan) => {
-            const action = this.normalizeShotText(plan.action);
-            return action && auditedShotPlans.some((previous) => this.normalizeShotText(previous.action) === action);
-          });
-          if (!repeated) break;
-          const conflicting = auditedShotPlans.filter((previous) => this.normalizeShotText(previous.action) === this.normalizeShotText(repeated.action));
-          await this.planProgress(job, auditProgress, 'REPAIRING_SHOT_CONTINUITY', `Corrigindo acao repetida na tomada ${batch[0].index + 1} (tentativa ${repairAttempt + 1}/3).`);
+          const rejected = reconciled[0];
+          const rejectionReason = this.shotAuditIssue(rejected, auditedShotPlans, entityIntroductionSchedule, batch[0].index);
+          if (!rejectionReason) break;
+          const conflicting = auditedShotPlans.filter((previous) => this.normalizeShotText(previous.action) === this.normalizeShotText(rejected.action));
+          await this.planProgress(job, auditProgress, 'REPAIRING_SHOT_CONTINUITY', `Corrigindo a tomada ${batch[0].index + 1}: ${rejectionReason} (tentativa ${repairAttempt + 1}/3).`);
           const rawRepair = await this.withPlanHeartbeat(job, this.ollama.generateJson<CreativePlanResponse>([
             {
               role: 'system',
@@ -920,11 +921,14 @@ export class ChildrenClipProcessor {
               content: JSON.stringify({
                 title: project.title,
                 shot: batch[0],
-                rejectedShotPlan: repeated,
+                rejectionReason,
+                rejectedShotPlan: rejected,
                 conflictingPriorShotPlans: conflicting,
                 allPriorActions: auditedShotPlans.map((plan) => ({ shotIndex: plan.shotIndex, action: plan.action })),
                 nextPlannedShotPlans: nextSourceShotPlans,
                 approvedEntityNames: characters.map((character) => character.name),
+                eligibleEntityNames: entityIntroductionSchedule.filter((entity) => entity.firstShotIndex <= batch[0].index).map((entity) => entity.name),
+                futureEntityNames: entityIntroductionSchedule.filter((entity) => entity.firstShotIndex > batch[0].index).map((entity) => entity.name),
                 revisionInstruction: revisionInstruction || null
               })
             }
@@ -936,11 +940,8 @@ export class ChildrenClipProcessor {
           audited = repairPlans;
           reconciled = repairPlans.map((plan) => this.planning.reconcileAuditedShotPlan(plan, characters));
         }
-        const stillRepeated = reconciled.find((plan) => {
-          const action = this.normalizeShotText(plan.action);
-          return action && auditedShotPlans.some((previous) => this.normalizeShotText(previous.action) === action);
-        });
-        if (stillRepeated) throw new Error(`A segunda IA nao conseguiu criar uma acao unica para a tomada ${batch[0].index + 1} apos 3 reparos direcionados`);
+        const remainingIssue = this.shotAuditIssue(reconciled[0], auditedShotPlans, entityIntroductionSchedule, batch[0].index);
+        if (remainingIssue) throw new Error(`A segunda IA nao conseguiu corrigir a tomada ${batch[0].index + 1} apos 3 reparos direcionados: ${remainingIssue}`);
         audit = { shotPlans: reconciled };
         planningDraft.audits = [...(planningDraft.audits ?? []).filter((item) => item.batchIndex !== batchIndex), { batchIndex, response: audit }];
         await persistDraft();
@@ -1693,6 +1694,45 @@ export class ChildrenClipProcessor {
     return typeof value === 'string'
       ? value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
       : '';
+  }
+
+  private shotAuditIssue(
+    plan: CreativeShotPlan,
+    previousPlans: CreativeShotPlan[],
+    introductionSchedule: Array<{ name: string; type: string; firstShotIndex: number }>,
+    shotIndex: number
+  ): string | null {
+    const action = this.normalizeShotText(plan.action);
+    if (action && previousPlans.some((previous) => this.normalizeShotText(previous.action) === action)) {
+      return 'acao visual repetida';
+    }
+    const positiveText = this.normalizeShotText([
+      plan.primaryFocus, plan.purpose, plan.action, plan.composition, plan.camera,
+      plan.motionIntent, plan.continuityFromPreviousShot, JSON.stringify(plan.characterPlacement ?? [])
+    ].filter((value): value is string => typeof value === 'string').join(' '));
+    for (const entity of introductionSchedule.filter((item) => item.firstShotIndex > shotIndex)) {
+      if (this.containsShotEntity(positiveText, entity.name)
+        || [...(plan.allowedEntities ?? []), ...(plan.characters ?? [])].some((name) => this.normalizeShotText(name) === this.normalizeShotText(entity.name))) {
+        return `entidade futura ${entity.name} aparece antes da tomada ${entity.firstShotIndex + 1}`;
+      }
+    }
+    const vehicleNames = introductionSchedule
+      .filter((entity) => /\b(vehicle|veiculo|trem|train|bus|onibus)\b/.test(this.normalizeShotText(entity.type)))
+      .map((entity) => entity.name);
+    if (/\b(em cima|sobre o teto) d[oa] (trem|veiculo|carro|onibus)\b/.test(positiveText)
+      || vehicleNames.some((name) => new RegExp(`\\b(em cima|sobre o teto) d[oa] ${this.escapeRegExp(this.normalizeShotText(name))}\\b`).test(positiveText))) {
+      return 'encenacao infantil insegura em cima de veiculo';
+    }
+    return null;
+  }
+
+  private containsShotEntity(normalizedText: string, name: string): boolean {
+    const target = this.escapeRegExp(this.normalizeShotText(name));
+    return Boolean(target && new RegExp(`(^|[^a-z0-9])${target}($|[^a-z0-9])`).test(normalizedText));
+  }
+
+  private escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   private compactNarrativeContext(value: unknown, sectionTitles: string[]) {

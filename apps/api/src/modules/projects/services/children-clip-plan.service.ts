@@ -223,6 +223,14 @@ export class ChildrenClipPlanService {
     const global = narrative && typeof narrative === 'object' && !Array.isArray(narrative) ? narrative as Record<string, unknown> : {};
     const summaries = [global.summary, global.logline].filter((item): item is string => typeof item === 'string').map((item) => this.normalize(item));
     const actionOwners = new Map<string, number>();
+    const visualBible = project.childrenClipPlan?.visualBible;
+    const visualRecord = visualBible && typeof visualBible === 'object' && !Array.isArray(visualBible) ? visualBible as Record<string, unknown> : {};
+    const characterRules = Array.isArray(visualRecord.characterRules) ? visualRecord.characterRules : [];
+    const vehicleNames = characterRules
+      .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object' && !Array.isArray(item)))
+      .filter((item) => /\b(vehicle|veiculo|trem|train|bus|onibus)\b/.test(this.normalize(item.type)))
+      .map((item) => typeof item.name === 'string' ? item.name : '')
+      .filter(Boolean);
     for (const shot of project.childrenClipShots) {
       if (!shot.purpose.trim() || !shot.locationId) throw new BadRequestException(`Replaneje a tomada ${shot.index + 1}: faltam dados semanticos ou localizacao.`);
       const allowed = this.stringArray(shot.characterVersionIds);
@@ -232,6 +240,9 @@ export class ChildrenClipPlanService {
       if ([...allowed, ...forbidden].some((id) => !knownIds.has(id))) throw new BadRequestException(`Tomada ${shot.index + 1}: existe uma entidade desconhecida.`);
       const normalizedDescription = this.normalize(shot.description);
       const normalizedAction = this.normalize(shot.characterAction);
+      if (this.hasUnsafeVehicleStaging(normalizedAction, vehicleNames)) {
+        throw new BadRequestException(`Tomada ${shot.index + 1}: a acao coloca personagem em cima de um veiculo. Replaneje ou edite a tomada.`);
+      }
       const previousActionOwner = actionOwners.get(normalizedAction);
       if (normalizedAction && previousActionOwner !== undefined) {
         throw new BadRequestException(`Tomada ${shot.index + 1}: a acao visual repete exatamente a tomada ${previousActionOwner + 1}. Replaneje ou edite uma das tomadas.`);
@@ -271,6 +282,13 @@ export class ChildrenClipPlanService {
   private stringArray(value: unknown): string[] { return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []; }
   private normalize(value: unknown) { return typeof value === 'string' ? value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim() : ''; }
   private containsName(text: string, name: string) { const target = this.normalize(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); return target.length > 1 && new RegExp(`(^|[^a-z0-9])${target}($|[^a-z0-9])`).test(this.normalize(text)); }
+  private hasUnsafeVehicleStaging(normalizedText: string, vehicleNames: string[]) {
+    if (/\b(em cima|sobre o teto) d[oa] (trem|veiculo|carro|onibus)\b/.test(normalizedText)) return true;
+    return vehicleNames.some((name) => {
+      const target = this.normalize(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(`\\b(em cima|sobre o teto) d[oa] ${target}\\b`).test(normalizedText);
+    });
+  }
 
   private async getOwnedProject(projectId: string, organizationId: string) {
     const project = await this.prisma.project.findFirst({
