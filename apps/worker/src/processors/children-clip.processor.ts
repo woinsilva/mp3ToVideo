@@ -919,7 +919,8 @@ export class ChildrenClipProcessor {
                 'Remove every futureEntityName from allowedEntities, characters, primaryFocus, action, purpose, composition, camera, motionIntent, continuityFromPreviousShot and characterPlacement, even when the rejected plan contains it.',
                 'When removing a future entity, rewrite the visible beat around eligible entities and the environment; never mention the absent entity negatively.',
                 'When rebuildFromScratch is true, create the shot from the lyric and eligibleEntityNames only. Do not infer, copy or restore entities from the rejected plan.',
-                'No forbidden entity may appear in any positive prose or placement field. Return all fields from the rejected shot plan.'
+                'When rebuildFromScratch is true, ignore future narrative beats and do not anticipate an entity even if it appears in a later neighboring shot.',
+                'No forbidden entity may appear in any positive prose or placement field. Return a complete shotPlan with every required field.'
               ].join(' ')
             },
             {
@@ -938,7 +939,7 @@ export class ChildrenClipProcessor {
                 },
                 conflictingPriorShotPlans: conflicting,
                 allPriorActions: auditedShotPlans.map((plan) => ({ shotIndex: plan.shotIndex, action: plan.action })),
-                nextPlannedShotPlans: nextSourceShotPlans,
+                nextPlannedShotPlans: rebuildWithoutRejectedPlan ? [] : nextSourceShotPlans,
                 eligibleEntityNames,
                 futureEntityNames: entityIntroductionSchedule.filter((entity) => entity.firstShotIndex > batch[0].index).map((entity) => entity.name),
                 revisionInstruction: revisionInstruction || null
