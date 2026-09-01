@@ -856,6 +856,7 @@ export class ChildrenClipProcessor {
                 'primaryFocus must be present in allowedEntities when it names an approved entity.',
                 'Every approved entity described as visible, acting, framed, followed by the camera, positioned or focused must be in allowedEntities.',
                 'No entity in forbiddenEntities may be described as visible or acting in action, composition, camera, purpose, motionIntent, continuity or characterPlacement.',
+                'Prose fields must describe only what is visibly happening. Never insert labels or lists such as Focus, Allowed entities, Forbidden entities, Entities present or Do not appear into prose fields.',
                 'Respect characterIntroductionOrder and the synchronized lyric moment. Do not introduce future entities early.',
                 'Location name and description contain environment only. Preserve valid creative intent, timing and location continuity.',
                 'Every shotPlan must include: shotIndex, purpose, locationKey, locationName, locationDescription, timeOfDay, primaryFocus, allowedEntities, forbiddenEntities, objects, action, composition, camera, emotion, motionIntent, continuityFromPreviousShot, characterPlacement, backgroundSafeZones, grounding.'

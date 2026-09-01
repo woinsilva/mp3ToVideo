@@ -229,13 +229,16 @@ export class ChildrenClipPlanService {
       if (new Set(allowed).size !== allowed.length || new Set(forbidden).size !== forbidden.length) throw new BadRequestException(`Tomada ${shot.index + 1}: existem entidades duplicadas.`);
       if (allowed.some((id) => forbidden.includes(id))) throw new BadRequestException(`Tomada ${shot.index + 1}: uma entidade esta permitida e proibida ao mesmo tempo.`);
       if ([...allowed, ...forbidden].some((id) => !knownIds.has(id))) throw new BadRequestException(`Tomada ${shot.index + 1}: existe uma entidade desconhecida.`);
-      if (summaries.includes(this.normalize(shot.description))) throw new BadRequestException(`Tomada ${shot.index + 1}: a descricao repete a narrativa global.`);
+      const normalizedDescription = this.normalize(shot.description);
+      if (summaries.includes(normalizedDescription)) throw new BadRequestException(`Tomada ${shot.index + 1}: a descricao repete a narrativa global.`);
+      if (/\b(foco visual|entidades presentes|nao aparecem|permitidos|proibidos)\s*:/.test(normalizedDescription)) {
+        throw new BadRequestException(`Tomada ${shot.index + 1}: a descricao visual mistura narrativa com metadados de entidades.`);
+      }
       const entity = selected.find((item) => this.containsName(shot.backgroundPrompt, item.name));
       if (entity) throw new BadRequestException(`Tomada ${shot.index + 1}: o fundo inclui a entidade ${entity.name}.`);
 
-      const positiveDescription = this.normalize(shot.description).split(/\bnao aparecem\s*:/, 1)[0];
       const positiveSemantics = [
-        positiveDescription,
+        normalizedDescription,
         this.normalize(shot.purpose),
         this.normalize(shot.framing),
         this.normalize(shot.cameraMovement),
@@ -245,6 +248,9 @@ export class ChildrenClipPlanService {
         this.normalize(JSON.stringify(shot.characterPlacement))
       ].filter(Boolean).join(' ');
       for (const candidate of selected) {
+        if (forbidden.includes(candidate.id) && this.containsName(normalizedDescription, candidate.name)) {
+          throw new BadRequestException(`Tomada ${shot.index + 1}: a descricao visual cita a entidade proibida ${candidate.name}.`);
+        }
         if (this.containsName(shot.primaryFocus ?? '', candidate.name) && !allowed.includes(candidate.id)) {
           throw new BadRequestException(`Tomada ${shot.index + 1}: o foco ${candidate.name} nao esta nas entidades permitidas.`);
         }

@@ -167,13 +167,15 @@ export class ChildrenClipPlanningService {
       const normalizedDescription = this.normalize(shot.description);
       if (normalizedDescription.length < 24) errors.push(`Tomada ${shot.index + 1}: descricao visual pouco especifica`);
       if (globalTexts.includes(normalizedDescription)) errors.push(`Tomada ${shot.index + 1}: descricao repete a narrativa global`);
+      if (/\b(foco visual|entidades presentes|nao aparecem|permitidos|proibidos)\s*:/.test(normalizedDescription)) {
+        errors.push(`Tomada ${shot.index + 1}: descricao visual mistura narrativa com metadados de entidades`);
+      }
       const background = this.normalize(shot.backgroundPrompt);
       for (const character of characters) if (this.containsName(background, character.name)) errors.push(`Tomada ${shot.index + 1}: background inclui a entidade ${character.name}`);
 
       const normalizedFocus = this.normalize(shot.primaryFocus);
-      const positiveDescription = normalizedDescription.split(/\bnao aparecem\s*:/, 1)[0];
       const positiveSemantics = [
-        positiveDescription,
+        normalizedDescription,
         this.normalize(shot.purpose),
         this.normalize(shot.framing),
         this.normalize(shot.cameraMovement),
@@ -183,6 +185,9 @@ export class ChildrenClipPlanningService {
         this.normalize(JSON.stringify(shot.characterPlacement))
       ].filter(Boolean).join(' ');
       for (const character of characters) {
+        if (forbidden.has(character.versionId) && this.containsName(normalizedDescription, character.name)) {
+          errors.push(`Tomada ${shot.index + 1}: descricao visual cita a entidade proibida ${character.name}`);
+        }
         if (this.containsName(normalizedFocus, character.name) && !allowed.has(character.versionId)) {
           errors.push(`Tomada ${shot.index + 1}: foco ${character.name} nao esta nas entidades permitidas`);
         }
@@ -252,15 +257,9 @@ export class ChildrenClipPlanningService {
       const previousLocationKey = arrayIndex > 0 ? this.slug(previousPlan?.locationKey || skeletons[arrayIndex - 1].sectionTitle) : null;
       const continuity = generated.continuityFromPreviousShot === null ? null : this.clean(generated.continuityFromPreviousShot) ||
         (previousLocationKey === locationKey ? `Manter o mesmo design, iluminacao e orientacao de ${locationName} da tomada anterior` : null);
-      const allowedNames = allowed.map((item) => item.name);
-      const forbiddenNames = forbidden.map((item) => item.name);
       const description = [
         `${this.capitalize(framing)} em ${locationName}, ${timeOfDay}.`,
-        `Momento visual ${skeleton.localIndex + 1} da secao ${skeleton.sectionTitle}.`,
-        action.endsWith('.') ? action : `${action}.`,
-        primaryFocus ? `Foco visual: ${primaryFocus}.` : null,
-        allowedNames.length ? `Entidades presentes: ${allowedNames.join(', ')}.` : 'Nenhuma entidade cadastrada aparece nesta tomada.',
-        forbiddenNames.length ? `Nao aparecem: ${forbiddenNames.join(', ')}.` : null
+        action.endsWith('.') ? action : `${action}.`
       ].filter(Boolean).join(' ');
       const location = locations.get(locationKey)!;
       const compositionPlan = this.compositionPlan(allowed, generated, framing, index);

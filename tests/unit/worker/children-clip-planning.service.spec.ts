@@ -169,7 +169,7 @@ describe('ChildrenClipPlanningService', () => {
     expect(() => service.build(input)).toThrow(/foco Pipo Express nao esta nas entidades permitidas/);
   });
 
-  it('does not treat the generated Nao aparecem list as positive presence', () => {
+  it('keeps allowed and forbidden entity metadata out of the visual description', () => {
     const service = new ChildrenClipPlanningService();
     const result = service.build({
       title: 'Pipo Express', concept: 'Uma viagem musical', visualStyle: '2D colorido', audienceAgeMin: 2, audienceAgeMax: 6,
@@ -186,7 +186,15 @@ describe('ChildrenClipPlanningService', () => {
       }
     });
 
-    expect(result.shots[0].description).toContain('Nao aparecem: Pipo Express');
+    expect(result.shots[0].description).toContain('Lia acena alegremente.');
+    expect(result.shots[0].description).not.toMatch(/Foco visual|Entidades presentes|Nao aparecem|Permitidos|Proibidos/i);
+    expect(result.shots[0].forbiddenEntityVersionIds).toContain('pipo-v1');
+
+    result.shots[0].description = 'Plano medio na estacao. Pipo Express aparece ao fundo.';
+    expect(() => service.validate(result.shots, [
+      { name: 'Lia', roleName: 'Guia', versionId: 'lia-v1', description: 'menina guia' },
+      { name: 'Pipo Express', roleName: 'Trem', versionId: 'pipo-v1', description: 'trem colorido' }
+    ], result.narrative)).toThrow(/descricao visual cita a entidade proibida Pipo Express/);
   });
 
   it('uses textual story beats to determine when an entity is introduced', () => {
