@@ -370,7 +370,11 @@ export class ChildrenClipPlanningService {
       const explicitRule = explicit.find((item) => this.sameText(item.entityName, entity.name));
       const explicitShot = Number(explicitRule?.firstShotIndex);
       if (Number.isInteger(explicitShot) && explicitShot >= 0) { introductions.set(entity.versionId, explicitShot); return; }
-      const lyricMention = skeletons.find((shot) => this.normalize(shot.lyricText).includes(this.normalize(entity.name)));
+      const lyricAliases = this.entityLyricAliases(entity);
+      const lyricMention = skeletons.find((shot) => {
+        const lyric = this.normalize(shot.lyricText);
+        return lyricAliases.some((alias) => this.containsName(lyric, alias));
+      });
       const beatIndex = storyBeats.findIndex((item) => typeof item === 'string'
         ? this.containsName(this.normalize(item), entity.name)
         : this.isRecord(item) && (
@@ -425,6 +429,15 @@ export class ChildrenClipPlanningService {
   private normalize(value: unknown): string { return typeof value === 'string' ? value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim() : ''; }
   private containsName(normalizedText: string, name: string) { const target = this.normalize(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); return target.length > 1 && new RegExp(`(^|[^a-z0-9])${target}($|[^a-z0-9])`).test(normalizedText); }
   private sameText(left: unknown, right: unknown) { const a = this.normalize(left); const b = this.normalize(right); return Boolean(a && b && a === b); }
+  private entityLyricAliases(entity: EntityDescriptor): string[] {
+    const descriptor = this.normalize(`${entity.type} ${entity.identity}`);
+    const aliases = [entity.name];
+    if (/\b(cachorro|cachorrinho|cao|filhote)\b/.test(descriptor)) aliases.push('cachorro', 'cachorrinho', 'cao');
+    if (/\b(gato|gata|gatinho|gatinha|felino)\b/.test(descriptor)) aliases.push('gato', 'gata', 'gatinho', 'gatinha');
+    if (/\b(coelho|coelha|coelhinho|coelhinha)\b/.test(descriptor)) aliases.push('coelho', 'coelha', 'coelhinho', 'coelhinha');
+    if (/\b(vehicle|veiculo|trem|train|locomotiva)\b/.test(descriptor)) aliases.push('trem', 'trenzinho', 'locomotiva');
+    return this.uniqueStrings(aliases);
+  }
   private hasUnsafeVehicleStaging(normalizedText: string, vehicleNames: string[]) {
     if (/\b(em cima|sobre o teto) d[oa] (trem|veiculo|carro|onibus)\b/.test(normalizedText)) return true;
     return vehicleNames.some((name) => {

@@ -913,6 +913,9 @@ export class ChildrenClipProcessor {
                 'Preserve valid entity constraints, location continuity and approved identities, but rewrite the action, purpose, composition, camera, motionIntent and continuityFromPreviousShot as needed.',
                 'The action must be a new concrete filmable event tied to the synchronized lyric. It must differ semantically and verbatim from every prior action supplied.',
                 'Changing only adjectives, punctuation or word order is not sufficient. Change the visible beat through a distinct gesture, interaction, prop, staging or reaction.',
+                'eligibleEntityNames is the exhaustive list of entities allowed to be visible in this shot.',
+                'Remove every futureEntityName from allowedEntities, characters, primaryFocus, action, purpose, composition, camera, motionIntent, continuityFromPreviousShot and characterPlacement, even when the rejected plan contains it.',
+                'When removing a future entity, rewrite the visible beat around eligible entities and the environment; never mention the absent entity negatively.',
                 'No forbidden entity may appear in any positive prose or placement field. Return all fields from the rejected shot plan.'
               ].join(' ')
             },

@@ -323,4 +323,34 @@ describe('ChildrenClipPlanningService', () => {
       }
     })).toThrow(/em cima de um veiculo/);
   });
+
+  it('schedules introductions from entity species and vehicle words in the lyrics', () => {
+    const service = new ChildrenClipPlanningService();
+    const skeletons = [
+      { index: 0, localIndex: 0, sectionId: 's1', sectionTitle: 'Intro', sectionType: 'intro', startSeconds: 0, endSeconds: 5, lyricText: 'La vem o trenzinho' },
+      { index: 1, localIndex: 1, sectionId: 's1', sectionTitle: 'Intro', sectionType: 'intro', startSeconds: 5, endSeconds: 10, lyricText: 'E o cachorro brincalhao' },
+      { index: 2, localIndex: 2, sectionId: 's1', sectionTitle: 'Intro', sectionType: 'intro', startSeconds: 10, endSeconds: 15, lyricText: 'Chegou o gatinho' },
+      { index: 3, localIndex: 3, sectionId: 's1', sectionTitle: 'Intro', sectionType: 'intro', startSeconds: 15, endSeconds: 20, lyricText: 'E o coelho pula alto' }
+    ];
+    const characters = [
+      { name: 'Pipo Express', roleName: null, versionId: 'pipo', description: 'pequeno trem' },
+      { name: 'Toto', roleName: null, versionId: 'toto', description: 'filhote de cachorro' },
+      { name: 'Mimi', roleName: null, versionId: 'mimi', description: 'pequena gatinha' },
+      { name: 'Lilo', roleName: null, versionId: 'lilo', description: 'pequeno coelho' }
+    ];
+
+    expect(service.entityIntroductionSchedule(skeletons, characters, {
+      characterRules: [
+        { name: 'Pipo Express', type: 'veiculo', identity: 'trem colorido' },
+        { name: 'Toto', type: 'animal', identity: 'cachorro brincalhao' },
+        { name: 'Mimi', type: 'animal', identity: 'gatinha lavanda' },
+        { name: 'Lilo', type: 'animal', identity: 'coelho verde' }
+      ]
+    }, {})).toEqual([
+      { name: 'Pipo Express', type: 'veiculo', firstShotIndex: 0 },
+      { name: 'Toto', type: 'animal', firstShotIndex: 1 },
+      { name: 'Mimi', type: 'animal', firstShotIndex: 2 },
+      { name: 'Lilo', type: 'animal', firstShotIndex: 3 }
+    ]);
+  });
 });
