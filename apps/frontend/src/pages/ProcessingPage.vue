@@ -7,6 +7,9 @@
         <p class="page-subtitle">Você pode sair desta página. A geração continuará em segundo plano.</p>
       </div>
       <div class="app-button-row">
+        <button v-if="isChildrenClip" class="app-button" type="button" @click="openChildrenClipStep4">
+          <v-icon icon="mdi-view-dashboard-outline" size="18" /> Abrir Etapa 4
+        </button>
         <button class="app-button app-button--ghost" type="button" @click="refreshManually">
           <v-icon icon="mdi-refresh" size="18" /> Atualizar
         </button>
@@ -108,6 +111,10 @@ export default class ProcessingPage extends Vue {
     return this.projectsStore.currentProject?.title ?? 'Projeto';
   }
 
+  get isChildrenClip(): boolean {
+    return this.projectsStore.currentProject?.generationMode === 'children_clip';
+  }
+
   get statusPayload() {
     return this.projectsStore.currentStatus?.projectId === this.projectId
       ? this.projectsStore.currentStatus
@@ -188,7 +195,19 @@ export default class ProcessingPage extends Vue {
   }
 
   goBackToProject() {
+    if (this.isChildrenClip) {
+      this.openChildrenClipStep4();
+      return;
+    }
     void this.$router.push({ name: 'project-detail', params: { id: this.projectId } });
+  }
+
+  openChildrenClipStep4() {
+    void this.$router.push({
+      name: 'children-clip-studio',
+      params: { id: this.projectId },
+      hash: '#step-4'
+    });
   }
 
   async retryActiveSceneRender() {

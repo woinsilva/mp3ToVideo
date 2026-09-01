@@ -10,6 +10,7 @@
     </section>
 
     <v-alert v-if="errorMessage" class="studio-width" type="error" variant="tonal" closable @click:close="errorMessage = null">{{ errorMessage }}</v-alert>
+    <v-alert v-if="navigationFeedback" class="studio-width" type="info" variant="tonal" closable @click:close="navigationFeedback = null">{{ navigationFeedback }}</v-alert>
 
     <template v-if="project?.childrenClip">
       <section class="studio-width setup-grid">
@@ -155,7 +156,7 @@
         </article>
       </section>
 
-      <section class="surface-card studio-width plan-panel">
+      <section id="step-3" class="surface-card studio-width plan-panel">
         <div class="panel-heading">
           <div><p class="page-eyebrow">Etapa 3</p><h3>Biblia visual, roteiro e storyboard</h3><p>Planeje todas as tomadas antes de gerar cenarios e animacao.</p></div>
           <span v-if="planStatus?.plan" class="version-status" :class="`version-status--${planStatus.plan.status}`">{{ planStatusLabel }}</span>
@@ -235,7 +236,7 @@
         </template>
       </section>
 
-      <section v-if="planStatus?.plan?.status === 'approved'" class="surface-card studio-width plan-panel production-assets-panel">
+      <section id="step-4" v-if="planStatus?.plan?.status === 'approved'" class="surface-card studio-width plan-panel production-assets-panel">
         <div class="panel-heading">
           <div><p class="page-eyebrow">Etapa 4</p><h3>Cenários e assets das tomadas</h3><p>Cada tomada recebe um cenário limpo e uma prévia completa que usa as referências dos personagens permitidos.</p></div>
           <span v-if="productionAssets" class="version-status" :class="{ 'version-status--approved': productionAssets.summary.readyForAnimation }">{{ productionAssets.summary.approvedBackgrounds }}/{{ productionAssets.summary.totalShots }} cenários · {{ productionAssets.summary.approvedStoryboards }}/{{ productionAssets.summary.requiredStoryboards }} prévias</span>
@@ -434,6 +435,7 @@ export default class ChildrenClipStudioPage extends Vue {
   editingCharacterId: string | null = null;
   savingCharacter = false;
   errorMessage: string | null = null;
+  navigationFeedback: string | null = null;
   assetUrls: Record<string, string> = {};
   assetRoles: Record<string, CharacterAssetRole> = {};
   assetLabels: Record<string, string> = {};
@@ -482,6 +484,7 @@ export default class ChildrenClipStudioPage extends Vue {
         await this.loadProductionAssets();
         if (this.productionAssets?.summary.readyForAnimation) await Promise.all([this.loadAnimation(), this.loadOutput()]);
       }
+      await this.scrollToRequestedStep();
       this.pollTimer = setInterval(() => void this.pollIfNeeded(), 4000);
     } catch (error) { this.captureError(error, 'Falha ao carregar o estudio'); }
   }
@@ -495,6 +498,18 @@ export default class ChildrenClipStudioPage extends Vue {
     Object.values(this.heroUrls).forEach((url) => URL.revokeObjectURL(url));
     Object.values(this.referenceUrls).forEach((url) => URL.revokeObjectURL(url));
     if (this.finalRenderUrl) URL.revokeObjectURL(this.finalRenderUrl);
+  }
+
+  async scrollToRequestedStep() {
+    if (this.$route.hash !== '#step-4') return;
+    await this.$nextTick();
+    const step4 = document.getElementById('step-4');
+    if (!step4) {
+      this.navigationFeedback = 'A Etapa 4 sera liberada assim que voce aprovar o plano de producao na Etapa 3. Revise as tomadas e clique em Aprovar plano de producao.';
+      await this.$nextTick();
+    }
+    const target = step4 ?? document.getElementById('step-3');
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   async loadCharacters() {

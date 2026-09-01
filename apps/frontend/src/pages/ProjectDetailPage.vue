@@ -6,7 +6,12 @@
         <h2 class="page-title">{{ projectTitle }}</h2>
         <p class="page-subtitle">{{ isPromptProject ? 'Acompanhe a geração direta criada a partir da sua descrição ou imagem.' : 'Revise as opções, escolha a música e inicie a geração.' }}</p>
       </div>
-      <v-chip :color="statusTone" variant="tonal">{{ statusLabel }}</v-chip>
+      <div class="app-button-row">
+        <button v-if="isChildrenClip" class="app-button" type="button" @click="openChildrenClipStep4">
+          <v-icon icon="mdi-view-dashboard-outline" size="18" /> Abrir Etapa 4
+        </button>
+        <v-chip :color="statusTone" variant="tonal">{{ statusLabel }}</v-chip>
+      </div>
     </section>
 
     <v-alert v-if="errorMessage" type="error" variant="tonal" class="mb-4">
@@ -324,6 +329,10 @@ export default class ProjectDetailPage extends Vue {
     return this.projectsStore.currentProject?.generationMode !== 'music';
   }
 
+  get isChildrenClip(): boolean {
+    return this.projectsStore.currentProject?.generationMode === 'children_clip';
+  }
+
   get requiresTrackUpload(): boolean {
     return !this.isPromptProject && (this.projectStatus === 'draft' || this.projectStatus === 'failed');
   }
@@ -533,6 +542,14 @@ export default class ProjectDetailPage extends Vue {
 
   openProcessing() {
     void this.$router.push({ name: 'processing', params: { id: this.projectId } });
+  }
+
+  openChildrenClipStep4() {
+    void this.$router.push({
+      name: 'children-clip-studio',
+      params: { id: this.projectId },
+      hash: '#step-4'
+    });
   }
 
   openResult() {

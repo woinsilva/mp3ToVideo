@@ -68,7 +68,7 @@
           v-for="project in filteredProjects"
           :key="project.id"
           class="project-card-new"
-          @click="openProject(project.id, project.status)"
+          @click="openProject(project)"
         >
           <div class="project-cover" :class="coverClass(project.status)">
             <v-icon :icon="statusIcon(project.status)" size="34" />
@@ -97,9 +97,9 @@
             <button
               class="app-button app-button--outline project-open-button"
               type="button"
-              @click.stop="openProject(project.id, project.status)"
+              @click.stop="openProject(project)"
             >
-              {{ openProjectLabel(project.status) }}
+              {{ openProjectLabel(project) }}
               <v-icon icon="mdi-arrow-right" size="18" />
             </button>
           </div>
@@ -189,17 +189,28 @@ export default class DashboardPage extends Vue {
     void this.$router.push({ name: 'create-project' });
   }
 
-  openProject(projectId: string, status: ProjectStatus) {
+  openProject(project: ProjectSummary) {
+    if (project.generationMode === 'children_clip') {
+      void this.$router.push({
+        name: 'children-clip-studio',
+        params: { id: project.id },
+        hash: '#step-4'
+      });
+      return;
+    }
+    const status = project.status;
     const routeName =
       status === 'completed'
         ? 'video-result'
         : ['uploaded', 'queued', 'processing', 'analyzing', 'storyboarding', 'generating_scenes', 'rendering'].includes(status)
           ? 'processing'
           : 'project-detail';
-    void this.$router.push({ name: routeName, params: { id: projectId } });
+    void this.$router.push({ name: routeName, params: { id: project.id } });
   }
 
-  openProjectLabel(status: ProjectStatus): string {
+  openProjectLabel(project: ProjectSummary): string {
+    if (project.generationMode === 'children_clip') return 'Abrir Etapa 4';
+    const status = project.status;
     if (status === 'completed') return 'Ver videoclipe';
     if (status === 'failed') return 'Revisar problema';
     if (status === 'awaiting_references') return 'Revisar cenas';
