@@ -867,6 +867,9 @@ export class ChildrenClipProcessor {
                 'Treat the nearby shot plans as mandatory continuity context. The current action and purpose must visibly advance the story from the previous audited shot and prepare the next planned shot.',
                 'Write one concrete, filmable action tied to the supplied synchronized lyrics. Avoid generic filler such as merely moving smoothly, playing, dancing or continuing the prior action without a new visible beat.',
                 'Never repeat the previous action verbatim. When lyrics or a chorus repeat, vary the gesture, staging, interaction, composition or camera while preserving the musical motif.',
+                'Enforce child-safe physical logic: living characters never stand, play or dance on railway tracks or on a vehicle roof; boarding happens through a door while the vehicle is stopped.',
+                'Characters never hold, pull, push or circle a moving train. Keep every action plausible for entity type, size and location.',
+                'Use natural Portuguese grammar and make the visible subject perform the verb described by the synchronized lyric.',
                 'continuityFromPreviousShot must state what spatial or visual element is preserved and what changes in this shot.',
                 'Location name and description contain environment only. Preserve valid creative intent, timing and location continuity.',
                 'Every shotPlan must include: shotIndex, purpose, locationKey, locationName, locationDescription, timeOfDay, primaryFocus, allowedEntities, forbiddenEntities, objects, action, composition, camera, emotion, motionIntent, continuityFromPreviousShot, characterPlacement, backgroundSafeZones, grounding.'
@@ -1741,6 +1744,25 @@ export class ChildrenClipProcessor {
       || vehicleNames.some((name) => new RegExp(`\\b(em cima|sobre o teto) d[oa] ${this.escapeRegExp(this.normalizeShotText(name))}\\b`).test(positiveText))) {
       return 'encenacao infantil insegura em cima de veiculo';
     }
+    const livingNames = introductionSchedule
+      .filter((entity) => !/\b(vehicle|veiculo|trem|train|bus|onibus)\b/.test(this.normalizeShotText(entity.type)))
+      .map((entity) => entity.name);
+    const livingVisible = livingNames.some((name) => this.containsShotEntity(positiveText, name));
+    if (livingVisible && /\b(sobre uma trilha|brinca(?:m)? com (?:as )?trilh|danca(?:m)? (?:nos?|sobre os?) trilhos|fica(?:m)? (?:nos?|sobre os?) trilhos)\b/.test(positiveText)) {
+      return 'personagem vivo colocado nos trilhos';
+    }
+    for (const name of vehicleNames) {
+      const vehicle = this.escapeRegExp(this.normalizeShotText(name));
+      if (new RegExp(`\\b(segura|seguram|puxa|puxam|empurra|empurram)\\b.{0,40}${vehicle}`).test(positiveText)) {
+        return `acao fisicamente incoerente com o veiculo ${name}`;
+      }
+    }
+    const boardsVehicle = /\b(pula|pulam|salta|saltam)\b.{0,50}\b(dentro|para dentro|vagao)\b/.test(positiveText);
+    const vehicleMoving = /\b(trem|veiculo|pipo express)\b.{0,50}\b(move|movendo|movimento|passa|acelera|parte)\b/.test(positiveText);
+    if (boardsVehicle && vehicleMoving) return 'embarque inseguro com o veiculo em movimento';
+    if (/\b(ao redor|em volta)\b.{0,40}\b(trem|veiculo|pipo express) em movimento\b/.test(positiveText)) {
+      return 'personagens circulando um veiculo em movimento';
+    }
     return null;
   }
 
@@ -1767,12 +1789,14 @@ export class ChildrenClipProcessor {
     const actors = eligible.filter((entity) => allowed.includes(entity.name) && entity.name !== vehicle?.name);
     const lead = actors[0]?.name ?? vehicle?.name ?? eligible[0]?.name ?? 'O protagonista';
     const companion = actors[1]?.name;
+    const subject = `${lead}${companion ? ` e ${companion}` : ''}`;
+    const plural = Boolean(companion);
     const lyric = this.normalizeShotText(shot.lyricText);
     const direction = ['pela esquerda', 'ao centro', 'pela direita'][shot.index % 3];
     let action: string;
     let purpose: string;
     if (/\b(bate palma|palmas|bate o pe)\b/.test(lyric)) {
-      action = `${lead}${companion ? ` e ${companion}` : ''} marca o ritmo com palmas e passos simples ${direction}`;
+      action = `${subject} ${plural ? 'marcam' : 'marca'} o ritmo com palmas e passos simples ${direction}`;
       purpose = 'Transformar o comando musical em um gesto claro que a crianca possa acompanhar';
     } else if (/\b(embarcar|vagao|entrou)\b/.test(lyric) && vehicle) {
       action = actors.length ? `${lead} entra pela porta lateral de ${vehicle.name}, parado na plataforma, enquanto os demais acenam` : `${vehicle.name} abre a porta lateral enquanto permanece parado na plataforma`;
@@ -1784,10 +1808,10 @@ export class ChildrenClipProcessor {
       action = `${vehicle.name} inicia a partida pelos trilhos enquanto ${lead === vehicle.name ? 'a sinalizacao da plataforma' : lead} marca a saida com um aceno ${direction}`;
       purpose = 'Mostrar a partida e fazer a historia avancar com seguranca';
     } else if (/\b(pula|pular)\b/.test(lyric)) {
-      action = `${lead}${companion ? ` e ${companion}` : ''} pula no chao ao lado da plataforma e aterrissa com equilibrio ${direction}`;
+      action = `${subject} ${plural ? 'pulam' : 'pula'} no chao ao lado da plataforma e ${plural ? 'aterrissam' : 'aterrissa'} com equilibrio ${direction}`;
       purpose = 'Representar o verbo da letra com um movimento infantil seguro';
     } else {
-      action = `${lead}${companion ? ` e ${companion}` : ''} reage ao novo momento musical com um gesto claro ${direction}`;
+      action = `${subject} ${plural ? 'reagem' : 'reage'} ao novo momento musical com um gesto claro ${direction}`;
       purpose = 'Criar um novo acontecimento visual coerente com o trecho sincronizado';
     }
     const focus = allowed.find((name) => this.normalizeShotText(name) === this.normalizeShotText(plan.primaryFocus)) ?? allowed[0] ?? null;

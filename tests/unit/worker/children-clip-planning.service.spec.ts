@@ -327,10 +327,10 @@ describe('ChildrenClipPlanningService', () => {
   it('schedules introductions from entity species and vehicle words in the lyrics', () => {
     const service = new ChildrenClipPlanningService();
     const skeletons = [
-      { index: 0, localIndex: 0, sectionId: 's1', sectionTitle: 'Intro', sectionType: 'intro', startSeconds: 0, endSeconds: 5, lyricText: 'La vem o trenzinho' },
+      { index: 0, localIndex: 0, sectionId: 's1', sectionTitle: 'Intro', sectionType: 'intro', startSeconds: 0, endSeconds: 5, lyricText: 'Piuiii, piuiii' },
       { index: 1, localIndex: 1, sectionId: 's1', sectionTitle: 'Intro', sectionType: 'intro', startSeconds: 5, endSeconds: 10, lyricText: 'E o cachorro brincalhao' },
-      { index: 2, localIndex: 2, sectionId: 's1', sectionTitle: 'Intro', sectionType: 'intro', startSeconds: 10, endSeconds: 15, lyricText: 'Chegou o gatinho' },
-      { index: 3, localIndex: 3, sectionId: 's1', sectionTitle: 'Intro', sectionType: 'intro', startSeconds: 15, endSeconds: 20, lyricText: 'E o coelho pula alto' }
+      { index: 2, localIndex: 2, sectionId: 's1', sectionTitle: 'Intro', sectionType: 'intro', startSeconds: 10, endSeconds: 15, lyricText: 'Chegou com bigode e sapatinho' },
+      { index: 3, localIndex: 3, sectionId: 's1', sectionTitle: 'Intro', sectionType: 'intro', startSeconds: 15, endSeconds: 20, lyricText: 'Duas orelhas bem compridas' }
     ];
     const characters = [
       { name: 'Pipo Express', roleName: null, versionId: 'pipo', description: 'pequeno trem' },

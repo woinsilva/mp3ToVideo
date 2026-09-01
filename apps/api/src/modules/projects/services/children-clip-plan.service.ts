@@ -284,9 +284,13 @@ export class ChildrenClipPlanService {
   private containsName(text: string, name: string) { const target = this.normalize(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); return target.length > 1 && new RegExp(`(^|[^a-z0-9])${target}($|[^a-z0-9])`).test(this.normalize(text)); }
   private hasUnsafeVehicleStaging(normalizedText: string, vehicleNames: string[]) {
     if (/\b(em cima|sobre o teto) d[oa] (trem|veiculo|carro|onibus)\b/.test(normalizedText)) return true;
+    if (/\b(sobre uma trilha|brinca(?:m)? com (?:as )?trilh|danca(?:m)? (?:nos?|sobre os?) trilhos|fica(?:m)? (?:nos?|sobre os?) trilhos)\b/.test(normalizedText)) return true;
+    if (/\b(pula|pulam|salta|saltam)\b.{0,50}\b(dentro|para dentro|vagao)\b/.test(normalizedText)
+      && /\b(trem|veiculo|pipo express)\b.{0,50}\b(move|movendo|movimento|passa|acelera|parte)\b/.test(normalizedText)) return true;
     return vehicleNames.some((name) => {
       const target = this.normalize(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      return new RegExp(`\\b(em cima|sobre o teto) d[oa] ${target}\\b`).test(normalizedText);
+      return new RegExp(`\\b(em cima|sobre o teto) d[oa] ${target}\\b`).test(normalizedText)
+        || new RegExp(`\\b(segura|seguram|puxa|puxam|empurra|empurram)\\b.{0,40}${target}`).test(normalizedText);
     });
   }
 

@@ -433,9 +433,9 @@ export class ChildrenClipPlanningService {
     const descriptor = this.normalize(`${entity.type} ${entity.identity}`);
     const aliases = [entity.name];
     if (/\b(cachorro|cachorrinho|cao|filhote)\b/.test(descriptor)) aliases.push('cachorro', 'cachorrinho', 'cao');
-    if (/\b(gato|gata|gatinho|gatinha|felino)\b/.test(descriptor)) aliases.push('gato', 'gata', 'gatinho', 'gatinha');
-    if (/\b(coelho|coelha|coelhinho|coelhinha)\b/.test(descriptor)) aliases.push('coelho', 'coelha', 'coelhinho', 'coelhinha');
-    if (/\b(vehicle|veiculo|trem|train|locomotiva)\b/.test(descriptor)) aliases.push('trem', 'trenzinho', 'locomotiva');
+    if (/\b(gato|gata|gatinho|gatinha|felino)\b/.test(descriptor)) aliases.push('gato', 'gata', 'gatinho', 'gatinha', 'bigode');
+    if (/\b(coelho|coelha|coelhinho|coelhinha)\b/.test(descriptor)) aliases.push('coelho', 'coelha', 'coelhinho', 'coelhinha', 'orelhas bem compridas', 'duas orelhas');
+    if (/\b(vehicle|veiculo|trem|train|locomotiva)\b/.test(descriptor)) aliases.push('trem', 'trenzinho', 'locomotiva', 'piui', 'piuiii');
     return this.uniqueStrings(aliases);
   }
   private hasUnsafeVehicleStaging(normalizedText: string, vehicleNames: string[]) {
