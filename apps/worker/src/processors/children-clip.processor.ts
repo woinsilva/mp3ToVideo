@@ -1803,7 +1803,8 @@ export class ChildrenClipProcessor {
       camera: `acompanhamento suave ${direction}`,
       motionIntent: 'um unico movimento principal, simples, seguro e sincronizado com a musica',
       continuityFromPreviousShot: `preservar o local e a orientacao espacial, mudando a acao principal ${direction}`,
-      characterPlacement: (plan.characterPlacement ?? []).filter((placement) => placement.entity && allowed.includes(placement.entity)),
+      characterPlacement: (Array.isArray(plan.characterPlacement) ? plan.characterPlacement : [])
+        .filter((placement) => placement.entity && allowed.includes(placement.entity)),
       semanticAuditPassed: true
     };
   }
