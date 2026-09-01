@@ -928,7 +928,7 @@ export class ChildrenClipProcessor {
               content: JSON.stringify({
                 title: project.title,
                 shot: batch[0],
-                rejectionReason,
+                rejectionReason: rebuildWithoutRejectedPlan ? 'contains an entity outside the exhaustive eligibleEntityNames list' : rejectionReason,
                 rebuildFromScratch: rebuildWithoutRejectedPlan,
                 rejectedShotPlan: rebuildWithoutRejectedPlan ? null : rejected,
                 locationToPreserve: {
@@ -941,7 +941,7 @@ export class ChildrenClipProcessor {
                 allPriorActions: auditedShotPlans.map((plan) => ({ shotIndex: plan.shotIndex, action: plan.action })),
                 nextPlannedShotPlans: rebuildWithoutRejectedPlan ? [] : nextSourceShotPlans,
                 eligibleEntityNames,
-                futureEntityNames: entityIntroductionSchedule.filter((entity) => entity.firstShotIndex > batch[0].index).map((entity) => entity.name),
+                futureEntityNames: rebuildWithoutRejectedPlan ? [] : entityIntroductionSchedule.filter((entity) => entity.firstShotIndex > batch[0].index).map((entity) => entity.name),
                 revisionInstruction: revisionInstruction || null
               })
             }
