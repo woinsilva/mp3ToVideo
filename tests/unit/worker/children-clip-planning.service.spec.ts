@@ -197,6 +197,28 @@ describe('ChildrenClipPlanningService', () => {
     ], result.narrative)).toThrow(/descricao visual cita a entidade proibida Pipo Express/);
   });
 
+  it('rejects repeated visual actions even when entity constraints are valid', () => {
+    const service = new ChildrenClipPlanningService();
+    const input = {
+      title: 'Pipo Express', concept: 'Uma viagem musical', visualStyle: '2D colorido', audienceAgeMin: 2, audienceAgeMax: 6,
+      durationSeconds: 14, beatGrid: [0, 7, 14],
+      sections: [{ id: 'intro', title: 'Intro', type: 'intro', startSeconds: 0, endSeconds: 14, lyricsExcerpt: null, energy: 0.5 }],
+      cues: [
+        { text: 'O trem vai sair', startSeconds: 0, endSeconds: 7 },
+        { text: 'Todo mundo preparado', startSeconds: 7, endSeconds: 14 }
+      ],
+      characters: [{ name: 'Pipo Express', roleName: 'Trem', versionId: 'pipo-v1', description: 'trem colorido' }],
+      creative: {
+        shotPlans: [
+          { shotIndex: 0, allowedEntities: ['Pipo Express'], primaryFocus: 'Pipo Express', action: 'Pipo Express avanca pelos trilhos.' },
+          { shotIndex: 1, allowedEntities: ['Pipo Express'], primaryFocus: 'Pipo Express', action: 'Pipo Express avanca pelos trilhos.' }
+        ]
+      }
+    };
+
+    expect(() => service.build(input)).toThrow(/acao visual repete exatamente a tomada 1/);
+  });
+
   it('uses textual story beats to determine when an entity is introduced', () => {
     const service = new ChildrenClipPlanningService();
     const result = service.build({

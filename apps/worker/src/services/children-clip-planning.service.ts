@@ -154,6 +154,7 @@ export class ChildrenClipPlanningService {
     const knownIds = new Set(characters.map((item) => item.versionId));
     const globalTexts = [narrative.summary, narrative.logline].filter((item): item is string => typeof item === 'string').map((item) => this.normalize(item));
     const errors: string[] = [];
+    const actionOwners = new Map<string, number>();
     for (const shot of shots) {
       const allowed = new Set(shot.characterVersionIds);
       const forbidden = new Set(shot.forbiddenEntityVersionIds);
@@ -165,6 +166,13 @@ export class ChildrenClipPlanningService {
       }
       for (const id of forbidden) if (!knownIds.has(id)) errors.push(`Tomada ${shot.index + 1}: entidade proibida desconhecida`);
       const normalizedDescription = this.normalize(shot.description);
+      const normalizedAction = this.normalize(shot.characterAction);
+      const previousActionOwner = actionOwners.get(normalizedAction);
+      if (normalizedAction && previousActionOwner !== undefined) {
+        errors.push(`Tomada ${shot.index + 1}: acao visual repete exatamente a tomada ${previousActionOwner + 1}`);
+      } else if (normalizedAction) {
+        actionOwners.set(normalizedAction, shot.index);
+      }
       if (normalizedDescription.length < 24) errors.push(`Tomada ${shot.index + 1}: descricao visual pouco especifica`);
       if (globalTexts.includes(normalizedDescription)) errors.push(`Tomada ${shot.index + 1}: descricao repete a narrativa global`);
       if (/\b(foco visual|entidades presentes|nao aparecem|permitidos|proibidos)\s*:/.test(normalizedDescription)) {
@@ -245,10 +253,10 @@ export class ChildrenClipPlanningService {
       const camera = this.clean(generated.camera) || cameras[index % cameras.length];
       const narrativeGuidance = this.clean(storyBeat?.visualGuidance);
       const action = this.clean(generated.action) || this.clean(legacySectionPlan?.action) || (narrativeGuidance
-        ? `${narrativeGuidance}${skeleton.lyricText ? ` Interpretar especificamente a letra "${skeleton.lyricText}".` : ''}`
+        ? `Momento ${skeleton.localIndex + 1}: ${narrativeGuidance}${skeleton.lyricText ? ` Interpretar especificamente a letra "${skeleton.lyricText}".` : ''}`
         : skeleton.lyricText
-          ? `Representar visualmente o momento da letra "${skeleton.lyricText}" com uma acao unica, clara e infantil`
-          : `Criar um momento instrumental especifico da secao ${skeleton.sectionTitle}, com gestos simples no ritmo`);
+          ? `Momento ${skeleton.localIndex + 1}: representar visualmente a letra "${skeleton.lyricText}" com uma acao unica, clara e infantil`
+          : `Momento ${skeleton.localIndex + 1}: criar uma acao instrumental especifica da secao ${skeleton.sectionTitle}, com gestos simples no ritmo`);
       const purpose = this.clean(generated.purpose) || this.clean(storyBeat?.purpose) || `Contar visualmente o trecho ${skeleton.localIndex + 1} da secao ${skeleton.sectionTitle}`;
       const emotion = this.clean(generated.emotion) || this.clean(legacySectionPlan?.mood) || 'alegre e acolhedor';
       const motionIntent = this.clean(generated.motionIntent) || 'movimento simples, legivel e sincronizado com a musica';

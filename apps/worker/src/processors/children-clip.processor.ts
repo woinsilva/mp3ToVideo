@@ -30,7 +30,7 @@ interface OptimizedCharacterPrompt {
 }
 
 interface ShotPlanningDraft {
-  version: 1;
+  version: 2;
   signature: string;
   globalCreative?: CreativePlanResponse | null;
   batches: Array<{ batchIndex: number; response: CreativePlanResponse }>;
@@ -701,9 +701,9 @@ export class ChildrenClipProcessor {
       });
       const jobDataWithDraft = job.data as ChildrenClipPlanGenerationJobPayload & { shotPlanningDraft?: ShotPlanningDraft };
       const savedDraft = jobDataWithDraft.shotPlanningDraft;
-      const planningDraft: ShotPlanningDraft = savedDraft?.version === 1 && savedDraft.signature === draftSignature
+      const planningDraft: ShotPlanningDraft = savedDraft?.version === 2 && savedDraft.signature === draftSignature
         ? savedDraft
-        : { version: 1, signature: draftSignature, batches: [] };
+        : { version: 2, signature: draftSignature, batches: [] };
       const persistDraft = async () => job.updateData({ ...job.data, shotPlanningDraft: planningDraft } as ChildrenClipPlanGenerationJobPayload);
       let globalCreative: CreativePlanResponse | null = planningDraft.globalCreative ?? null;
       if (mode === 'full' && !project.childrenClipPlan?.visualBible && !globalCreative) {
@@ -839,6 +839,11 @@ export class ChildrenClipProcessor {
           const plan = [...generatedShotPlans].reverse().find((candidate) => candidate.shotIndex === shot.index);
           return plan ? [plan] : [];
         });
+        const previousAuditedShotPlans = auditedShotPlans.slice(-2);
+        const nextSourceShotPlans = generatedShotPlans
+          .filter((plan) => typeof plan.shotIndex === 'number' && plan.shotIndex > batch[0].index)
+          .sort((left, right) => left.shotIndex! - right.shotIndex!)
+          .slice(0, 2);
         if (sourcePlans.length !== batch.length) throw new Error(`Auditoria bloqueada: faltam tomadas no lote ${batchIndex + 1}`);
         const cachedAudit = planningDraft.audits?.find((item) => item.batchIndex === batchIndex)?.response;
         const auditProgress = 48 + Math.floor((batchIndex / Math.max(1, auditBatches.length)) * 18);
@@ -858,6 +863,10 @@ export class ChildrenClipProcessor {
                 'No entity in forbiddenEntities may be described as visible or acting in action, composition, camera, purpose, motionIntent, continuity or characterPlacement.',
                 'Prose fields must describe only what is visibly happening. Never insert labels or lists such as Focus, Allowed entities, Forbidden entities, Entities present or Do not appear into prose fields.',
                 'Respect characterIntroductionOrder and the synchronized lyric moment. Do not introduce future entities early.',
+                'Treat the nearby shot plans as mandatory continuity context. The current action and purpose must visibly advance the story from the previous audited shot and prepare the next planned shot.',
+                'Write one concrete, filmable action tied to the supplied synchronized lyrics. Avoid generic filler such as merely moving smoothly, playing, dancing or continuing the prior action without a new visible beat.',
+                'Never repeat the previous action verbatim. When lyrics or a chorus repeat, vary the gesture, staging, interaction, composition or camera while preserving the musical motif.',
+                'continuityFromPreviousShot must state what spatial or visual element is preserved and what changes in this shot.',
                 'Location name and description contain environment only. Preserve valid creative intent, timing and location continuity.',
                 'Every shotPlan must include: shotIndex, purpose, locationKey, locationName, locationDescription, timeOfDay, primaryFocus, allowedEntities, forbiddenEntities, objects, action, composition, camera, emotion, motionIntent, continuityFromPreviousShot, characterPlacement, backgroundSafeZones, grounding.'
               ].join(' ')
@@ -870,6 +879,8 @@ export class ChildrenClipProcessor {
                 narrativeContext: this.compactNarrativeContext(baseNarrative, batch.map((item) => item.sectionTitle)),
                 shots: batch,
                 shotPlansToAudit: sourcePlans,
+                previousAuditedShotPlans,
+                nextPlannedShotPlans: nextSourceShotPlans,
                 revisionInstruction: revisionInstruction || null
               })
             }

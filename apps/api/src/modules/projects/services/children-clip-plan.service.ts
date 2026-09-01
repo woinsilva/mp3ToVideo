@@ -222,6 +222,7 @@ export class ChildrenClipPlanService {
     const narrative = project.childrenClipPlan?.narrative;
     const global = narrative && typeof narrative === 'object' && !Array.isArray(narrative) ? narrative as Record<string, unknown> : {};
     const summaries = [global.summary, global.logline].filter((item): item is string => typeof item === 'string').map((item) => this.normalize(item));
+    const actionOwners = new Map<string, number>();
     for (const shot of project.childrenClipShots) {
       if (!shot.purpose.trim() || !shot.locationId) throw new BadRequestException(`Replaneje a tomada ${shot.index + 1}: faltam dados semanticos ou localizacao.`);
       const allowed = this.stringArray(shot.characterVersionIds);
@@ -230,6 +231,12 @@ export class ChildrenClipPlanService {
       if (allowed.some((id) => forbidden.includes(id))) throw new BadRequestException(`Tomada ${shot.index + 1}: uma entidade esta permitida e proibida ao mesmo tempo.`);
       if ([...allowed, ...forbidden].some((id) => !knownIds.has(id))) throw new BadRequestException(`Tomada ${shot.index + 1}: existe uma entidade desconhecida.`);
       const normalizedDescription = this.normalize(shot.description);
+      const normalizedAction = this.normalize(shot.characterAction);
+      const previousActionOwner = actionOwners.get(normalizedAction);
+      if (normalizedAction && previousActionOwner !== undefined) {
+        throw new BadRequestException(`Tomada ${shot.index + 1}: a acao visual repete exatamente a tomada ${previousActionOwner + 1}. Replaneje ou edite uma das tomadas.`);
+      }
+      if (normalizedAction) actionOwners.set(normalizedAction, shot.index);
       if (summaries.includes(normalizedDescription)) throw new BadRequestException(`Tomada ${shot.index + 1}: a descricao repete a narrativa global.`);
       if (/\b(foco visual|entidades presentes|nao aparecem|permitidos|proibidos)\s*:/.test(normalizedDescription)) {
         throw new BadRequestException(`Tomada ${shot.index + 1}: a descricao visual mistura narrativa com metadados de entidades.`);
