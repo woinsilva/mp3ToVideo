@@ -47,7 +47,7 @@ export class OllamaClientService {
 
   private async generateJsonWithGpu<T>(messages: OllamaChatMessage[]): Promise<T | null> {
     const baseUrl = this.configService.get<string>('ai.ollamaBaseUrl', 'http://localhost:11434');
-    const model = this.configService.get<string>('ai.ollamaModel', 'qwen3:8b');
+    const model = this.configService.get<string>('ai.ollamaModel', 'qwen3:14b');
     const timeoutMs = this.configService.get<number>('ai.ollamaTimeoutMs', 180000);
     const keepAlive = this.configService.get<string>('ai.ollamaKeepAlive', '0s');
     const think = this.configService.get<boolean>('ai.ollamaThink', false);

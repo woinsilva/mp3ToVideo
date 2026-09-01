@@ -39,7 +39,7 @@ export const configuration = () => ({
     enableFallbacks: process.env.ENABLE_AI_FALLBACKS !== 'false',
     enableOllama: process.env.ENABLE_OLLAMA === 'true',
     ollamaBaseUrl: process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434',
-    ollamaModel: process.env.OLLAMA_MODEL ?? 'qwen3:8b',
+    ollamaModel: process.env.OLLAMA_MODEL ?? 'qwen3:14b',
     ollamaTimeoutMs: Number(process.env.OLLAMA_TIMEOUT_MS ?? 180000),
     ollamaKeepAlive: process.env.OLLAMA_KEEP_ALIVE ?? '0s',
     ollamaThink: process.env.OLLAMA_THINK === 'true'

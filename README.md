@@ -257,7 +257,7 @@ Implementado parcialmente:
 - o frontend baixa o MP4 autenticado via `fetch`, nao via link publico
 - o `docker-compose.yml` sobe Postgres, Redis e Ollama; API, worker e frontend rodam por `pnpm dev`
 - o ComfyUI executa diretamente no Windows e nao faz parte do `docker-compose.yml`
-- o modelo padrao sugerido para GPU local com 12 GB e `qwen3:8b`
+- o modelo padrao para planejamento e assistente em GPU local com 12 GB e `qwen3:14b`; nesta stack ele ocupa aproximadamente 9 GB de VRAM
 - o modelo padrao sugerido para transcricao local e `distil-large-v3`
 - para a camada visual local, o worker agora tenta `ComfyUI Wan2.2 -> video por cena`, depois cai para `ComfyUI -> imagem por cena -> animacao no ffmpeg`
 

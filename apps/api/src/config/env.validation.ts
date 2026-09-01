@@ -14,7 +14,7 @@ export const envValidationSchema = Joi.object({
   GPU_LEASE_POLL_MS: Joi.number().integer().min(100).default(1000),
   ENABLE_OLLAMA: Joi.boolean().truthy('true').falsy('false').default(false),
   OLLAMA_BASE_URL: Joi.string().uri({ scheme: ['http', 'https'] }).default('http://localhost:11434'),
-  OLLAMA_MODEL: Joi.string().default('qwen3:8b'),
+  OLLAMA_MODEL: Joi.string().default('qwen3:14b'),
   OLLAMA_TIMEOUT_MS: Joi.number().integer().positive().default(600000),
   OLLAMA_KEEP_ALIVE: Joi.string().default('0s'),
   OLLAMA_THINK: Joi.boolean().truthy('true').falsy('false').default(false),

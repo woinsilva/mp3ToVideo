@@ -228,7 +228,7 @@ O Redis armazena a fila e o estado operacional do BullMQ.
 | Contêiner | `video-ollama` |
 | Porta publicada | `11434` |
 | Volume | `ollama_data` |
-| Modelo configurado | `qwen3:8b` |
+| Modelo configurado | `qwen3:14b` |
 | Keep-alive | 24 horas |
 
 Um contêiner auxiliar chamado `video-ollama-model`, baseado em `curlimages/curl:8.12.1`, chama a API do Ollama para baixar o modelo configurado.

@@ -30,7 +30,7 @@ export class AssistantService {
     }
 
     const baseUrl = this.config.get<string>('ai.ollamaBaseUrl', 'http://localhost:11434');
-    const model = this.config.get<string>('ai.ollamaModel', 'qwen3:8b');
+    const model = this.config.get<string>('ai.ollamaModel', 'qwen3:14b');
     const timeoutMs = this.config.get<number>('ai.ollamaTimeoutMs', 600_000);
     const context = input.context;
     const system = [
