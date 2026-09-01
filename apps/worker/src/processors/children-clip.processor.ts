@@ -903,6 +903,8 @@ export class ChildrenClipProcessor {
           const rejected = reconciled[0];
           const rejectionReason = this.shotAuditIssue(rejected, auditedShotPlans, entityIntroductionSchedule, batch[0].index);
           if (!rejectionReason) break;
+          const eligibleEntityNames = entityIntroductionSchedule.filter((entity) => entity.firstShotIndex <= batch[0].index).map((entity) => entity.name);
+          const rebuildWithoutRejectedPlan = rejectionReason !== 'acao visual repetida';
           const conflicting = auditedShotPlans.filter((previous) => this.normalizeShotText(previous.action) === this.normalizeShotText(rejected.action));
           await this.planProgress(job, auditProgress, 'REPAIRING_SHOT_CONTINUITY', `Corrigindo a tomada ${batch[0].index + 1}: ${rejectionReason} (tentativa ${repairAttempt + 1}/3).`);
           const rawRepair = await this.withPlanHeartbeat(job, this.ollama.generateJson<CreativePlanResponse>([
@@ -916,6 +918,7 @@ export class ChildrenClipProcessor {
                 'eligibleEntityNames is the exhaustive list of entities allowed to be visible in this shot.',
                 'Remove every futureEntityName from allowedEntities, characters, primaryFocus, action, purpose, composition, camera, motionIntent, continuityFromPreviousShot and characterPlacement, even when the rejected plan contains it.',
                 'When removing a future entity, rewrite the visible beat around eligible entities and the environment; never mention the absent entity negatively.',
+                'When rebuildFromScratch is true, create the shot from the lyric and eligibleEntityNames only. Do not infer, copy or restore entities from the rejected plan.',
                 'No forbidden entity may appear in any positive prose or placement field. Return all fields from the rejected shot plan.'
               ].join(' ')
             },
@@ -925,12 +928,18 @@ export class ChildrenClipProcessor {
                 title: project.title,
                 shot: batch[0],
                 rejectionReason,
-                rejectedShotPlan: rejected,
+                rebuildFromScratch: rebuildWithoutRejectedPlan,
+                rejectedShotPlan: rebuildWithoutRejectedPlan ? null : rejected,
+                locationToPreserve: {
+                  locationKey: rejected.locationKey,
+                  locationName: rejected.locationName,
+                  locationDescription: rejected.locationDescription,
+                  timeOfDay: rejected.timeOfDay
+                },
                 conflictingPriorShotPlans: conflicting,
                 allPriorActions: auditedShotPlans.map((plan) => ({ shotIndex: plan.shotIndex, action: plan.action })),
                 nextPlannedShotPlans: nextSourceShotPlans,
-                approvedEntityNames: characters.map((character) => character.name),
-                eligibleEntityNames: entityIntroductionSchedule.filter((entity) => entity.firstShotIndex <= batch[0].index).map((entity) => entity.name),
+                eligibleEntityNames,
                 futureEntityNames: entityIntroductionSchedule.filter((entity) => entity.firstShotIndex > batch[0].index).map((entity) => entity.name),
                 revisionInstruction: revisionInstruction || null
               })
