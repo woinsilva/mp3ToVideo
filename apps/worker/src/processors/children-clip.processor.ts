@@ -953,7 +953,12 @@ export class ChildrenClipProcessor {
           audited = repairPlans;
           reconciled = repairPlans.map((plan) => this.planning.reconcileAuditedShotPlan(plan, characters));
         }
-        const remainingIssue = this.shotAuditIssue(reconciled[0], auditedShotPlans, entityIntroductionSchedule, batch[0].index);
+        let remainingIssue = this.shotAuditIssue(reconciled[0], auditedShotPlans, entityIntroductionSchedule, batch[0].index);
+        if (remainingIssue && remainingIssue !== 'acao visual repetida') {
+          reconciled = [this.deterministicSafeShotRepair(reconciled[0], batch[0], entityIntroductionSchedule)];
+          remainingIssue = this.shotAuditIssue(reconciled[0], auditedShotPlans, entityIntroductionSchedule, batch[0].index);
+          await this.planProgress(job, auditProgress, 'APPLYING_DETERMINISTIC_SHOT_REPAIR', `Aplicando fallback seguro e coerente na tomada ${batch[0].index + 1}.`);
+        }
         if (remainingIssue) throw new Error(`A segunda IA nao conseguiu corrigir a tomada ${batch[0].index + 1} apos 3 reparos direcionados: ${remainingIssue}`);
         audit = { shotPlans: reconciled };
         planningDraft.audits = [...(planningDraft.audits ?? []).filter((item) => item.batchIndex !== batchIndex), { batchIndex, response: audit }];
@@ -1746,6 +1751,61 @@ export class ChildrenClipProcessor {
 
   private escapeRegExp(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  private deterministicSafeShotRepair(
+    plan: CreativeShotPlan,
+    shot: { index: number; lyricText: string | null },
+    introductionSchedule: Array<{ name: string; type: string; firstShotIndex: number }>
+  ): CreativeShotPlan {
+    const eligible = introductionSchedule.filter((entity) => entity.firstShotIndex <= shot.index);
+    const eligibleNames = new Set(eligible.map((entity) => this.normalizeShotText(entity.name)));
+    const requested = [...(plan.allowedEntities ?? []), ...(plan.characters ?? [])]
+      .filter((name) => eligibleNames.has(this.normalizeShotText(name)));
+    const allowed = [...new Set(requested.length ? requested : eligible.slice(0, 2).map((entity) => entity.name))];
+    const vehicle = eligible.find((entity) => /\b(vehicle|veiculo|trem|train|bus|onibus)\b/.test(this.normalizeShotText(entity.type)) && allowed.includes(entity.name));
+    const actors = eligible.filter((entity) => allowed.includes(entity.name) && entity.name !== vehicle?.name);
+    const lead = actors[0]?.name ?? vehicle?.name ?? eligible[0]?.name ?? 'O protagonista';
+    const companion = actors[1]?.name;
+    const lyric = this.normalizeShotText(shot.lyricText);
+    const direction = ['pela esquerda', 'ao centro', 'pela direita'][shot.index % 3];
+    let action: string;
+    let purpose: string;
+    if (/\b(bate palma|palmas|bate o pe)\b/.test(lyric)) {
+      action = `${lead}${companion ? ` e ${companion}` : ''} marca o ritmo com palmas e passos simples ${direction}`;
+      purpose = 'Transformar o comando musical em um gesto claro que a crianca possa acompanhar';
+    } else if (/\b(embarcar|vagao|entrou)\b/.test(lyric) && vehicle) {
+      action = actors.length ? `${lead} entra pela porta lateral de ${vehicle.name}, parado na plataforma, enquanto os demais acenam` : `${vehicle.name} abre a porta lateral enquanto permanece parado na plataforma`;
+      purpose = 'Mostrar o embarque de forma segura e legivel';
+    } else if (/\b(devagar|desaceler)\b/.test(lyric) && vehicle) {
+      action = `${vehicle.name} reduz a velocidade nos trilhos enquanto ${lead === vehicle.name ? 'a paisagem' : lead} acompanha o movimento ${direction}`;
+      purpose = 'Representar visualmente a mudanca para o ritmo lento';
+    } else if (/\b(aceler|vai sair|passeando|trenzinho|trem)\b/.test(lyric) && vehicle) {
+      action = `${vehicle.name} inicia a partida pelos trilhos enquanto ${lead === vehicle.name ? 'a sinalizacao da plataforma' : lead} marca a saida com um aceno ${direction}`;
+      purpose = 'Mostrar a partida e fazer a historia avancar com seguranca';
+    } else if (/\b(pula|pular)\b/.test(lyric)) {
+      action = `${lead}${companion ? ` e ${companion}` : ''} pula no chao ao lado da plataforma e aterrissa com equilibrio ${direction}`;
+      purpose = 'Representar o verbo da letra com um movimento infantil seguro';
+    } else {
+      action = `${lead}${companion ? ` e ${companion}` : ''} reage ao novo momento musical com um gesto claro ${direction}`;
+      purpose = 'Criar um novo acontecimento visual coerente com o trecho sincronizado';
+    }
+    const focus = allowed.find((name) => this.normalizeShotText(name) === this.normalizeShotText(plan.primaryFocus)) ?? allowed[0] ?? null;
+    return {
+      ...plan,
+      purpose,
+      primaryFocus: focus ?? undefined,
+      allowedEntities: allowed,
+      characters: allowed,
+      forbiddenEntities: introductionSchedule.filter((entity) => !allowed.includes(entity.name)).map((entity) => entity.name),
+      action,
+      composition: `${focus ?? 'Acao principal'} ${direction}, com leitura clara do ambiente`,
+      camera: `acompanhamento suave ${direction}`,
+      motionIntent: 'um unico movimento principal, simples, seguro e sincronizado com a musica',
+      continuityFromPreviousShot: `preservar o local e a orientacao espacial, mudando a acao principal ${direction}`,
+      characterPlacement: (plan.characterPlacement ?? []).filter((placement) => placement.entity && allowed.includes(placement.entity)),
+      semanticAuditPassed: true
+    };
   }
 
   private compactNarrativeContext(value: unknown, sectionTitles: string[]) {
