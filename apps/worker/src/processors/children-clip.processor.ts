@@ -906,6 +906,11 @@ export class ChildrenClipProcessor {
           throw new Error(`A segunda IA retornou uma auditoria incompleta ou com indices invalidos no lote ${batchIndex + 1}`);
         }
         let reconciled = audited.map((plan) => this.planning.reconcileAuditedShotPlan(plan, characters));
+        const firstIssue = this.shotAuditIssue(reconciled[0], auditedShotPlans, entityIntroductionSchedule, batch[0].index);
+        if (firstIssue?.startsWith('entidade futura ')) {
+          reconciled = [this.deterministicSafeShotRepair(reconciled[0], batch[0], entityIntroductionSchedule, auditedShotPlans)];
+          await this.planProgress(job, auditProgress, 'APPLYING_DETERMINISTIC_SHOT_REPAIR', `Removendo entidade antecipada da tomada ${batch[0].index + 1} sem novas chamadas de IA.`);
+        }
         for (let repairAttempt = 0; repairAttempt < 3; repairAttempt += 1) {
           const rejected = reconciled[0];
           const rejectionReason = this.shotAuditIssue(rejected, auditedShotPlans, entityIntroductionSchedule, batch[0].index);
@@ -966,7 +971,7 @@ export class ChildrenClipProcessor {
         }
         let remainingIssue = this.shotAuditIssue(reconciled[0], auditedShotPlans, entityIntroductionSchedule, batch[0].index);
         if (remainingIssue && remainingIssue !== 'acao visual repetida') {
-          reconciled = [this.deterministicSafeShotRepair(reconciled[0], batch[0], entityIntroductionSchedule)];
+          reconciled = [this.deterministicSafeShotRepair(reconciled[0], batch[0], entityIntroductionSchedule, auditedShotPlans)];
           remainingIssue = this.shotAuditIssue(reconciled[0], auditedShotPlans, entityIntroductionSchedule, batch[0].index);
           await this.planProgress(job, auditProgress, 'APPLYING_DETERMINISTIC_SHOT_REPAIR', `Aplicando fallback seguro e coerente na tomada ${batch[0].index + 1}.`);
         }
@@ -1778,7 +1783,8 @@ export class ChildrenClipProcessor {
   private deterministicSafeShotRepair(
     plan: CreativeShotPlan,
     shot: { index: number; lyricText: string | null },
-    introductionSchedule: Array<{ name: string; type: string; firstShotIndex: number }>
+    introductionSchedule: Array<{ name: string; type: string; firstShotIndex: number }>,
+    previousPlans: CreativeShotPlan[] = []
   ): CreativeShotPlan {
     const eligible = introductionSchedule.filter((entity) => entity.firstShotIndex <= shot.index);
     const debuting = eligible.filter((entity) => entity.firstShotIndex === shot.index);
@@ -1810,14 +1816,33 @@ export class ChildrenClipProcessor {
     } else if (/\b(devagar|desaceler)\b/.test(lyric) && vehicle) {
       action = `${vehicle.name} reduz a velocidade nos trilhos enquanto ${lead === vehicle.name ? 'a paisagem' : lead} acompanha o movimento ${direction}`;
       purpose = 'Representar visualmente a mudanca para o ritmo lento';
-    } else if (/\b(aceler|vai sair|passeando|trenzinho|trem)\b/.test(lyric) && vehicle) {
-      action = `${vehicle.name} inicia a partida pelos trilhos enquanto ${lead === vehicle.name ? 'a sinalizacao da plataforma' : lead} marca a saida com um aceno ${direction}`;
+    } else if (/\b(piui|aceler|vai sair|passeando|trenzinho|trem)\b/.test(lyric) && vehicle) {
+      const observer = lead === vehicle.name ? 'a sinalizacao da plataforma' : lead;
+      const vehicleBeats = [
+        `${vehicle.name} acende o farol e soa o apito enquanto ${observer} ergue uma bandeira colorida em area segura`,
+        `${vehicle.name} fecha as portas e ilumina o sinal de partida enquanto ${observer} faz a contagem regressiva na plataforma`,
+        `${vehicle.name} avanca pelos trilhos e cruza o relogio da estacao enquanto ${observer} observa de uma zona protegida`,
+        `${vehicle.name} passa por um arco de flores enquanto ${observer} aponta o caminho a partir da plataforma`,
+        `${vehicle.name} mostra as rodas girando em detalhe enquanto ${observer} celebra a viagem longe dos trilhos`,
+        `${vehicle.name} alcanca a placa seguinte da estacao enquanto ${observer} acena de um ponto seguro`
+      ];
+      action = vehicleBeats.find((candidate) => !previousPlans.some((previous) => shotActionsAreTooSimilar(previous.action, candidate)))
+        ?? vehicleBeats[shot.index % vehicleBeats.length];
       purpose = 'Mostrar a partida e fazer a historia avancar com seguranca';
     } else if (/\b(pula|pular)\b/.test(lyric)) {
       action = `${subject} ${plural ? 'pulam' : 'pula'} no chao ao lado da plataforma e ${plural ? 'aterrissam' : 'aterrissa'} com equilibrio ${direction}`;
       purpose = 'Representar o verbo da letra com um movimento infantil seguro';
     } else {
-      action = `${subject} ${plural ? 'reagem' : 'reage'} ao novo momento musical com um gesto claro ${direction}`;
+      const neutralBeats = [
+        `${subject} ${plural ? 'apontam' : 'aponta'} para o elemento principal da cena ${direction}`,
+        `${subject} ${plural ? 'fazem' : 'faz'} uma contagem com os dedos ${direction}`,
+        `${subject} ${plural ? 'respondem' : 'responde'} ao som com um aceno curto ${direction}`,
+        `${subject} ${plural ? 'mostram' : 'mostra'} uma placa ilustrada sem texto ${direction}`,
+        `${subject} ${plural ? 'mudam' : 'muda'} de pose no pulso musical ${direction}`,
+        `${subject} ${plural ? 'celebram' : 'celebra'} o novo compasso com um giro no chao ${direction}`
+      ];
+      action = neutralBeats.find((candidate) => !previousPlans.some((previous) => shotActionsAreTooSimilar(previous.action, candidate)))
+        ?? neutralBeats[shot.index % neutralBeats.length];
       purpose = 'Criar um novo acontecimento visual coerente com o trecho sincronizado';
     }
     const focus = allowed.find((name) => this.normalizeShotText(name) === this.normalizeShotText(plan.primaryFocus)) ?? allowed[0] ?? null;
