@@ -27,6 +27,77 @@ export const CHILDREN_CLIP_HERO_SHOT_JOB_NAME = 'children-clip.shot.wan';
 export const CHILDREN_CLIP_FINAL_RENDER_JOB_NAME = 'children-clip.final.render';
 export const GPU_LEASE_KEY = 'video-saas:gpu:lease';
 
+const SHOT_ACTION_STOP_WORDS = new Set([
+  'a', 'ao', 'aos', 'as', 'com', 'da', 'das', 'de', 'do', 'dos', 'e', 'em', 'enquanto', 'no', 'nos', 'o', 'os',
+  'para', 'pela', 'pelas', 'pelo', 'pelos', 'que', 'se', 'um', 'uma', 'uns', 'umas', 'seu', 'sua', 'seus', 'suas',
+  'centro', 'direita', 'esquerda', 'fundo', 'cena', 'ritmo', 'musica', 'suave', 'suavemente', 'animado', 'animada',
+  'animados', 'animadas', 'alegre', 'alegres', 'movimento', 'movimentos'
+]);
+
+export function normalizeShotSemantics(value: unknown): string {
+  return typeof value === 'string'
+    ? value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim()
+    : '';
+}
+
+function shotActionTokens(value: unknown): Set<string> {
+  const normalized = normalizeShotSemantics(value)
+    .replace(/\b(mais|muito|ligeiramente|novamente|outra vez)\b/g, ' ')
+    .replace(/\b(inicia|iniciam|comeca|comecam|comecou|iniciou)\b/g, ' iniciar ')
+    .replace(/\b(danca|dancam|dancando)\b/g, ' dancar ')
+    .replace(/\b(pula|pulam|pulando)\b/g, ' pular ')
+    .replace(/\b(corre|correm|correndo)\b/g, ' correr ')
+    .replace(/\b(acena|acenam|acenando)\b/g, ' acenar ');
+  return new Set(normalized.split(' ').filter((token) => token.length > 2 && !SHOT_ACTION_STOP_WORDS.has(token)));
+}
+
+export function shotActionsAreTooSimilar(left: unknown, right: unknown): boolean {
+  const normalizedLeft = normalizeShotSemantics(left);
+  const normalizedRight = normalizeShotSemantics(right);
+  if (!normalizedLeft || !normalizedRight) return false;
+  if (normalizedLeft === normalizedRight) return true;
+  const leftTokens = shotActionTokens(left);
+  const rightTokens = shotActionTokens(right);
+  if (Math.min(leftTokens.size, rightTokens.size) < 4) return false;
+  const intersection = [...leftTokens].filter((token) => rightTokens.has(token)).length;
+  const union = new Set([...leftTokens, ...rightTokens]).size;
+  const jaccard = union ? intersection / union : 0;
+  const containment = intersection / Math.min(leftTokens.size, rightTokens.size);
+  return jaccard >= 0.68 || containment >= 0.82;
+}
+
+export function vehicleActionIssue(value: unknown, vehicleNames: string[]): string | null {
+  const text = normalizeShotSemantics(value);
+  if (!text) return null;
+  const escapedVehicles = vehicleNames
+    .map((name) => normalizeShotSemantics(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .filter(Boolean);
+  const vehicleTerm = escapedVehicles.length ? `(?:trem|veiculo|carro|onibus|${escapedVehicles.join('|')})` : '(?:trem|veiculo|carro|onibus)';
+  if (new RegExp(`\\b(em cima|sobre o teto) d[oa] ${vehicleTerm}\\b`).test(text)) return 'personagem em cima de um veiculo';
+  if (/\b(sobre uma trilha|brinca(?:m)? com (?:as )?trilh|danca(?:m)? (?:nos?|sobre os?) trilhos|fica(?:m)? (?:nos?|sobre os?) trilhos)\b/.test(text)) return 'personagem vivo nos trilhos';
+  if (new RegExp(`\\b(segura|seguram|puxa|puxam|empurra|empurram)\\b.{0,50}\\b${vehicleTerm}\\b`).test(text)) return 'personagem manipulando veiculo de forma incoerente';
+
+  const boarding = /\b(entra|entram|embarcam?)\b.{0,60}\b(porta|entrada|vagao|trem|pipo express)\b/.test(text)
+    || /\b(pula|pulam|salta|saltam)\b.{0,35}\b(dentro|para dentro|vagao)\b/.test(text);
+  if (boarding && (!/\b(porta|entrada)\b/.test(text) || !/\b(parado|parada|imovel|estacionado|estacionada)\b/.test(text))) {
+    return 'embarque sem porta e veiculo parado';
+  }
+
+  const movingVehicle = new RegExp(`\\b${vehicleTerm}\\b.{0,70}\\b(move|movem|mover|movendo|movimenta|movimentam|passa|avanca|acelera|parte|faz uma curva)\\b`).test(text);
+  if (movingVehicle && /\b(corre|correm|danca|dancam|pula|pulam)\b.{0,45}\b(ao (?:seu )?lado|ao redor|em volta|acompanha|acompanham)\b/.test(text)) {
+    return 'personagem acompanhando veiculo em movimento de forma insegura';
+  }
+  if (movingVehicle && /\b(ao lado|ao redor|em volta)\b.{0,45}\b(corre|correm|danca|dancam|pula|pulam)\b/.test(text)) {
+    return 'personagem acompanhando veiculo em movimento de forma insegura';
+  }
+  for (const vehicle of escapedVehicles) {
+    if (new RegExp(`\\b${vehicle}\\b(?: tambem| alegremente| junto)? \\b(pula|pulam|danca|dancam|abraca|abracam|bate palmas|cantam?)\\b`).test(text)) {
+      return 'veiculo executando acao corporal de personagem vivo';
+    }
+  }
+  return null;
+}
+
 export interface ProjectProcessingJobPayload {
   projectId: string;
   organizationId: string;

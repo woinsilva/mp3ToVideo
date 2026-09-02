@@ -1,8 +1,39 @@
 import { describe, expect, it } from 'vitest';
 
 import { ChildrenClipPlanningService } from '../../../apps/worker/src/services/children-clip-planning.service';
+import { shotActionsAreTooSimilar, vehicleActionIssue } from '@video/shared';
 
 describe('ChildrenClipPlanningService', () => {
+  it('detects cosmetically changed actions as the same visual beat', () => {
+    expect(shotActionsAreTooSimilar(
+      'Pipo Express inicia a partida pelos trilhos enquanto Lia marca a saida com um aceno ao centro',
+      'Pipo Express inicia a partida pelos trilhos enquanto Lia marca a saida com um aceno pela direita'
+    )).toBe(true);
+    expect(shotActionsAreTooSimilar(
+      'Toto salta sobre tres marcas coloridas no chao',
+      'Mimi abre a porta do vagao parado e entra com cuidado'
+    )).toBe(false);
+  });
+
+  it('detects unsafe or physically impossible vehicle actions', () => {
+    expect(vehicleActionIssue(
+      'Pipo Express se move pelos trilhos enquanto Toto corre ao lado dele',
+      ['Pipo Express']
+    )).toMatch(/movimento/);
+    expect(vehicleActionIssue(
+      'Lia, Toto e Pipo Express pulam juntos',
+      ['Pipo Express']
+    )).toMatch(/veiculo/);
+    expect(vehicleActionIssue(
+      'Mimi pula para dentro do vagao',
+      ['Pipo Express']
+    )).toMatch(/embarque/);
+    expect(vehicleActionIssue(
+      'Mimi entra pela porta do Pipo Express parado na plataforma',
+      ['Pipo Express']
+    )).toBeNull();
+  });
+
   it('builds a contiguous beat-snapped timeline covering the whole song', () => {
     const service = new ChildrenClipPlanningService();
     const result = service.build({
@@ -147,7 +178,7 @@ describe('ChildrenClipPlanningService', () => {
       title: 'Pipo Express', concept: 'Uma viagem musical', visualStyle: '2D colorido', audienceAgeMin: 2, audienceAgeMax: 6,
       durationSeconds: 7, beatGrid: [0, 7],
       sections: [{ id: 'intro', title: 'Intro', type: 'intro', startSeconds: 0, endSeconds: 7, lyricsExcerpt: null, energy: 0.5 }],
-      cues: [{ text: 'O trem vai sair', startSeconds: 0, endSeconds: 7 }],
+      cues: [{ text: 'Hora de comecar', startSeconds: 0, endSeconds: 7 }],
       characters: [
         { name: 'Lia', roleName: 'Guia', versionId: 'lia-v1', description: 'menina guia' },
         { name: 'Pipo Express', roleName: 'Trem', versionId: 'pipo-v1', description: 'trem colorido' }
@@ -352,5 +383,18 @@ describe('ChildrenClipPlanningService', () => {
       { name: 'Mimi', type: 'animal', firstShotIndex: 2 },
       { name: 'Lilo', type: 'animal', firstShotIndex: 3 }
     ]);
+  });
+
+  it('does not postpone an entity beyond its first lyric cue', () => {
+    const service = new ChildrenClipPlanningService();
+    const skeletons = [
+      { index: 0, localIndex: 0, sectionId: 's1', sectionTitle: 'Intro', sectionType: 'intro', startSeconds: 0, endSeconds: 5, lyricText: 'Chegou com bigode e sapatinho' },
+      { index: 1, localIndex: 1, sectionId: 's1', sectionTitle: 'Intro', sectionType: 'intro', startSeconds: 5, endSeconds: 10, lyricText: 'Miau, miau' }
+    ];
+    expect(service.entityIntroductionSchedule(skeletons, [
+      { name: 'Mimi', roleName: null, versionId: 'mimi', description: 'pequena gatinha' }
+    ], { characterRules: [{ name: 'Mimi', type: 'animal', identity: 'gatinha lavanda' }] }, {
+      entityIntroductions: [{ entityName: 'Mimi', firstShotIndex: 1 }]
+    })).toEqual([{ name: 'Mimi', type: 'animal', firstShotIndex: 0 }]);
   });
 });

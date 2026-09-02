@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { vehicleActionIssue } from '@video/shared';
 
 interface PlanningSection { id: string; title: string; type: string; startSeconds: number; endSeconds: number; lyricsExcerpt: string | null; energy: number | null; }
 interface PlanningCue { text: string; startSeconds: number; endSeconds: number; }
@@ -185,8 +186,9 @@ export class ChildrenClipPlanningService {
       for (const id of forbidden) if (!knownIds.has(id)) errors.push(`Tomada ${shot.index + 1}: entidade proibida desconhecida`);
       const normalizedDescription = this.normalize(shot.description);
       const normalizedAction = this.normalize(shot.characterAction);
-      if (this.hasUnsafeVehicleStaging(normalizedAction, vehicleNames)) {
-        errors.push(`Tomada ${shot.index + 1}: acao coloca personagem em cima de um veiculo em movimento`);
+      const physicalIssue = vehicleActionIssue(normalizedAction, vehicleNames);
+      if (physicalIssue) {
+        errors.push(`Tomada ${shot.index + 1}: ${physicalIssue}`);
       }
       const previousActionOwner = actionOwners.get(normalizedAction);
       if (normalizedAction && previousActionOwner !== undefined) {
@@ -367,14 +369,17 @@ export class ChildrenClipPlanningService {
     const storyBeats = Array.isArray(narrative.storyBeats) ? narrative.storyBeats : [];
     const introductionOrder = Array.isArray(narrative.characterIntroductionOrder) ? narrative.characterIntroductionOrder : [];
     entities.forEach((entity, entityIndex) => {
-      const explicitRule = explicit.find((item) => this.sameText(item.entityName, entity.name));
-      const explicitShot = Number(explicitRule?.firstShotIndex);
-      if (Number.isInteger(explicitShot) && explicitShot >= 0) { introductions.set(entity.versionId, explicitShot); return; }
       const lyricAliases = this.entityLyricAliases(entity);
       const lyricMention = skeletons.find((shot) => {
         const lyric = this.normalize(shot.lyricText);
         return lyricAliases.some((alias) => this.containsName(lyric, alias));
       });
+      const explicitRule = explicit.find((item) => this.sameText(item.entityName, entity.name));
+      const explicitShot = Number(explicitRule?.firstShotIndex);
+      if (Number.isInteger(explicitShot) && explicitShot >= 0) {
+        introductions.set(entity.versionId, Math.min(explicitShot, lyricMention?.index ?? explicitShot));
+        return;
+      }
       const beatIndex = storyBeats.findIndex((item) => typeof item === 'string'
         ? this.containsName(this.normalize(item), entity.name)
         : this.isRecord(item) && (
@@ -437,13 +442,6 @@ export class ChildrenClipPlanningService {
     if (/\b(coelho|coelha|coelhinho|coelhinha)\b/.test(descriptor)) aliases.push('coelho', 'coelha', 'coelhinho', 'coelhinha', 'orelhas bem compridas', 'duas orelhas');
     if (/\b(vehicle|veiculo|trem|train|locomotiva)\b/.test(descriptor)) aliases.push('trem', 'trenzinho', 'locomotiva', 'piui', 'piuiii');
     return this.uniqueStrings(aliases);
-  }
-  private hasUnsafeVehicleStaging(normalizedText: string, vehicleNames: string[]) {
-    if (/\b(em cima|sobre o teto) d[oa] (trem|veiculo|carro|onibus)\b/.test(normalizedText)) return true;
-    return vehicleNames.some((name) => {
-      const target = this.normalize(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      return new RegExp(`\\b(em cima|sobre o teto) d[oa] ${target}\\b`).test(normalizedText);
-    });
   }
   private slug(value: string) { return this.normalize(value).replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'location'; }
   private capitalize(value: string) { return value ? `${value.charAt(0).toUpperCase()}${value.slice(1)}` : value; }

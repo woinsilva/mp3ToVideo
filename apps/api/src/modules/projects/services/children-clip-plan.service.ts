@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { ChildrenClipPlanStatus, Prisma, ProcessingJobStatus } from '@prisma/client';
-import { CHILDREN_CLIP_PLAN_GENERATE_JOB_NAME, CHILDREN_CLIP_QUEUE_NAME } from '@video/shared';
+import { CHILDREN_CLIP_PLAN_GENERATE_JOB_NAME, CHILDREN_CLIP_QUEUE_NAME, shotActionsAreTooSimilar, vehicleActionIssue } from '@video/shared';
 
 import { PrismaService } from '../../../database/prisma.service';
 import { ChildrenClipQueueService } from '../../jobs/services/children-clip-queue.service';
@@ -223,6 +223,7 @@ export class ChildrenClipPlanService {
     const global = narrative && typeof narrative === 'object' && !Array.isArray(narrative) ? narrative as Record<string, unknown> : {};
     const summaries = [global.summary, global.logline].filter((item): item is string => typeof item === 'string').map((item) => this.normalize(item));
     const actionOwners = new Map<string, number>();
+    const priorActions: Array<{ action: string; index: number }> = [];
     const visualBible = project.childrenClipPlan?.visualBible;
     const visualRecord = visualBible && typeof visualBible === 'object' && !Array.isArray(visualBible) ? visualBible as Record<string, unknown> : {};
     const characterRules = Array.isArray(visualRecord.characterRules) ? visualRecord.characterRules : [];
@@ -240,14 +241,20 @@ export class ChildrenClipPlanService {
       if ([...allowed, ...forbidden].some((id) => !knownIds.has(id))) throw new BadRequestException(`Tomada ${shot.index + 1}: existe uma entidade desconhecida.`);
       const normalizedDescription = this.normalize(shot.description);
       const normalizedAction = this.normalize(shot.characterAction);
-      if (this.hasUnsafeVehicleStaging(normalizedAction, vehicleNames)) {
-        throw new BadRequestException(`Tomada ${shot.index + 1}: a acao coloca personagem em cima de um veiculo. Replaneje ou edite a tomada.`);
+      const physicalIssue = vehicleActionIssue(normalizedAction, vehicleNames);
+      if (physicalIssue) {
+        throw new BadRequestException(`Tomada ${shot.index + 1}: ${physicalIssue}. Replaneje ou edite a tomada.`);
       }
       const previousActionOwner = actionOwners.get(normalizedAction);
       if (normalizedAction && previousActionOwner !== undefined) {
         throw new BadRequestException(`Tomada ${shot.index + 1}: a acao visual repete exatamente a tomada ${previousActionOwner + 1}. Replaneje ou edite uma das tomadas.`);
       }
       if (normalizedAction) actionOwners.set(normalizedAction, shot.index);
+      const similarAction = priorActions.find((previous) => shotActionsAreTooSimilar(previous.action, normalizedAction));
+      if (similarAction && this.normalize(similarAction.action) !== normalizedAction) {
+        throw new BadRequestException(`Tomada ${shot.index + 1}: a acao visual e semanticamente equivalente a tomada ${similarAction.index + 1}. Replaneje ou edite uma das tomadas.`);
+      }
+      if (normalizedAction) priorActions.push({ action: normalizedAction, index: shot.index });
       if (summaries.includes(normalizedDescription)) throw new BadRequestException(`Tomada ${shot.index + 1}: a descricao repete a narrativa global.`);
       if (/\b(foco visual|entidades presentes|nao aparecem|permitidos|proibidos)\s*:/.test(normalizedDescription)) {
         throw new BadRequestException(`Tomada ${shot.index + 1}: a descricao visual mistura narrativa com metadados de entidades.`);
@@ -282,18 +289,6 @@ export class ChildrenClipPlanService {
   private stringArray(value: unknown): string[] { return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []; }
   private normalize(value: unknown) { return typeof value === 'string' ? value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim() : ''; }
   private containsName(text: string, name: string) { const target = this.normalize(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); return target.length > 1 && new RegExp(`(^|[^a-z0-9])${target}($|[^a-z0-9])`).test(this.normalize(text)); }
-  private hasUnsafeVehicleStaging(normalizedText: string, vehicleNames: string[]) {
-    if (/\b(em cima|sobre o teto) d[oa] (trem|veiculo|carro|onibus)\b/.test(normalizedText)) return true;
-    if (/\b(sobre uma trilha|brinca(?:m)? com (?:as )?trilh|danca(?:m)? (?:nos?|sobre os?) trilhos|fica(?:m)? (?:nos?|sobre os?) trilhos)\b/.test(normalizedText)) return true;
-    if (/\b(pula|pulam|salta|saltam)\b.{0,50}\b(dentro|para dentro|vagao)\b/.test(normalizedText)
-      && /\b(trem|veiculo|pipo express)\b.{0,50}\b(move|movendo|movimento|passa|acelera|parte)\b/.test(normalizedText)) return true;
-    return vehicleNames.some((name) => {
-      const target = this.normalize(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      return new RegExp(`\\b(em cima|sobre o teto) d[oa] ${target}\\b`).test(normalizedText)
-        || new RegExp(`\\b(segura|seguram|puxa|puxam|empurra|empurram)\\b.{0,40}${target}`).test(normalizedText);
-    });
-  }
-
   private async getOwnedProject(projectId: string, organizationId: string) {
     const project = await this.prisma.project.findFirst({
       where: { id: projectId, organizationId, generationMode: 'children_clip', deletedAt: null },

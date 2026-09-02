@@ -14,6 +14,7 @@ export default defineConfig({
       '@nestjs/platform-express': resolve('node_modules/@nestjs/platform-express'),
       '@nestjs/testing': resolve('node_modules/@nestjs/testing'),
       '@prisma/client': resolve('node_modules/@prisma/client'),
+      '@video/shared': resolve('packages/shared/src/index.ts'),
       supertest: resolve('node_modules/supertest')
     }
   },

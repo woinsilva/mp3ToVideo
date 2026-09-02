@@ -3,6 +3,7 @@ import { readFile, stat, writeFile } from 'node:fs/promises';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AssetType, CharacterAssetRole, CharacterAssetStatus, CharacterVersionStatus, ChildrenClipShotAssetStatus, Prisma, ProcessingJobStatus, type ScenePrompt } from '@prisma/client';
+import { shotActionsAreTooSimilar, vehicleActionIssue } from '@video/shared';
 import type { ChildrenClipAssetGenerationJobPayload, ChildrenClipAudioAnalysisJobPayload, ChildrenClipCharacterGenerationJobPayload, ChildrenClipPlanGenerationJobPayload } from '@video/shared';
 import type { ChildrenClipShotRenderJobPayload } from '@video/shared';
 import type { ChildrenClipFinalRenderJobPayload, ChildrenClipHeroShotJobPayload } from '@video/shared';
@@ -867,8 +868,10 @@ export class ChildrenClipProcessor {
                 'Treat the nearby shot plans as mandatory continuity context. The current action and purpose must visibly advance the story from the previous audited shot and prepare the next planned shot.',
                 'Write one concrete, filmable action tied to the supplied synchronized lyrics. Avoid generic filler such as merely moving smoothly, playing, dancing or continuing the prior action without a new visible beat.',
                 'Never repeat the previous action verbatim. When lyrics or a chorus repeat, vary the gesture, staging, interaction, composition or camera while preserving the musical motif.',
+                'A change of screen direction, adjective, speed or camera alone does not make a new beat. The physical event performed by the subjects must change.',
                 'Enforce child-safe physical logic: living characters never stand, play or dance on railway tracks or on a vehicle roof; boarding happens through a door while the vehicle is stopped.',
-                'Characters never hold, pull, push or circle a moving train. Keep every action plausible for entity type, size and location.',
+                'Characters never run or dance beside, hold, pull, push or circle a moving train. A vehicle can move, stop, open doors or signal, but cannot jump, dance, hug or perform anatomy-dependent gestures.',
+                'An entity must visibly appear in its exact introduction shot. After that shot, never claim to introduce or present it again; continue its story instead.',
                 'Use natural Portuguese grammar and make the visible subject perform the verb described by the synchronized lyric.',
                 'continuityFromPreviousShot must state what spatial or visual element is preserved and what changes in this shot.',
                 'Location name and description contain environment only. Preserve valid creative intent, timing and location continuity.',
@@ -885,6 +888,7 @@ export class ChildrenClipProcessor {
                 shotPlansToAudit: sourcePlans,
                 previousAuditedShotPlans,
                 nextPlannedShotPlans: nextSourceShotPlans,
+                allPriorActions: auditedShotPlans.map((plan) => ({ shotIndex: plan.shotIndex, action: plan.action })),
                 eligibleEntityNames: entityIntroductionSchedule.filter((entity) => entity.firstShotIndex <= batch[0].index).map((entity) => entity.name),
                 futureEntityNames: entityIntroductionSchedule.filter((entity) => entity.firstShotIndex > batch[0].index).map((entity) => entity.name),
                 revisionInstruction: revisionInstruction || null
@@ -907,8 +911,8 @@ export class ChildrenClipProcessor {
           const rejectionReason = this.shotAuditIssue(rejected, auditedShotPlans, entityIntroductionSchedule, batch[0].index);
           if (!rejectionReason) break;
           const eligibleEntityNames = entityIntroductionSchedule.filter((entity) => entity.firstShotIndex <= batch[0].index).map((entity) => entity.name);
-          const rebuildWithoutRejectedPlan = rejectionReason !== 'acao visual repetida';
-          const conflicting = auditedShotPlans.filter((previous) => this.normalizeShotText(previous.action) === this.normalizeShotText(rejected.action));
+          const rebuildWithoutRejectedPlan = rejectionReason.startsWith('entidade futura ');
+          const conflicting = auditedShotPlans.filter((previous) => shotActionsAreTooSimilar(previous.action, rejected.action));
           await this.planProgress(job, auditProgress, 'REPAIRING_SHOT_CONTINUITY', `Corrigindo a tomada ${batch[0].index + 1}: ${rejectionReason} (tentativa ${repairAttempt + 1}/3).`);
           const rawRepair = await this.withPlanHeartbeat(job, this.ollama.generateJson<CreativePlanResponse>([
             {
@@ -923,6 +927,10 @@ export class ChildrenClipProcessor {
                 'When removing a future entity, rewrite the visible beat around eligible entities and the environment; never mention the absent entity negatively.',
                 'When rebuildFromScratch is true, create the shot from the lyric and eligibleEntityNames only. Do not infer, copy or restore entities from the rejected plan.',
                 'When rebuildFromScratch is true, ignore future narrative beats and do not anticipate an entity even if it appears in a later neighboring shot.',
+                'When rebuildFromScratch is false, fix the exact rejectionReason instead of treating it as an entity-list problem.',
+                'Boarding must use a visible door or entrance while the vehicle is explicitly stopped. Living characters never run, jump or dance beside a moving vehicle.',
+                'A vehicle may move, stop, open a door or signal, but may not jump, dance, hug, sing or perform anatomy-dependent gestures.',
+                'If an entity debuts in this shot, show and name it clearly. Never describe an already introduced entity as being introduced again.',
                 'No forbidden entity may appear in any positive prose or placement field. Return a complete shotPlan with every required field.'
               ].join(' ')
             },
@@ -1724,8 +1732,8 @@ export class ChildrenClipProcessor {
     shotIndex: number
   ): string | null {
     const action = this.normalizeShotText(plan.action);
-    if (action && previousPlans.some((previous) => this.normalizeShotText(previous.action) === action)) {
-      return 'acao visual repetida';
+    if (action && previousPlans.some((previous) => shotActionsAreTooSimilar(previous.action, action))) {
+      return 'acao visual semanticamente repetida';
     }
     const positiveText = this.normalizeShotText([
       plan.primaryFocus, plan.purpose, plan.action, plan.composition, plan.camera,
@@ -1737,32 +1745,24 @@ export class ChildrenClipProcessor {
         return `entidade futura ${entity.name} aparece antes da tomada ${entity.firstShotIndex + 1}`;
       }
     }
+    for (const entity of introductionSchedule.filter((item) => item.firstShotIndex === shotIndex)) {
+      const listed = [...(plan.allowedEntities ?? []), ...(plan.characters ?? [])]
+        .some((name) => this.normalizeShotText(name) === this.normalizeShotText(entity.name));
+      if (!listed || !this.containsShotEntity(positiveText, entity.name)) {
+        return `apresentacao obrigatoria de ${entity.name} ausente na tomada de estreia`;
+      }
+    }
+    const normalizedPurpose = this.normalizeShotText(plan.purpose);
+    for (const entity of introductionSchedule.filter((item) => item.firstShotIndex < shotIndex)) {
+      if (/\b(introduzir|apresentar|apresentacao)\b/.test(normalizedPurpose) && this.containsShotEntity(normalizedPurpose, entity.name)) {
+        return `${entity.name} e apresentado novamente depois de sua estreia`;
+      }
+    }
     const vehicleNames = introductionSchedule
       .filter((entity) => /\b(vehicle|veiculo|trem|train|bus|onibus)\b/.test(this.normalizeShotText(entity.type)))
       .map((entity) => entity.name);
-    if (/\b(em cima|sobre o teto) d[oa] (trem|veiculo|carro|onibus)\b/.test(positiveText)
-      || vehicleNames.some((name) => new RegExp(`\\b(em cima|sobre o teto) d[oa] ${this.escapeRegExp(this.normalizeShotText(name))}\\b`).test(positiveText))) {
-      return 'encenacao infantil insegura em cima de veiculo';
-    }
-    const livingNames = introductionSchedule
-      .filter((entity) => !/\b(vehicle|veiculo|trem|train|bus|onibus)\b/.test(this.normalizeShotText(entity.type)))
-      .map((entity) => entity.name);
-    const livingVisible = livingNames.some((name) => this.containsShotEntity(positiveText, name));
-    if (livingVisible && /\b(sobre uma trilha|brinca(?:m)? com (?:as )?trilh|danca(?:m)? (?:nos?|sobre os?) trilhos|fica(?:m)? (?:nos?|sobre os?) trilhos)\b/.test(positiveText)) {
-      return 'personagem vivo colocado nos trilhos';
-    }
-    for (const name of vehicleNames) {
-      const vehicle = this.escapeRegExp(this.normalizeShotText(name));
-      if (new RegExp(`\\b(segura|seguram|puxa|puxam|empurra|empurram)\\b.{0,40}${vehicle}`).test(positiveText)) {
-        return `acao fisicamente incoerente com o veiculo ${name}`;
-      }
-    }
-    const boardsVehicle = /\b(pula|pulam|salta|saltam)\b.{0,50}\b(dentro|para dentro|vagao)\b/.test(positiveText);
-    const vehicleMoving = /\b(trem|veiculo|pipo express)\b.{0,50}\b(move|movendo|movimento|passa|acelera|parte)\b/.test(positiveText);
-    if (boardsVehicle && vehicleMoving) return 'embarque inseguro com o veiculo em movimento';
-    if (/\b(ao redor|em volta)\b.{0,40}\b(trem|veiculo|pipo express) em movimento\b/.test(positiveText)) {
-      return 'personagens circulando um veiculo em movimento';
-    }
+    const physicalIssue = vehicleActionIssue(positiveText, vehicleNames);
+    if (physicalIssue) return physicalIssue;
     return null;
   }
 
@@ -1781,12 +1781,18 @@ export class ChildrenClipProcessor {
     introductionSchedule: Array<{ name: string; type: string; firstShotIndex: number }>
   ): CreativeShotPlan {
     const eligible = introductionSchedule.filter((entity) => entity.firstShotIndex <= shot.index);
+    const debuting = eligible.filter((entity) => entity.firstShotIndex === shot.index);
     const eligibleNames = new Set(eligible.map((entity) => this.normalizeShotText(entity.name)));
     const requested = [...(plan.allowedEntities ?? []), ...(plan.characters ?? [])]
       .filter((name) => eligibleNames.has(this.normalizeShotText(name)));
-    const allowed = [...new Set(requested.length ? requested : eligible.slice(0, 2).map((entity) => entity.name))];
+    const allowed = [...new Set([
+      ...(requested.length ? requested : eligible.slice(0, 2).map((entity) => entity.name)),
+      ...debuting.map((entity) => entity.name)
+    ])];
     const vehicle = eligible.find((entity) => /\b(vehicle|veiculo|trem|train|bus|onibus)\b/.test(this.normalizeShotText(entity.type)) && allowed.includes(entity.name));
-    const actors = eligible.filter((entity) => allowed.includes(entity.name) && entity.name !== vehicle?.name);
+    const actors = eligible
+      .filter((entity) => allowed.includes(entity.name) && entity.name !== vehicle?.name)
+      .sort((left, right) => Number(debuting.includes(right)) - Number(debuting.includes(left)));
     const lead = actors[0]?.name ?? vehicle?.name ?? eligible[0]?.name ?? 'O protagonista';
     const companion = actors[1]?.name;
     const subject = `${lead}${companion ? ` e ${companion}` : ''}`;
