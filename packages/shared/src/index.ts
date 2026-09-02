@@ -66,13 +66,26 @@ export function shotActionsAreTooSimilar(left: unknown, right: unknown): boolean
   return jaccard >= 0.68 || containment >= 0.82;
 }
 
+export function unapprovedVisualExtra(value: unknown): string | null {
+  const text = normalizeShotSemantics(value);
+  const match = text.match(/\b(passageiros?|pessoas?|criancas?|multidao|figurantes?|figura humana|alguem visivel)\b/);
+  return match?.[0] ?? null;
+}
+
+export function shotActionIsVague(value: unknown): boolean {
+  const text = normalizeShotSemantics(value);
+  const meaningfulTokens = [...shotActionTokens(text)];
+  if (meaningfulTokens.length < 5) return true;
+  return /\b(se move com movimento|brinca com o som|grupo se junta|grupo danca e celebra|todos dancam com)\b/.test(text);
+}
+
 export function vehicleActionIssue(value: unknown, vehicleNames: string[]): string | null {
   const text = normalizeShotSemantics(value);
   if (!text) return null;
   const escapedVehicles = vehicleNames
     .map((name) => normalizeShotSemantics(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
     .filter(Boolean);
-  const vehicleTerm = escapedVehicles.length ? `(?:trem|veiculo|carro|onibus|${escapedVehicles.join('|')})` : '(?:trem|veiculo|carro|onibus)';
+  const vehicleTerm = escapedVehicles.length ? `(?:trem|trenzinho|veiculo|carro|onibus|vagao|locomotiva|${escapedVehicles.join('|')})` : '(?:trem|trenzinho|veiculo|carro|onibus|vagao|locomotiva)';
   if (new RegExp(`\\b(em cima|sobre o teto) d[oa] ${vehicleTerm}\\b`).test(text)) return 'personagem em cima de um veiculo';
   if (/\b(sobre uma trilha|brinca(?:m)? com (?:as )?trilh|danca(?:m)? (?:nos?|sobre os?) trilhos|fica(?:m)? (?:nos?|sobre os?) trilhos)\b/.test(text)) return 'personagem vivo nos trilhos';
   if (new RegExp(`\\b(segura|seguram|puxa|puxam|empurra|empurram)\\b.{0,50}\\b${vehicleTerm}\\b`).test(text)) return 'personagem manipulando veiculo de forma incoerente';
@@ -83,12 +96,19 @@ export function vehicleActionIssue(value: unknown, vehicleNames: string[]): stri
     return 'embarque sem porta e veiculo parado';
   }
 
-  const movingVehicle = new RegExp(`\\b${vehicleTerm}\\b.{0,70}\\b(move|movem|mover|movendo|movimenta|movimentam|passa|avanca|acelera|parte|faz uma curva)\\b`).test(text);
-  if (movingVehicle && /\b(corre|correm|danca|dancam|pula|pulam)\b.{0,45}\b(ao (?:seu )?lado|ao redor|em volta|acompanha|acompanham)\b/.test(text)) {
+  const movingVehicle = new RegExp(`\\b${vehicleTerm}\\b.{0,70}\\b(move|movem|mover|movendo|movimenta|movimentam|movimento|passa|avanca|acelera|parte|faz uma curva)\\b`).test(text);
+  if (movingVehicle && !/\b(dentro|no interior)\b/.test(text) && /\b(corre|correm|correndo|danca|dancam|pula|pulam|se junta|aproxima|aproximam)\b/.test(text)) {
     return 'personagem acompanhando veiculo em movimento de forma insegura';
   }
   if (movingVehicle && /\b(ao lado|ao redor|em volta)\b.{0,45}\b(corre|correm|danca|dancam|pula|pulam)\b/.test(text)) {
     return 'personagem acompanhando veiculo em movimento de forma insegura';
+  }
+  const circlesVehicle = new RegExp(`\\b(ao redor|em volta)\\b.{0,55}\\b${vehicleTerm}\\b|\\b${vehicleTerm}\\b.{0,55}\\b(ao redor|em volta)\\b`).test(text);
+  if (circlesVehicle && !/\b(parado|parada|imovel|estacionado|estacionada)\b/.test(text)) {
+    return 'personagens ao redor de veiculo sem confirmar que esta parado';
+  }
+  if (new RegExp(`\\b(danca|dancam)\\b.{0,35}\\bcom (?:o )?${vehicleTerm}\\b`).test(text)) {
+    return 'danca ambigua com veiculo';
   }
   for (const vehicle of escapedVehicles) {
     if (new RegExp(`\\b${vehicle}\\b(?: tambem| alegremente| junto)? \\b(pula|pulam|danca|dancam|abraca|abracam|bate palmas|cantam?)\\b`).test(text)) {

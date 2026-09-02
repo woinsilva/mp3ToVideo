@@ -3,7 +3,7 @@ import { readFile, stat, writeFile } from 'node:fs/promises';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AssetType, CharacterAssetRole, CharacterAssetStatus, CharacterVersionStatus, ChildrenClipShotAssetStatus, Prisma, ProcessingJobStatus, type ScenePrompt } from '@prisma/client';
-import { shotActionsAreTooSimilar, vehicleActionIssue } from '@video/shared';
+import { shotActionIsVague, shotActionsAreTooSimilar, unapprovedVisualExtra, vehicleActionIssue } from '@video/shared';
 import type { ChildrenClipAssetGenerationJobPayload, ChildrenClipAudioAnalysisJobPayload, ChildrenClipCharacterGenerationJobPayload, ChildrenClipPlanGenerationJobPayload } from '@video/shared';
 import type { ChildrenClipShotRenderJobPayload } from '@video/shared';
 import type { ChildrenClipFinalRenderJobPayload, ChildrenClipHeroShotJobPayload } from '@video/shared';
@@ -872,6 +872,8 @@ export class ChildrenClipProcessor {
                 'Enforce child-safe physical logic: living characters never stand, play or dance on railway tracks or on a vehicle roof; boarding happens through a door while the vehicle is stopped.',
                 'Characters never run or dance beside, hold, pull, push or circle a moving train. A vehicle can move, stop, open doors or signal, but cannot jump, dance, hug or perform anatomy-dependent gestures.',
                 'An entity must visibly appear in its exact introduction shot. After that shot, never claim to introduce or present it again; continue its story instead.',
+                'Do not invent passengers, crowds, children, people, silhouettes or visible mystery figures. Only approved eligible entities may be visible.',
+                'primaryFocus must perform or receive the main visible action; avoid vague filler such as everyone dances, plays with the sound or simply moves.',
                 'Use natural Portuguese grammar and make the visible subject perform the verb described by the synchronized lyric.',
                 'continuityFromPreviousShot must state what spatial or visual element is preserved and what changes in this shot.',
                 'Location name and description contain environment only. Preserve valid creative intent, timing and location continuity.',
@@ -940,6 +942,8 @@ export class ChildrenClipProcessor {
                 'Boarding must use a visible door or entrance while the vehicle is explicitly stopped. Living characters never run, jump or dance beside a moving vehicle.',
                 'A vehicle may move, stop, open a door or signal, but may not jump, dance, hug, sing or perform anatomy-dependent gestures.',
                 'If an entity debuts in this shot, show and name it clearly. Never describe an already introduced entity as being introduced again.',
+                'Do not invent passengers, crowds, children, people, silhouettes or visible mystery figures. Only approved eligible entities may be visible.',
+                'primaryFocus must perform or receive the main visible action; avoid vague filler such as everyone dances, plays with the sound or simply moves.',
                 'No forbidden entity may appear in any positive prose or placement field. Return a complete shotPlan with every required field.'
               ].join(' ')
             },
@@ -1770,6 +1774,13 @@ export class ChildrenClipProcessor {
         return `${entity.name} e apresentado novamente depois de sua estreia`;
       }
     }
+    const extra = unapprovedVisualExtra(positiveText);
+    if (extra) return `figurante nao aprovado aparece na cena: ${extra}`;
+    if (shotActionIsVague(plan.action)) return 'acao visual vaga ou pouco filmavel';
+    const focusedEntity = introductionSchedule.find((entity) => this.normalizeShotText(plan.primaryFocus) === this.normalizeShotText(entity.name));
+    if (focusedEntity && !this.containsShotEntity(action, focusedEntity.name)) {
+      return `foco principal ${focusedEntity.name} nao participa da acao visivel`;
+    }
     const vehicleNames = introductionSchedule
       .filter((entity) => /\b(vehicle|veiculo|trem|train|bus|onibus)\b/.test(this.normalizeShotText(entity.type)))
       .map((entity) => entity.name);
@@ -1807,7 +1818,11 @@ export class ChildrenClipProcessor {
     const vehicle = eligible.find((entity) => /\b(vehicle|veiculo|trem|train|bus|onibus)\b/.test(this.normalizeShotText(entity.type)) && allowed.includes(entity.name));
     const actors = eligible
       .filter((entity) => allowed.includes(entity.name) && entity.name !== vehicle?.name)
-      .sort((left, right) => Number(debuting.includes(right)) - Number(debuting.includes(left)));
+      .sort((left, right) => {
+        const leftPriority = Number(debuting.includes(left)) * 2 + Number(this.normalizeShotText(plan.primaryFocus) === this.normalizeShotText(left.name));
+        const rightPriority = Number(debuting.includes(right)) * 2 + Number(this.normalizeShotText(plan.primaryFocus) === this.normalizeShotText(right.name));
+        return rightPriority - leftPriority;
+      });
     const lead = actors[0]?.name ?? vehicle?.name ?? eligible[0]?.name ?? 'O protagonista';
     const companion = actors[1]?.name;
     const subject = `${lead}${companion ? ` e ${companion}` : ''}`;
@@ -1825,7 +1840,7 @@ export class ChildrenClipProcessor {
     } else if (/\b(devagar|desaceler)\b/.test(lyric) && vehicle) {
       action = `${vehicle.name} reduz a velocidade nos trilhos enquanto ${lead === vehicle.name ? 'a paisagem' : lead} acompanha o movimento ${direction}`;
       purpose = 'Representar visualmente a mudanca para o ritmo lento';
-    } else if (/\b(piui|aceler|vai sair|passeando|trenzinho|trem)\b/.test(lyric) && vehicle) {
+    } else if (/\b(piui+|aceler|vai sair|passeando|trenzinho|trem)\b/.test(lyric) && vehicle) {
       const observer = lead === vehicle.name ? 'a sinalizacao da plataforma' : lead;
       const vehicleBeats = [
         `${vehicle.name} acende o farol e soa o apito enquanto ${observer} ergue uma bandeira colorida em area segura`,

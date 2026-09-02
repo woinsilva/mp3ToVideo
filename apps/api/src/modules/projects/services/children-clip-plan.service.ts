@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { ChildrenClipPlanStatus, Prisma, ProcessingJobStatus } from '@prisma/client';
-import { CHILDREN_CLIP_PLAN_GENERATE_JOB_NAME, CHILDREN_CLIP_QUEUE_NAME, shotActionsAreTooSimilar, vehicleActionIssue } from '@video/shared';
+import { CHILDREN_CLIP_PLAN_GENERATE_JOB_NAME, CHILDREN_CLIP_QUEUE_NAME, shotActionIsVague, shotActionsAreTooSimilar, unapprovedVisualExtra, vehicleActionIssue } from '@video/shared';
 
 import { PrismaService } from '../../../database/prisma.service';
 import { ChildrenClipQueueService } from '../../jobs/services/children-clip-queue.service';
@@ -245,6 +245,9 @@ export class ChildrenClipPlanService {
       if (physicalIssue) {
         throw new BadRequestException(`Tomada ${shot.index + 1}: ${physicalIssue}. Replaneje ou edite a tomada.`);
       }
+      const extra = unapprovedVisualExtra([shot.description, shot.characterAction, shot.framing, shot.cameraMovement].join(' '));
+      if (extra) throw new BadRequestException(`Tomada ${shot.index + 1}: figurante nao aprovado aparece na cena (${extra}). Replaneje a tomada.`);
+      if (shotActionIsVague(normalizedAction)) throw new BadRequestException(`Tomada ${shot.index + 1}: a acao visual esta vaga ou pouco filmavel. Replaneje a tomada.`);
       const previousActionOwner = actionOwners.get(normalizedAction);
       if (normalizedAction && previousActionOwner !== undefined) {
         throw new BadRequestException(`Tomada ${shot.index + 1}: a acao visual repete exatamente a tomada ${previousActionOwner + 1}. Replaneje ou edite uma das tomadas.`);
@@ -278,6 +281,9 @@ export class ChildrenClipPlanService {
         }
         if (this.containsName(shot.primaryFocus ?? '', candidate.name) && !allowed.includes(candidate.id)) {
           throw new BadRequestException(`Tomada ${shot.index + 1}: o foco ${candidate.name} nao esta nas entidades permitidas.`);
+        }
+        if (this.normalize(shot.primaryFocus) === this.normalize(candidate.name) && !this.containsName(normalizedAction, candidate.name)) {
+          throw new BadRequestException(`Tomada ${shot.index + 1}: o foco principal ${candidate.name} nao participa da acao visivel.`);
         }
         if (this.containsName(positiveSemantics, candidate.name) && !allowed.includes(candidate.id)) {
           throw new BadRequestException(`Tomada ${shot.index + 1}: ${candidate.name} aparece na descricao da acao, mas nao esta nas entidades permitidas.`);

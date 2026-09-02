@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { ChildrenClipPlanningService } from '../../../apps/worker/src/services/children-clip-planning.service';
-import { shotActionsAreTooSimilar, vehicleActionIssue } from '@video/shared';
+import { shotActionIsVague, shotActionsAreTooSimilar, unapprovedVisualExtra, vehicleActionIssue } from '@video/shared';
 
 describe('ChildrenClipPlanningService', () => {
   it('detects cosmetically changed actions as the same visual beat', () => {
@@ -36,6 +36,21 @@ describe('ChildrenClipPlanningService', () => {
       'Pipo Express acende o farol enquanto Lia ergue uma bandeira em area segura',
       ['Pipo Express']
     )).toBeNull();
+    expect(vehicleActionIssue(
+      'Mimi empurra o vagao levemente',
+      ['Pipo Express']
+    )).toMatch(/manipulando/);
+    expect(vehicleActionIssue(
+      'Pipo Express parte enquanto Toto corre ao longo da plataforma',
+      ['Pipo Express']
+    )).toMatch(/movimento/);
+  });
+
+  it('rejects vague beats and unapproved extras', () => {
+    expect(shotActionIsVague('Todos dancam com o Pipo Express')).toBe(true);
+    expect(shotActionIsVague('Lilo salta entre tres circulos coloridos e aterrissa diante de Lia')).toBe(false);
+    expect(unapprovedVisualExtra('Passageiros saem pela plataforma')).toBe('passageiros');
+    expect(unapprovedVisualExtra('Lia e Toto acenam')).toBeNull();
   });
 
   it('builds a contiguous beat-snapped timeline covering the whole song', () => {
