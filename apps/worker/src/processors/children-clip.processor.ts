@@ -900,10 +900,14 @@ export class ChildrenClipProcessor {
         } else {
           await this.planProgress(job, auditProgress, 'REUSING_SHOT_AUDIT', `Reutilizando auditoria da tomada ${batch[0].index + 1}.`);
         }
+        if (audit.shotPlans?.length === 1 && audit.shotPlans[0].shotIndex === batch[0].index + 1 && !indexes.has(audit.shotPlans[0].shotIndex)) {
+          audit.shotPlans[0].shotIndex = batch[0].index;
+        }
         let audited = (audit.shotPlans ?? []).filter((plan) => typeof plan.shotIndex === 'number' && indexes.has(plan.shotIndex));
         const auditedIndexes = new Set(audited.map((plan) => plan.shotIndex));
         if (audited.length !== batch.length || auditedIndexes.size !== batch.length || (audit.shotPlans ?? []).some((plan) => typeof plan.shotIndex !== 'number' || !indexes.has(plan.shotIndex))) {
-          throw new Error(`A segunda IA retornou uma auditoria incompleta ou com indices invalidos no lote ${batchIndex + 1}`);
+          audited = sourcePlans;
+          await this.planProgress(job, auditProgress, 'REPAIRING_INVALID_AI_RESPONSE', `A segunda IA devolveu JSON incompleto na tomada ${batch[0].index + 1}; validando e reparando o plano-base.`);
         }
         let reconciled = audited.map((plan) => this.planning.reconcileAuditedShotPlan(plan, characters));
         const firstIssue = this.shotAuditIssue(reconciled[0], auditedShotPlans, entityIntroductionSchedule, batch[0].index);
@@ -1721,6 +1725,9 @@ export class ChildrenClipProcessor {
   private normalizeCreativePlanResponse(value: CreativePlanResponse): CreativePlanResponse {
     const record = value as unknown as Record<string, unknown>;
     if (typeof record.shotIndex === 'number') return { shotPlans: [record as unknown as CreativeShotPlan] };
+    if (record.shotPlans && typeof record.shotPlans === 'object' && !Array.isArray(record.shotPlans)) {
+      return { ...value, shotPlans: [record.shotPlans as CreativeShotPlan] };
+    }
     return value;
   }
 
@@ -1766,7 +1773,9 @@ export class ChildrenClipProcessor {
     const vehicleNames = introductionSchedule
       .filter((entity) => /\b(vehicle|veiculo|trem|train|bus|onibus)\b/.test(this.normalizeShotText(entity.type)))
       .map((entity) => entity.name);
-    const physicalIssue = vehicleActionIssue(positiveText, vehicleNames);
+    const physicalIssue = [plan.action, plan.composition, plan.motionIntent, plan.continuityFromPreviousShot]
+      .map((field) => vehicleActionIssue(field, vehicleNames))
+      .find((issue): issue is string => Boolean(issue));
     if (physicalIssue) return physicalIssue;
     return null;
   }

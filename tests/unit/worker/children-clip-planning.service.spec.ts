@@ -32,6 +32,10 @@ describe('ChildrenClipPlanningService', () => {
       'Mimi entra pela porta do Pipo Express parado na plataforma',
       ['Pipo Express']
     )).toBeNull();
+    expect(vehicleActionIssue(
+      'Pipo Express acende o farol enquanto Lia ergue uma bandeira em area segura',
+      ['Pipo Express']
+    )).toBeNull();
   });
 
   it('builds a contiguous beat-snapped timeline covering the whole song', () => {
