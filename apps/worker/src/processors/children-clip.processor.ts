@@ -3,7 +3,7 @@ import { readFile, stat, writeFile } from 'node:fs/promises';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AssetType, CharacterAssetRole, CharacterAssetStatus, CharacterVersionStatus, ChildrenClipShotAssetStatus, Prisma, ProcessingJobStatus, type ScenePrompt } from '@prisma/client';
-import { shotActionIsVague, shotActionsAreTooSimilar, unapprovedVisualExtra, vehicleActionIssue } from '@video/shared';
+import { genericShotLocation, lyricActionIssue, shotActionIsVague, shotActionsAreTooSimilar, shotGrammarIssue, unapprovedVisualExtra, vehicleActionIssue, visibleWrittenTextIssue } from '@video/shared';
 import type { ChildrenClipAssetGenerationJobPayload, ChildrenClipAudioAnalysisJobPayload, ChildrenClipCharacterGenerationJobPayload, ChildrenClipPlanGenerationJobPayload } from '@video/shared';
 import type { ChildrenClipShotRenderJobPayload } from '@video/shared';
 import type { ChildrenClipFinalRenderJobPayload, ChildrenClipHeroShotJobPayload } from '@video/shared';
@@ -32,12 +32,15 @@ interface OptimizedCharacterPrompt {
 
 interface ShotPlanningDraft {
   version: 2;
+  auditRulesVersion?: number;
   signature: string;
   globalCreative?: CreativePlanResponse | null;
   batches: Array<{ batchIndex: number; response: CreativePlanResponse }>;
   repairs?: CreativePlanResponse[];
   audits?: Array<{ batchIndex: number; response: CreativePlanResponse }>;
 }
+
+const SHOT_AUDIT_RULES_VERSION = 3;
 
 interface ShotEntitySchedule {
   name: string;
@@ -711,7 +714,13 @@ export class ChildrenClipProcessor {
       const savedDraft = jobDataWithDraft.shotPlanningDraft;
       const planningDraft: ShotPlanningDraft = savedDraft?.version === 2 && savedDraft.signature === draftSignature
         ? savedDraft
-        : { version: 2, signature: draftSignature, batches: [] };
+        : { version: 2, auditRulesVersion: SHOT_AUDIT_RULES_VERSION, signature: draftSignature, batches: [] };
+      const canReuseAudits = planningDraft.auditRulesVersion === SHOT_AUDIT_RULES_VERSION;
+      if (!canReuseAudits) {
+        planningDraft.audits = [];
+        planningDraft.auditRulesVersion = SHOT_AUDIT_RULES_VERSION;
+        await job.updateData({ ...job.data, shotPlanningDraft: planningDraft } as ChildrenClipPlanGenerationJobPayload);
+      }
       const persistDraft = async () => job.updateData({ ...job.data, shotPlanningDraft: planningDraft } as ChildrenClipPlanGenerationJobPayload);
       let globalCreative: CreativePlanResponse | null = planningDraft.globalCreative ?? null;
       if (mode === 'full' && !project.childrenClipPlan?.visualBible && !globalCreative) {
@@ -854,7 +863,7 @@ export class ChildrenClipProcessor {
           .sort((left, right) => left.shotIndex! - right.shotIndex!)
           .slice(0, 2);
         if (sourcePlans.length !== batch.length) throw new Error(`Auditoria bloqueada: faltam tomadas no lote ${batchIndex + 1}`);
-        const cachedAudit = planningDraft.audits?.find((item) => item.batchIndex === batchIndex)?.response;
+        const cachedAudit = canReuseAudits ? planningDraft.audits?.find((item) => item.batchIndex === batchIndex)?.response : undefined;
         const auditProgress = 48 + Math.floor((batchIndex / Math.max(1, auditBatches.length)) * 18);
         let audit = cachedAudit ? this.normalizeCreativePlanResponse(cachedAudit) : null;
         if (!audit) {
@@ -999,6 +1008,10 @@ export class ChildrenClipProcessor {
       const creative: CreativePlanResponse | null = globalCreative || auditedShotPlans.length || generatedLocations.size
         ? { ...globalCreative, locations: [...generatedLocations.values()], shotPlans: auditedShotPlans }
         : null;
+      for (let index = 0; index < auditedShotPlans.length; index += 1) {
+        const issue = this.shotAuditIssue(auditedShotPlans[index], auditedShotPlans.slice(0, index), entityIntroductionSchedule, skeletons[index].index, skeletons[index].lyricText);
+        if (issue) throw new Error(`Validacao final bloqueou a tomada ${skeletons[index].index + 1}: ${issue}`);
+      }
       await this.planProgress(job, 68, 'SHOT_AUDIT_COMPLETED', `${auditedShotPlans.length} tomadas passaram pela segunda rodada de IA.`);
       await this.planProgress(job, 70, 'PLANNING_SECTIONS', `Direcao narrativa definida para ${project.musicSections.length} secoes.`);
       const planningCreative = creative && mode === 'shots_only' ? { ...creative, visualBible: undefined, narrative: undefined } : creative;
@@ -1782,16 +1795,13 @@ export class ChildrenClipProcessor {
     ].filter((value): value is string => typeof value === 'string').join(' '));
     const extra = unapprovedVisualExtra(visibleSceneText);
     if (extra) return `figurante nao aprovado aparece na cena: ${extra}`;
-    const visibleTextWithoutExplicitAbsence = visibleSceneText.replace(/\bsem texto\b/g, '');
-    if (/\b(escrit[oa]|frase|palavra|legenda|texto legivel)\b/.test(visibleTextWithoutExplicitAbsence)) {
-      return 'texto escrito visivel nao permitido na cena';
-    }
-    if (/^cenario (?:intro|verse|chorus|bridge|outro)(?:\b|_)/.test(this.normalizeShotText(plan.locationName))) {
+    const writtenTextIssue = visibleWrittenTextIssue(visibleSceneText);
+    if (writtenTextIssue) return writtenTextIssue;
+    if (genericShotLocation(plan.locationName)) {
       return 'local generico em vez de um cenario narrativo concreto';
     }
-    if (/\b(?:lia|toto|mimi|lilo)(?:\s*,?\s*(?:e|,)\s*(?:lia|toto|mimi|lilo))*\s+(?:pular|saltar|correr|dancar|bater)\b/.test(action)) {
-      return 'acao com verbo no infinitivo e concordancia incorreta';
-    }
+    const grammarIssue = shotGrammarIssue(plan.action);
+    if (grammarIssue) return grammarIssue;
     if (shotActionIsVague(plan.action)) return 'acao visual vaga ou pouco filmavel';
     const requiredByLyrics = this.requiredShotEntities(lyricText, introductionSchedule, shotIndex);
     for (const entity of requiredByLyrics) {
@@ -1800,6 +1810,12 @@ export class ChildrenClipProcessor {
       if (!listed || !this.containsShotEntity(action, entity.name)) {
         return `entidade ${entity.name} citada na letra nao participa da acao visivel`;
       }
+    }
+    const lyricIssue = lyricActionIssue(lyricText, plan.action);
+    if (lyricIssue) return lyricIssue;
+    const debutingRequired = requiredByLyrics.find((entity) => entity.firstShotIndex === shotIndex);
+    if (debutingRequired && this.normalizeShotText(plan.primaryFocus) !== this.normalizeShotText(debutingRequired.name)) {
+      return `foco principal deve ser ${debutingRequired.name} na tomada de estreia`;
     }
     const previousAction = previousPlans.at(-1)?.action;
     const isBoarding = (value: unknown) => /\b(entra|entram|embarcam?|atravessa|sobem?|sobe)\b.{0,70}\b(porta|entrada|vagao|trem|pipo express)\b/.test(this.normalizeShotText(value));
@@ -1878,13 +1894,19 @@ export class ChildrenClipProcessor {
     const subject = `${lead}${companion ? ` e ${companion}` : ''}`;
     const plural = Boolean(companion);
     const lyric = this.normalizeShotText(shot.lyricText);
+    const asksForJump = /\bpula(?:r|m|ndo)?\b/.test(lyric);
+    const asksForClaps = /\bbate palma\b/.test(lyric);
+    const asksForFoot = /\bbate (?:o )?pe\b/.test(lyric);
+    const asksForSlow = /\bdevagar\b/.test(lyric);
+    const asksForAcceleration = /\bacelerar\b/.test(lyric);
+    const asksForSideToSide = /\bvai pra la e vem pra ca\b/.test(lyric);
     const direction = ['pela esquerda', 'ao centro', 'pela direita'][shot.index % 3];
     const chooseFresh = (candidates: string[]) => candidates.find((candidate) => (
       !previousPlans.some((previous) => shotActionsAreTooSimilar(previous.action, candidate))
     )) ?? candidates[shot.index % candidates.length];
     let action: string;
     let purpose: string;
-    if (/\b(bate palma|palmas|bate o pe)\b/.test(lyric)) {
+    if (asksForClaps || asksForFoot) {
       const rhythmBeats = lead === vehicle?.name ? [
         `${vehicle.name} pisca os farois duas vezes no pulso musical ${direction}`,
         `${vehicle.name} soa dois apitos curtos e acende o sinal colorido ${direction}`,
@@ -1893,14 +1915,14 @@ export class ChildrenClipProcessor {
         `${vehicle.name}, parado, toca a campainha e ilumina as janelas em sequencia ${direction}`,
         `${vehicle.name} marca o compasso com dois sinais de luz no painel ${direction}`
       ] : [
-        `${subject} ${plural ? 'marcam' : 'marca'} o ritmo com duas palmas acima da cabeca ${direction}`,
-        `${subject} ${plural ? 'alternam' : 'alterna'} uma palma e um toque dos pes no chao ${direction}`,
-        `${subject} ${plural ? 'batem' : 'bate'} palmas na altura dos ombros e ${plural ? 'param' : 'para'} em uma pose ${direction}`,
-        `${subject} ${plural ? 'acompanham' : 'acompanha'} o pulso com palmas baixas e dois passos laterais ${direction}`,
-        `${subject} ${plural ? 'tocam' : 'toca'} primeiro os joelhos e depois ${plural ? 'batem' : 'bate'} uma palma ${direction}`,
-        `${subject} ${plural ? 'erguem' : 'ergue'} uma fita colorida a cada batida e ${plural ? 'trocam' : 'troca'} de mao ${direction}`,
-        `${subject} ${plural ? 'fazem' : 'faz'} duas palmas cruzadas e ${plural ? 'apontam' : 'aponta'} para o sinal da estacao ${direction}`,
-        `${subject} ${plural ? 'batem' : 'bate'} uma palma, ${plural ? 'giram' : 'gira'} no chao e ${plural ? 'congelam' : 'congela'} em pose ${direction}`
+        `${subject} ${plural ? 'batem' : 'bate'} duas palmas e depois ${plural ? 'pisam' : 'pisa'} com um pe na marca do chao ${direction}`,
+        `${subject} ${plural ? 'alternam' : 'alterna'} uma palma e um toque dos pes no piso ${direction}`,
+        `${subject} ${plural ? 'batem' : 'bate'} palmas na altura dos ombros e ${plural ? 'tocam' : 'toca'} o chao com a ponta do pe ${direction}`,
+        `${subject} ${plural ? 'acompanham' : 'acompanha'} o pulso com palmas baixas e dois passos dos pes sobre marcas no piso ${direction}`,
+        `${subject} ${plural ? 'tocam' : 'toca'} primeiro o pe na marca do chao e depois ${plural ? 'batem' : 'bate'} uma palma ${direction}`,
+        `${subject} ${plural ? 'batem' : 'bate'} palmas enquanto ${plural ? 'alternam' : 'alterna'} os pes entre dois circulos no chao ${direction}`,
+        `${subject} ${plural ? 'fazem' : 'faz'} duas palmas cruzadas e ${plural ? 'pisam' : 'pisa'} na estrela pintada no piso ${direction}`,
+        `${subject} ${plural ? 'batem' : 'bate'} uma palma, ${plural ? 'tocam' : 'toca'} o pe no chao e ${plural ? 'congelam' : 'congela'} em pose ${direction}`
       ];
       action = chooseFresh(rhythmBeats);
       purpose = 'Transformar o comando musical em um gesto claro que a crianca possa acompanhar';
@@ -1916,13 +1938,15 @@ export class ChildrenClipProcessor {
       ];
       action = chooseFresh(boardingBeats);
       purpose = 'Mostrar o embarque de forma segura e legivel';
-    } else if (/\b(devagar|desaceler)\b/.test(lyric) && vehicle) {
+    } else if (asksForSlow && vehicle) {
       const observer = lead === vehicle.name ? null : lead;
-      action = chooseFresh([
-        `${vehicle.name} reduz a velocidade nos trilhos${observer ? ` enquanto ${observer} observa da area segura` : ''} ${direction}`,
-        `${vehicle.name} se aproxima lentamente da placa de parada${observer ? ` enquanto ${observer} aponta para o sinal` : ''} ${direction}`,
-        `${vehicle.name} freia suavemente e para junto ao relogio da estacao${observer ? ` enquanto ${observer} aguarda atras da faixa` : ''} ${direction}`
-      ]);
+      action = asksForAcceleration
+        ? `${vehicle.name} reduz a velocidade junto ao sinal e, em seguida, acelera pelos trilhos${observer ? ` enquanto ${observer} observa da area segura` : ''} ${direction}`
+        : chooseFresh([
+          `${vehicle.name} reduz a velocidade nos trilhos${observer ? ` enquanto ${observer} observa da area segura` : ''} ${direction}`,
+          `${vehicle.name} se aproxima lentamente da placa de parada${observer ? ` enquanto ${observer} aponta para o sinal` : ''} ${direction}`,
+          `${vehicle.name} freia suavemente e para junto ao relogio da estacao${observer ? ` enquanto ${observer} aguarda atras da faixa` : ''} ${direction}`
+        ]);
       purpose = 'Representar visualmente a mudanca para o ritmo lento';
     } else if (/\b(piui+|aceler|vai sair|passeando|trenzinho|trem)\b/.test(lyric) && vehicle) {
       const observer = lead === vehicle.name ? 'a sinalizacao da plataforma' : lead;
@@ -1944,7 +1968,7 @@ export class ChildrenClipProcessor {
       ];
       action = chooseFresh(vehicleBeats);
       purpose = 'Mostrar a partida e fazer a historia avancar com seguranca';
-    } else if (/\b(pula|pular)\b/.test(lyric)) {
+    } else if (asksForJump) {
       const jumpingBeats = lead === vehicle?.name ? [
         `${vehicle.name} pisca o farol a cada salto marcado por luzes no chao ${direction}`,
         `${vehicle.name}, parado na plataforma, abre a porta quando tres circulos luminosos saltam no painel ${direction}`
@@ -1955,6 +1979,9 @@ export class ChildrenClipProcessor {
       ];
       action = chooseFresh(jumpingBeats);
       purpose = 'Representar o verbo da letra com um movimento infantil seguro';
+    } else if (asksForSideToSide) {
+      action = `${subject} ${plural ? 'seguem' : 'segue'} da marca esquerda ate a direita e ${plural ? 'voltam' : 'volta'} ao centro ${direction}`;
+      purpose = 'Representar claramente o movimento de um lado para o outro pedido pela letra';
     } else {
       const neutralBeats = [
         `${subject} ${plural ? 'apontam' : 'aponta'} para o elemento principal da cena ${direction}`,
@@ -1973,20 +2000,46 @@ export class ChildrenClipProcessor {
       action = chooseFresh(neutralBeats);
       purpose = 'Criar um novo acontecimento visual coerente com o trecho sincronizado';
     }
+    const requiredVehicleForCue = requiredByLyrics.find((entity) => /\b(vehicle|veiculo|trem|train|locomotiva)\b/.test(this.normalizeShotText(`${entity.type} ${entity.identity ?? ''}`)));
+    const requiredActorsForCue = requiredByLyrics.filter((entity) => entity !== requiredVehicleForCue);
+    if (asksForJump) {
+      const jumper = requiredActorsForCue.find((entity) => /\b(coelho|coelha|coelhinho|coelhinha)\b/.test(this.normalizeShotText(`${entity.type} ${entity.identity ?? ''}`))) ?? requiredActorsForCue[0] ?? actors[0];
+      if (jumper) {
+        const otherRequiredActors = requiredActorsForCue.filter((entity) => entity !== jumper);
+        const supportingBeat = otherRequiredActors.length
+          ? `, enquanto ${otherRequiredActors.map((entity) => entity.name).join(' e ')} ${otherRequiredActors.length > 1 ? 'marcam' : 'marca'} o ritmo atras da faixa`
+          : '';
+        action = requiredVehicleForCue
+          ? `${jumper.name} faz dois saltos dentro de uma marca segura na plataforma${supportingBeat}; depois ${requiredVehicleForCue.name}, parado durante os gestos, parte devagar pelos trilhos`
+          : `${jumper.name} faz dois saltos entre circulos coloridos no chao e aterrissa com equilibrio ${direction}`;
+      }
+    }
+    if (asksForSideToSide && requiredActorsForCue.length) {
+      const mover = requiredActorsForCue[0].name;
+      action = `${mover} caminha da marca esquerda ate a direita e volta ao centro, acompanhando a letra ${direction}`;
+    }
+    if (asksForAcceleration && !/\b(acelera|aceleram|acelerando|ganha velocidade)\b/.test(this.normalizeShotText(action)) && requiredVehicleForCue) {
+      action = asksForSlow
+        ? `${requiredVehicleForCue.name} reduz a velocidade junto ao sinal e, em seguida, acelera pelos trilhos ${direction}`
+        : `${requiredVehicleForCue.name} acelera gradualmente pelos trilhos ao acender o sinal de partida ${direction}`;
+    }
+    if ((asksForClaps || asksForFoot) && requiredVehicleForCue && !this.containsShotEntity(this.normalizeShotText(action), requiredVehicleForCue.name)) {
+      action = `${action}, enquanto ${requiredVehicleForCue.name} permanece parado na plataforma com o farol aceso`;
+    }
     const missingRequired = requiredByLyrics.filter((entity) => !this.containsShotEntity(this.normalizeShotText(action), entity.name));
     if (missingRequired.length) {
-      const requiredVehicle = requiredByLyrics.find((entity) => /\b(vehicle|veiculo|trem|train|locomotiva)\b/.test(this.normalizeShotText(`${entity.type} ${entity.identity ?? ''}`)));
+      const requiredVehicle = requiredVehicleForCue;
       const requiredActors = requiredByLyrics.filter((entity) => entity !== requiredVehicle);
       const actorNames = requiredActors.map((entity) => entity.name);
       const actorList = actorNames.length > 1 ? `${actorNames.slice(0, -1).join(', ')} e ${actorNames.at(-1)}` : actorNames[0];
       if (requiredVehicle && actorList) {
         action = chooseFresh([
-          `${requiredVehicle.name} avanca pelos trilhos enquanto ${actorList} acena de dentro dos vagoes`,
-          `${requiredVehicle.name} cruza a ponte colorida enquanto ${actorList} aponta a paisagem de dentro dos vagoes`,
-          `${requiredVehicle.name} passa pelo moinho enquanto ${actorList} marca o ritmo com as patas e maos dentro dos vagoes`,
-          `${requiredVehicle.name} reduz a velocidade enquanto ${actorList} mostra os sinais coloridos de dentro dos vagoes`,
-          `${requiredVehicle.name} para na plataforma, abre as portas e ${actorList} celebra atras da faixa segura`,
-          `${requiredVehicle.name} soa o apito e segue pelos trilhos enquanto ${actorList} levanta bandeirolas dentro dos vagoes`
+          `${requiredVehicle.name} avanca pelos trilhos enquanto ${actorList} ${actorNames.length > 1 ? 'acenam' : 'acena'} de dentro dos vagoes`,
+          `${requiredVehicle.name} cruza a ponte colorida enquanto ${actorList} ${actorNames.length > 1 ? 'apontam' : 'aponta'} a paisagem de dentro dos vagoes`,
+          `${requiredVehicle.name} passa pelo moinho enquanto ${actorList} ${actorNames.length > 1 ? 'marcam' : 'marca'} o ritmo com as patas e maos dentro dos vagoes`,
+          `${requiredVehicle.name} reduz a velocidade enquanto ${actorList} ${actorNames.length > 1 ? 'mostram' : 'mostra'} os sinais coloridos de dentro dos vagoes`,
+          `${requiredVehicle.name} para na plataforma, abre as portas e ${actorList} ${actorNames.length > 1 ? 'celebram' : 'celebra'} atras da faixa segura`,
+          `${requiredVehicle.name} soa o apito e segue pelos trilhos enquanto ${actorList} ${actorNames.length > 1 ? 'levantam' : 'levanta'} bandeirolas dentro dos vagoes`
         ]);
       } else if (requiredVehicle) {
         action = chooseFresh([
@@ -2002,14 +2055,16 @@ export class ChildrenClipProcessor {
       }
     }
     const previousLocation = previousPlans.at(-1);
-    const hasGenericLocation = /^cenario (?:intro|verse|chorus|bridge|outro)(?:\b|_)/.test(this.normalizeShotText(plan.locationName));
+    const hasGenericLocation = genericShotLocation(plan.locationName);
     const requestedFocus = allowed.find((name) => this.normalizeShotText(name) === this.normalizeShotText(plan.primaryFocus));
-    const focus = requestedFocus && this.containsShotEntity(this.normalizeShotText(action), requestedFocus)
+    const requiredDebutFocus = requiredByLyrics.find((entity) => entity.firstShotIndex === shot.index && this.containsShotEntity(this.normalizeShotText(action), entity.name));
+    const focus = requiredDebutFocus?.name
+      ?? (requestedFocus && this.containsShotEntity(this.normalizeShotText(action), requestedFocus)
       ? requestedFocus
       : requiredByLyrics.find((entity) => this.containsShotEntity(this.normalizeShotText(action), entity.name))?.name
         ?? allowed.find((name) => this.containsShotEntity(this.normalizeShotText(action), name))
         ?? allowed[0]
-        ?? null;
+        ?? null);
     return {
       ...plan,
       ...(hasGenericLocation && previousLocation ? {

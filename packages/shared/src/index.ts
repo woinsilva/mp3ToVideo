@@ -79,6 +79,56 @@ export function shotActionIsVague(value: unknown): boolean {
   return /\b(se move com movimento|brinca com o som|grupo se junta|grupo danca e celebra|todos dancam com)\b/.test(text);
 }
 
+export function genericShotLocation(value: unknown): boolean {
+  return /^cenario (?:intro|verse|chorus|bridge|outro)(?:\b|_)/.test(normalizeShotSemantics(value));
+}
+
+export function visibleWrittenTextIssue(value: unknown): string | null {
+  const text = normalizeShotSemantics(value).replace(/\bsem texto\b/g, '');
+  if (/\b(inscricao|texto legivel|palavra escrita|frase escrita|legenda)\b/.test(text)) return 'texto escrito visivel nao permitido na cena';
+  if (/\bplaca\b.{0,55}\b(exibe|mostra|diz|escrito|inscricao|palavra|frase)\b/.test(text)) return 'placa com texto visivel nao permitida na cena';
+  return null;
+}
+
+export function shotGrammarIssue(value: unknown): string | null {
+  const text = normalizeShotSemantics(value);
+  const coordinatedNames = '(?:lia|toto|mimi|lilo)\\s*(?:,\\s*(?:lia|toto|mimi|lilo)\\s*)*(?:e\\s+(?:lia|toto|mimi|lilo))';
+  const singularVerb = '(?:acena|alterna|aponta|abre|avanca|bate|celebra|coloca|corre|entra|ergue|espera|estende|faz|fecha|fica|levanta|marca|mostra|observa|olha|pega|pisa|pula|puxa|reduz|responde|salta|sobe|toca)';
+  if (new RegExp(`\\b${coordinatedNames}\\s+${singularVerb}\\b`).test(text)) {
+    return 'sujeito composto usa verbo no singular';
+  }
+  if (/\b(?:lia|toto|mimi|lilo)(?:\s*,?\s*(?:e|,)\s*(?:lia|toto|mimi|lilo))*\s+(?:pular|saltar|correr|dancar|bater)\b/.test(text)) {
+    return 'acao com verbo no infinitivo e concordancia incorreta';
+  }
+  if (/\bpuxam a\b/.test(text)) return 'pronome obliquo escrito de forma incorreta';
+  return null;
+}
+
+export function lyricActionIssue(lyricValue: unknown, actionValue: unknown): string | null {
+  const lyric = normalizeShotSemantics(lyricValue);
+  const action = normalizeShotSemantics(actionValue);
+  if (!lyric || !action) return null;
+  if (/\bpula(?:r|m|ndo)?\b/.test(lyric) && !/\b(pula|pulam|pulando|salta|saltam|saltando|salto)\b/.test(action)) {
+    return 'a letra pede um salto, mas a acao nao mostra nenhum salto';
+  }
+  if (/\bbate palma\b/.test(lyric) && !/\b(palma|palmas)\b/.test(action)) {
+    return 'a letra pede palmas, mas a acao nao mostra palmas';
+  }
+  if (/\bbate (?:o )?pe\b/.test(lyric) && !/\b(pisa|pisam|pe|pes)\b.{0,30}\b(chao|piso|marca)\b|\b(chao|piso|marca)\b.{0,30}\b(pe|pes)\b/.test(action)) {
+    return 'a letra pede bater o pe, mas a acao nao mostra o gesto';
+  }
+  if (/\bdevagar\b/.test(lyric) && !/\b(devagar|lentamente|reduz|reduzem|desacelera|desaceleram|freia|freiam)\b/.test(action)) {
+    return 'a letra pede movimento devagar, mas a acao nao mostra a desaceleracao';
+  }
+  if (/\bacelerar\b/.test(lyric) && !/\b(acelera|aceleram|acelerando|ganha velocidade)\b/.test(action)) {
+    return 'a letra pede aceleracao, mas a acao nao mostra o aumento de velocidade';
+  }
+  if (/\bvai pra la e vem pra ca\b/.test(lyric) && !/\b(lado a lado|de um lado para o outro|esquerda.{0,35}direita|direita.{0,35}esquerda|vai e volta)\b/.test(action)) {
+    return 'a letra pede movimento de um lado para o outro, mas a acao nao o mostra';
+  }
+  return null;
+}
+
 export function vehicleActionIssue(value: unknown, vehicleNames: string[]): string | null {
   const text = normalizeShotSemantics(value);
   if (!text) return null;

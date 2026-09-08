@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { genericShotLocation } from '@video/shared';
 import { vehicleActionIssue } from '@video/shared';
 
 interface PlanningSection { id: string; title: string; type: string; startSeconds: number; endSeconds: number; lyricsExcerpt: string | null; energy: number | null; }
@@ -253,8 +254,11 @@ export class ChildrenClipPlanningService {
       const locationKey = this.slug(generated.locationKey || skeleton.sectionTitle || skeleton.sectionType);
       const creativeLocation = Array.isArray(input.creative?.locations)
         ? input.creative.locations.find((item) => this.slug(item.key || item.name || '') === locationKey) : undefined;
-      const locationName = this.environmentOnlyText(generated.locationName, entities, creativeLocation?.name,
-        `Cenario ${skeleton.sectionType || 'principal'}`);
+      const requestedLocationName = this.environmentOnlyText(generated.locationName, entities, creativeLocation?.name, '');
+      const previousLocation = arrayIndex > 0 ? locations.get(this.slug(shotPlans.find((item) => item.shotIndex === skeletons[arrayIndex - 1].index)?.locationKey || skeletons[arrayIndex - 1].sectionTitle)) : undefined;
+      const locationName = requestedLocationName && !genericShotLocation(requestedLocationName)
+        ? requestedLocationName
+        : previousLocation?.name ?? 'Estação Colorida';
       const locationDescription = this.environmentOnlyText(generated.locationDescription, entities, creativeLocation?.description,
         `Ambiente infantil da secao ${skeleton.sectionTitle}, com formas simples e leitura visual clara`);
       const timeOfDay = this.environmentOnlyText(generated.timeOfDay, entities, creativeLocation?.timeOfDay, 'iluminacao clara e consistente');

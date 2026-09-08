@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { ChildrenClipPlanStatus, Prisma, ProcessingJobStatus } from '@prisma/client';
-import { CHILDREN_CLIP_PLAN_GENERATE_JOB_NAME, CHILDREN_CLIP_QUEUE_NAME, shotActionIsVague, shotActionsAreTooSimilar, unapprovedVisualExtra, vehicleActionIssue } from '@video/shared';
+import { CHILDREN_CLIP_PLAN_GENERATE_JOB_NAME, CHILDREN_CLIP_QUEUE_NAME, genericShotLocation, lyricActionIssue, shotActionIsVague, shotActionsAreTooSimilar, shotGrammarIssue, unapprovedVisualExtra, vehicleActionIssue, visibleWrittenTextIssue } from '@video/shared';
 
 import { PrismaService } from '../../../database/prisma.service';
 import { ChildrenClipQueueService } from '../../jobs/services/children-clip-queue.service';
@@ -241,6 +241,13 @@ export class ChildrenClipPlanService {
       if ([...allowed, ...forbidden].some((id) => !knownIds.has(id))) throw new BadRequestException(`Tomada ${shot.index + 1}: existe uma entidade desconhecida.`);
       const normalizedDescription = this.normalize(shot.description);
       const normalizedAction = this.normalize(shot.characterAction);
+      if (genericShotLocation(shot.location?.name)) throw new BadRequestException(`Tomada ${shot.index + 1}: o local ainda e um nome generico. Replaneje a tomada.`);
+      const writtenTextIssue = visibleWrittenTextIssue([shot.description, shot.characterAction, shot.framing, shot.cameraMovement].join(' '));
+      if (writtenTextIssue) throw new BadRequestException(`Tomada ${shot.index + 1}: ${writtenTextIssue}. Replaneje a tomada.`);
+      const grammarIssue = shotGrammarIssue(shot.characterAction);
+      if (grammarIssue) throw new BadRequestException(`Tomada ${shot.index + 1}: ${grammarIssue}. Replaneje a tomada.`);
+      const lyricIssue = lyricActionIssue(shot.lyricText, shot.characterAction);
+      if (lyricIssue) throw new BadRequestException(`Tomada ${shot.index + 1}: ${lyricIssue}. Replaneje a tomada.`);
       const physicalIssue = vehicleActionIssue(normalizedAction, vehicleNames);
       if (physicalIssue) {
         throw new BadRequestException(`Tomada ${shot.index + 1}: ${physicalIssue}. Replaneje ou edite a tomada.`);

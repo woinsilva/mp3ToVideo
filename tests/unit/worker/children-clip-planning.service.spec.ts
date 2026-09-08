@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { ChildrenClipPlanningService } from '../../../apps/worker/src/services/children-clip-planning.service';
-import { shotActionIsVague, shotActionsAreTooSimilar, unapprovedVisualExtra, vehicleActionIssue } from '@video/shared';
+import { genericShotLocation, lyricActionIssue, shotActionIsVague, shotActionsAreTooSimilar, shotGrammarIssue, unapprovedVisualExtra, vehicleActionIssue, visibleWrittenTextIssue } from '@video/shared';
 
 describe('ChildrenClipPlanningService', () => {
   it('detects cosmetically changed actions as the same visual beat', () => {
@@ -13,6 +13,22 @@ describe('ChildrenClipPlanningService', () => {
       'Toto salta sobre tres marcas coloridas no chao',
       'Mimi abre a porta do vagao parado e entra com cuidado'
     )).toBe(false);
+  });
+
+  it('rejects generic locations, written signs and broken coordinated grammar', () => {
+    expect(genericShotLocation('Cenario chorus')).toBe(true);
+    expect(genericShotLocation('Estação Colorida')).toBe(false);
+    expect(visibleWrittenTextIssue("Pipo exibe uma placa com a inscrição Vem dançar")).toContain('texto');
+    expect(visibleWrittenTextIssue('Pipo passa por uma placa colorida sem texto')).toBeNull();
+    expect(shotGrammarIssue('Mimi e Toto acena de dentro dos vagões')).toContain('singular');
+    expect(shotGrammarIssue('Mimi e Toto acenam de dentro dos vagões')).toBeNull();
+  });
+
+  it('requires distinctive lyric gestures to be visible in the action', () => {
+    expect(lyricActionIssue('Pula, pula!', 'Lilo estende uma fita no chão')).toContain('salto');
+    expect(lyricActionIssue('Pula, pula!', 'Lilo salta sobre uma fita no chão')).toBeNull();
+    expect(lyricActionIssue('Bate palma, bate o pé', 'Lia acena para o trem')).toContain('palmas');
+    expect(lyricActionIssue('Agora o trem vai devagar', 'Pipo Express reduz a velocidade nos trilhos')).toBeNull();
   });
 
   it('detects unsafe or physically impossible vehicle actions', () => {
