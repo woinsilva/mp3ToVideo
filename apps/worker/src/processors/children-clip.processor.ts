@@ -1110,12 +1110,6 @@ export class ChildrenClipProcessor {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const willRetry = job.attemptsMade + 1 < (job.opts.attempts ?? 1);
-      if (willRetry && (/Shot Plan invalido|segunda IA|Auditoria bloqueada/i.test(message))) {
-        const currentData = job.data as ChildrenClipPlanGenerationJobPayload & { shotPlanningDraft?: ShotPlanningDraft };
-        if (currentData.shotPlanningDraft) {
-          await job.updateData({ ...currentData, shotPlanningDraft: { ...currentData.shotPlanningDraft, audits: [] } } as ChildrenClipPlanGenerationJobPayload);
-        }
-      }
       await this.prisma.childrenClipPlan.update({
         where: { projectId },
         data: { status: willRetry ? 'queued' : 'failed', errorMessage: message, generationEndedAt: willRetry ? null : new Date() }
@@ -1774,7 +1768,11 @@ export class ChildrenClipProcessor {
         return `${entity.name} e apresentado novamente depois de sua estreia`;
       }
     }
-    const extra = unapprovedVisualExtra(positiveText);
+    const visibleSceneText = this.normalizeShotText([
+      plan.primaryFocus, plan.action, plan.composition, plan.camera,
+      JSON.stringify(plan.characterPlacement ?? [])
+    ].filter((value): value is string => typeof value === 'string').join(' '));
+    const extra = unapprovedVisualExtra(visibleSceneText);
     if (extra) return `figurante nao aprovado aparece na cena: ${extra}`;
     if (shotActionIsVague(plan.action)) return 'acao visual vaga ou pouco filmavel';
     const focusedEntity = introductionSchedule.find((entity) => this.normalizeShotText(plan.primaryFocus) === this.normalizeShotText(entity.name));
@@ -1829,16 +1827,43 @@ export class ChildrenClipProcessor {
     const plural = Boolean(companion);
     const lyric = this.normalizeShotText(shot.lyricText);
     const direction = ['pela esquerda', 'ao centro', 'pela direita'][shot.index % 3];
+    const chooseFresh = (candidates: string[]) => candidates.find((candidate) => (
+      !previousPlans.some((previous) => shotActionsAreTooSimilar(previous.action, candidate))
+    )) ?? candidates[shot.index % candidates.length];
     let action: string;
     let purpose: string;
     if (/\b(bate palma|palmas|bate o pe)\b/.test(lyric)) {
-      action = `${subject} ${plural ? 'marcam' : 'marca'} o ritmo com palmas e passos simples ${direction}`;
+      const rhythmBeats = lead === vehicle?.name ? [
+        `${vehicle.name} pisca os farois duas vezes no pulso musical ${direction}`,
+        `${vehicle.name} soa dois apitos curtos e acende o sinal colorido ${direction}`,
+        `${vehicle.name} abre e fecha a porta, parado na plataforma, seguindo o ritmo ${direction}`
+      ] : [
+        `${subject} ${plural ? 'marcam' : 'marca'} o ritmo com duas palmas acima da cabeca ${direction}`,
+        `${subject} ${plural ? 'alternam' : 'alterna'} uma palma e um toque dos pes no chao ${direction}`,
+        `${subject} ${plural ? 'batem' : 'bate'} palmas na altura dos ombros e ${plural ? 'param' : 'para'} em uma pose ${direction}`,
+        `${subject} ${plural ? 'acompanham' : 'acompanha'} o pulso com palmas baixas e dois passos laterais ${direction}`
+      ];
+      action = chooseFresh(rhythmBeats);
       purpose = 'Transformar o comando musical em um gesto claro que a crianca possa acompanhar';
     } else if (/\b(embarcar|vagao|entrou)\b/.test(lyric) && vehicle) {
-      action = actors.length ? `${lead} entra pela porta lateral de ${vehicle.name}, parado na plataforma, enquanto os demais acenam` : `${vehicle.name} abre a porta lateral enquanto permanece parado na plataforma`;
+      const boardingBeats = actors.length ? [
+        `${lead} entra pela porta lateral de ${vehicle.name}, parado na plataforma${companion ? `, enquanto ${companion} acena da area segura` : ''}`,
+        `${vehicle.name}, parado na plataforma, abre a porta e ${lead} sobe pelo degrau iluminado${companion ? ` enquanto ${companion} espera atras da faixa` : ''}`,
+        `${lead} mostra o bilhete ilustrado e atravessa a porta aberta de ${vehicle.name}, parado na plataforma${companion ? `, seguido por ${companion}` : ''}`
+      ] : [
+        `${vehicle.name} abre a porta lateral enquanto permanece parado na plataforma`,
+        `${vehicle.name}, imovel na plataforma, acende o degrau e mantem a porta aberta`,
+        `${vehicle.name} para diante da faixa segura e abre a entrada iluminada`
+      ];
+      action = chooseFresh(boardingBeats);
       purpose = 'Mostrar o embarque de forma segura e legivel';
     } else if (/\b(devagar|desaceler)\b/.test(lyric) && vehicle) {
-      action = `${vehicle.name} reduz a velocidade nos trilhos enquanto ${lead === vehicle.name ? 'a paisagem' : lead} acompanha o movimento ${direction}`;
+      const observer = lead === vehicle.name ? null : lead;
+      action = chooseFresh([
+        `${vehicle.name} reduz a velocidade nos trilhos${observer ? ` enquanto ${observer} observa da area segura` : ''} ${direction}`,
+        `${vehicle.name} se aproxima lentamente da placa de parada${observer ? ` enquanto ${observer} aponta para o sinal` : ''} ${direction}`,
+        `${vehicle.name} freia suavemente e para junto ao relogio da estacao${observer ? ` enquanto ${observer} aguarda atras da faixa` : ''} ${direction}`
+      ]);
       purpose = 'Representar visualmente a mudanca para o ritmo lento';
     } else if (/\b(piui+|aceler|vai sair|passeando|trenzinho|trem)\b/.test(lyric) && vehicle) {
       const observer = lead === vehicle.name ? 'a sinalizacao da plataforma' : lead;
@@ -1850,11 +1875,18 @@ export class ChildrenClipProcessor {
         `${vehicle.name} mostra as rodas girando em detalhe enquanto ${observer} celebra a viagem longe dos trilhos`,
         `${vehicle.name} alcanca a placa seguinte da estacao enquanto ${observer} acena de um ponto seguro`
       ];
-      action = vehicleBeats.find((candidate) => !previousPlans.some((previous) => shotActionsAreTooSimilar(previous.action, candidate)))
-        ?? vehicleBeats[shot.index % vehicleBeats.length];
+      action = chooseFresh(vehicleBeats);
       purpose = 'Mostrar a partida e fazer a historia avancar com seguranca';
     } else if (/\b(pula|pular)\b/.test(lyric)) {
-      action = `${subject} ${plural ? 'pulam' : 'pula'} no chao ao lado da plataforma e ${plural ? 'aterrissam' : 'aterrissa'} com equilibrio ${direction}`;
+      const jumpingBeats = lead === vehicle?.name ? [
+        `${vehicle.name} pisca o farol a cada salto marcado por luzes no chao ${direction}`,
+        `${vehicle.name}, parado na plataforma, abre a porta quando tres circulos luminosos saltam no painel ${direction}`
+      ] : [
+        `${subject} ${plural ? 'pulam' : 'pula'} entre dois circulos pintados no chao e ${plural ? 'aterrissam' : 'aterrissa'} com equilibrio ${direction}`,
+        `${subject} ${plural ? 'saltam' : 'salta'} sobre uma fita colorida no piso e ${plural ? 'erguem' : 'ergue'} os bracos ${direction}`,
+        `${subject} ${plural ? 'fazem' : 'faz'} um pequeno salto no lugar e ${plural ? 'param' : 'para'} dentro de uma marca segura ${direction}`
+      ];
+      action = chooseFresh(jumpingBeats);
       purpose = 'Representar o verbo da letra com um movimento infantil seguro';
     } else {
       const neutralBeats = [
@@ -1865,8 +1897,7 @@ export class ChildrenClipProcessor {
         `${subject} ${plural ? 'mudam' : 'muda'} de pose no pulso musical ${direction}`,
         `${subject} ${plural ? 'celebram' : 'celebra'} o novo compasso com um giro no chao ${direction}`
       ];
-      action = neutralBeats.find((candidate) => !previousPlans.some((previous) => shotActionsAreTooSimilar(previous.action, candidate)))
-        ?? neutralBeats[shot.index % neutralBeats.length];
+      action = chooseFresh(neutralBeats);
       purpose = 'Criar um novo acontecimento visual coerente com o trecho sincronizado';
     }
     const focus = allowed.find((name) => this.normalizeShotText(name) === this.normalizeShotText(plan.primaryFocus)) ?? allowed[0] ?? null;
