@@ -1994,7 +1994,13 @@ export class ChildrenClipProcessor {
     }
     const previousLocation = previousPlans.at(-1);
     const hasGenericLocation = /^cenario (?:intro|verse|chorus|bridge|outro)(?:\b|_)/.test(this.normalizeShotText(plan.locationName));
-    const focus = allowed.find((name) => this.normalizeShotText(name) === this.normalizeShotText(plan.primaryFocus)) ?? allowed[0] ?? null;
+    const requestedFocus = allowed.find((name) => this.normalizeShotText(name) === this.normalizeShotText(plan.primaryFocus));
+    const focus = requestedFocus && this.containsShotEntity(this.normalizeShotText(action), requestedFocus)
+      ? requestedFocus
+      : requiredByLyrics.find((entity) => this.containsShotEntity(this.normalizeShotText(action), entity.name))?.name
+        ?? allowed.find((name) => this.containsShotEntity(this.normalizeShotText(action), name))
+        ?? allowed[0]
+        ?? null;
     return {
       ...plan,
       ...(hasGenericLocation && previousLocation ? {
