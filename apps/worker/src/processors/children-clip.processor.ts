@@ -2016,7 +2016,9 @@ export class ChildrenClipProcessor {
     }
     if (asksForSideToSide && requiredActorsForCue.length) {
       const mover = requiredActorsForCue[0].name;
-      action = `${mover} caminha da marca esquerda ate a direita e volta ao centro, acompanhando a letra ${direction}`;
+      action = requiredVehicleForCue
+        ? `${mover} caminha da marca esquerda ate a direita e volta ao centro diante de ${requiredVehicleForCue.name}, parado na plataforma ${direction}`
+        : `${mover} caminha da marca esquerda ate a direita e volta ao centro, acompanhando a letra ${direction}`;
     }
     if (asksForAcceleration && !/\b(acelera|aceleram|acelerando|ganha velocidade)\b/.test(this.normalizeShotText(action)) && requiredVehicleForCue) {
       action = asksForSlow
