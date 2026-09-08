@@ -1988,6 +1988,15 @@ export class ChildrenClipProcessor {
           `${requiredVehicle.name} para na plataforma, abre as portas e ${actorList} celebra atras da faixa segura`,
           `${requiredVehicle.name} soa o apito e segue pelos trilhos enquanto ${actorList} levanta bandeirolas dentro dos vagoes`
         ]);
+      } else if (requiredVehicle) {
+        action = chooseFresh([
+          `${requiredVehicle.name} acende o farol e avanca ate a placa colorida ${direction}`,
+          `${requiredVehicle.name} soa dois apitos e cruza a ponte da estacao ${direction}`,
+          `${requiredVehicle.name} mostra as rodas girando enquanto segue pelos trilhos ${direction}`,
+          `${requiredVehicle.name} passa sob as bandeirolas e ilumina o sinal de destino ${direction}`,
+          `${requiredVehicle.name} contorna a colina e reaparece junto ao moinho ${direction}`,
+          `${requiredVehicle.name} reduz a velocidade e para diante do relogio da estacao ${direction}`
+        ]);
       } else if (actorList) {
         action = `${actorList} ${actorNames.length > 1 ? 'alternam' : 'alterna'} um gesto da letra com uma pose clara ${direction}`;
       }
