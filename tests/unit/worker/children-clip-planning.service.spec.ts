@@ -41,6 +41,10 @@ describe('ChildrenClipPlanningService', () => {
       ['Pipo Express']
     )).toMatch(/manipulando/);
     expect(vehicleActionIssue(
+      'Mimi brinca com o vagao do Pipo Express, empurrando-o levemente',
+      ['Pipo Express']
+    )).toMatch(/manipulando/);
+    expect(vehicleActionIssue(
       'Pipo Express parte enquanto Toto corre ao longo da plataforma',
       ['Pipo Express']
     )).toMatch(/movimento/);
@@ -50,6 +54,8 @@ describe('ChildrenClipPlanningService', () => {
     expect(shotActionIsVague('Todos dancam com o Pipo Express')).toBe(true);
     expect(shotActionIsVague('Lilo salta entre tres circulos coloridos e aterrissa diante de Lia')).toBe(false);
     expect(unapprovedVisualExtra('Passageiros saem pela plataforma')).toBe('passageiros');
+    expect(unapprovedVisualExtra('Toto corre ate outro cachorro brincalhao')).toBe('cachorro');
+    expect(unapprovedVisualExtra('Lia, Toto e os demais acenam')).toBe('demais');
     expect(unapprovedVisualExtra('Lia e Toto acenam')).toBeNull();
   });
 
@@ -397,10 +403,10 @@ describe('ChildrenClipPlanningService', () => {
         { name: 'Lilo', type: 'animal', identity: 'coelho verde' }
       ]
     }, {})).toEqual([
-      { name: 'Pipo Express', type: 'veiculo', firstShotIndex: 0 },
-      { name: 'Toto', type: 'animal', firstShotIndex: 1 },
-      { name: 'Mimi', type: 'animal', firstShotIndex: 2 },
-      { name: 'Lilo', type: 'animal', firstShotIndex: 3 }
+      { name: 'Pipo Express', type: 'veiculo', identity: 'trem colorido', firstShotIndex: 0 },
+      { name: 'Toto', type: 'animal', identity: 'cachorro brincalhao', firstShotIndex: 1 },
+      { name: 'Mimi', type: 'animal', identity: 'gatinha lavanda', firstShotIndex: 2 },
+      { name: 'Lilo', type: 'animal', identity: 'coelho verde', firstShotIndex: 3 }
     ]);
   });
 
@@ -414,6 +420,6 @@ describe('ChildrenClipPlanningService', () => {
       { name: 'Mimi', roleName: null, versionId: 'mimi', description: 'pequena gatinha' }
     ], { characterRules: [{ name: 'Mimi', type: 'animal', identity: 'gatinha lavanda' }] }, {
       entityIntroductions: [{ entityName: 'Mimi', firstShotIndex: 1 }]
-    })).toEqual([{ name: 'Mimi', type: 'animal', firstShotIndex: 0 }]);
+    })).toEqual([{ name: 'Mimi', type: 'animal', identity: 'gatinha lavanda', firstShotIndex: 0 }]);
   });
 });

@@ -162,6 +162,7 @@ export class ChildrenClipPlanningService {
     return entities.map((entity) => ({
       name: entity.name,
       type: entity.type,
+      identity: entity.identity,
       firstShotIndex: indexes.get(entity.versionId) ?? 0
     }));
   }

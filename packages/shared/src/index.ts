@@ -68,7 +68,7 @@ export function shotActionsAreTooSimilar(left: unknown, right: unknown): boolean
 
 export function unapprovedVisualExtra(value: unknown): string | null {
   const text = normalizeShotSemantics(value);
-  const match = text.match(/\b(passageiros?|pessoas?|criancas?|multidao|figurantes?|figura humana|alguem visivel)\b/);
+  const match = text.match(/\b(passageiros?|pessoas?|criancas?|multidao|figurantes?|figura humana|alguem visivel|cachorros?|cachorrinhos?|caes|gatos?|gatinhos?|gatinhas?|coelhos?|coelhinhos?|grupo|todos|demais)\b/);
   return match?.[0] ?? null;
 }
 
@@ -89,6 +89,7 @@ export function vehicleActionIssue(value: unknown, vehicleNames: string[]): stri
   if (new RegExp(`\\b(em cima|sobre o teto) d[oa] ${vehicleTerm}\\b`).test(text)) return 'personagem em cima de um veiculo';
   if (/\b(sobre uma trilha|brinca(?:m)? com (?:as )?trilh|danca(?:m)? (?:nos?|sobre os?) trilhos|fica(?:m)? (?:nos?|sobre os?) trilhos)\b/.test(text)) return 'personagem vivo nos trilhos';
   if (new RegExp(`\\b(segura|seguram|puxa|puxam|empurra|empurram)\\b.{0,50}\\b${vehicleTerm}\\b`).test(text)) return 'personagem manipulando veiculo de forma incoerente';
+  if (new RegExp(`\\b${vehicleTerm}\\b.{0,70}\\b(empurrando|puxando|segurando|o empurra|o puxa|o segura)\\b`).test(text)) return 'personagem manipulando veiculo de forma incoerente';
 
   const boarding = /\b(entra|entram|embarcam?)\b.{0,60}\b(porta|entrada|vagao|trem|pipo express)\b/.test(text)
     || /\b(pula|pulam|salta|saltam)\b.{0,35}\b(dentro|para dentro|vagao)\b/.test(text);

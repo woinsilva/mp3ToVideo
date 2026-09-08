@@ -39,6 +39,13 @@ interface ShotPlanningDraft {
   audits?: Array<{ batchIndex: number; response: CreativePlanResponse }>;
 }
 
+interface ShotEntitySchedule {
+  name: string;
+  type: string;
+  identity?: string;
+  firstShotIndex: number;
+}
+
 interface HeroVideoRequest {
   provider: 'local' | 'snapgen';
   prompt: string;
@@ -912,14 +919,14 @@ export class ChildrenClipProcessor {
           await this.planProgress(job, auditProgress, 'REPAIRING_INVALID_AI_RESPONSE', `A segunda IA devolveu JSON incompleto na tomada ${batch[0].index + 1}; validando e reparando o plano-base.`);
         }
         let reconciled = audited.map((plan) => this.planning.reconcileAuditedShotPlan(plan, characters));
-        const firstIssue = this.shotAuditIssue(reconciled[0], auditedShotPlans, entityIntroductionSchedule, batch[0].index);
+        const firstIssue = this.shotAuditIssue(reconciled[0], auditedShotPlans, entityIntroductionSchedule, batch[0].index, batch[0].lyricText);
         if (firstIssue?.startsWith('entidade futura ')) {
           reconciled = [this.deterministicSafeShotRepair(reconciled[0], batch[0], entityIntroductionSchedule, auditedShotPlans)];
           await this.planProgress(job, auditProgress, 'APPLYING_DETERMINISTIC_SHOT_REPAIR', `Removendo entidade antecipada da tomada ${batch[0].index + 1} sem novas chamadas de IA.`);
         }
         for (let repairAttempt = 0; repairAttempt < 3; repairAttempt += 1) {
           const rejected = reconciled[0];
-          const rejectionReason = this.shotAuditIssue(rejected, auditedShotPlans, entityIntroductionSchedule, batch[0].index);
+          const rejectionReason = this.shotAuditIssue(rejected, auditedShotPlans, entityIntroductionSchedule, batch[0].index, batch[0].lyricText);
           if (!rejectionReason) break;
           const eligibleEntityNames = entityIntroductionSchedule.filter((entity) => entity.firstShotIndex <= batch[0].index).map((entity) => entity.name);
           const rebuildWithoutRejectedPlan = rejectionReason.startsWith('entidade futura ');
@@ -977,10 +984,10 @@ export class ChildrenClipProcessor {
           audited = repairPlans;
           reconciled = repairPlans.map((plan) => this.planning.reconcileAuditedShotPlan(plan, characters));
         }
-        let remainingIssue = this.shotAuditIssue(reconciled[0], auditedShotPlans, entityIntroductionSchedule, batch[0].index);
+        let remainingIssue = this.shotAuditIssue(reconciled[0], auditedShotPlans, entityIntroductionSchedule, batch[0].index, batch[0].lyricText);
         if (remainingIssue && remainingIssue !== 'acao visual repetida') {
           reconciled = [this.deterministicSafeShotRepair(reconciled[0], batch[0], entityIntroductionSchedule, auditedShotPlans)];
-          remainingIssue = this.shotAuditIssue(reconciled[0], auditedShotPlans, entityIntroductionSchedule, batch[0].index);
+          remainingIssue = this.shotAuditIssue(reconciled[0], auditedShotPlans, entityIntroductionSchedule, batch[0].index, batch[0].lyricText);
           await this.planProgress(job, auditProgress, 'APPLYING_DETERMINISTIC_SHOT_REPAIR', `Aplicando fallback seguro e coerente na tomada ${batch[0].index + 1}.`);
         }
         if (remainingIssue) throw new Error(`A segunda IA nao conseguiu corrigir a tomada ${batch[0].index + 1} apos 3 reparos direcionados: ${remainingIssue}`);
@@ -1738,8 +1745,9 @@ export class ChildrenClipProcessor {
   private shotAuditIssue(
     plan: CreativeShotPlan,
     previousPlans: CreativeShotPlan[],
-    introductionSchedule: Array<{ name: string; type: string; firstShotIndex: number }>,
-    shotIndex: number
+    introductionSchedule: ShotEntitySchedule[],
+    shotIndex: number,
+    lyricText: string | null
   ): string | null {
     const action = this.normalizeShotText(plan.action);
     if (action && previousPlans.some((previous) => shotActionsAreTooSimilar(previous.action, action))) {
@@ -1774,7 +1782,30 @@ export class ChildrenClipProcessor {
     ].filter((value): value is string => typeof value === 'string').join(' '));
     const extra = unapprovedVisualExtra(visibleSceneText);
     if (extra) return `figurante nao aprovado aparece na cena: ${extra}`;
+    const visibleTextWithoutExplicitAbsence = visibleSceneText.replace(/\bsem texto\b/g, '');
+    if (/\b(escrit[oa]|frase|palavra|legenda|texto legivel)\b/.test(visibleTextWithoutExplicitAbsence)) {
+      return 'texto escrito visivel nao permitido na cena';
+    }
+    if (/^cenario (?:intro|verse|chorus|bridge|outro)(?:\b|_)/.test(this.normalizeShotText(plan.locationName))) {
+      return 'local generico em vez de um cenario narrativo concreto';
+    }
+    if (/\b(?:lia|toto|mimi|lilo)(?:\s*,?\s*(?:e|,)\s*(?:lia|toto|mimi|lilo))*\s+(?:pular|saltar|correr|dancar|bater)\b/.test(action)) {
+      return 'acao com verbo no infinitivo e concordancia incorreta';
+    }
     if (shotActionIsVague(plan.action)) return 'acao visual vaga ou pouco filmavel';
+    const requiredByLyrics = this.requiredShotEntities(lyricText, introductionSchedule, shotIndex);
+    for (const entity of requiredByLyrics) {
+      const listed = [...(plan.allowedEntities ?? []), ...(plan.characters ?? [])]
+        .some((name) => this.normalizeShotText(name) === this.normalizeShotText(entity.name));
+      if (!listed || !this.containsShotEntity(action, entity.name)) {
+        return `entidade ${entity.name} citada na letra nao participa da acao visivel`;
+      }
+    }
+    const previousAction = previousPlans.at(-1)?.action;
+    const isBoarding = (value: unknown) => /\b(entra|entram|embarcam?|atravessa|sobem?|sobe)\b.{0,70}\b(porta|entrada|vagao|trem|pipo express)\b/.test(this.normalizeShotText(value));
+    if (previousAction && isBoarding(previousAction) && isBoarding(plan.action)) {
+      return 'embarque repetido em tomadas consecutivas';
+    }
     const focusedEntity = introductionSchedule.find((entity) => this.normalizeShotText(plan.primaryFocus) === this.normalizeShotText(entity.name));
     if (focusedEntity && !this.containsShotEntity(action, focusedEntity.name)) {
       return `foco principal ${focusedEntity.name} nao participa da acao visivel`;
@@ -1798,27 +1829,48 @@ export class ChildrenClipProcessor {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
+  private requiredShotEntities(lyricText: string | null, schedule: ShotEntitySchedule[], shotIndex: number) {
+    const lyric = this.normalizeShotText(lyricText);
+    if (!lyric) return [];
+    return schedule.filter((entity) => {
+      if (entity.firstShotIndex > shotIndex) return false;
+      const descriptor = this.normalizeShotText(`${entity.name} ${entity.type} ${entity.identity ?? ''}`);
+      if (this.containsShotEntity(lyric, entity.name)) return true;
+      if (/\b(cachorro|cachorrinho|cao|filhote)\b/.test(descriptor)) return /\b(cachorro|cachorrinho|cao|au)\b/.test(lyric);
+      if (/\b(gato|gata|gatinho|gatinha|felino)\b/.test(descriptor)) return /\b(gato|gata|gatinho|gatinha|bigode|miau)\b/.test(lyric);
+      if (/\b(coelho|coelha|coelhinho|coelhinha)\b/.test(descriptor)) {
+        return /\b(coelho|coelha|coelhinho|coelhinha|orelhas?|pula|pular)\b/.test(lyric);
+      }
+      if (/\b(vehicle|veiculo|trem|train|locomotiva)\b/.test(descriptor)) {
+        return /\b(trem|trenzinho|locomotiva|vagao|piui+)\b/.test(lyric);
+      }
+      return false;
+    });
+  }
+
   private deterministicSafeShotRepair(
     plan: CreativeShotPlan,
     shot: { index: number; lyricText: string | null },
-    introductionSchedule: Array<{ name: string; type: string; firstShotIndex: number }>,
+    introductionSchedule: ShotEntitySchedule[],
     previousPlans: CreativeShotPlan[] = []
   ): CreativeShotPlan {
     const eligible = introductionSchedule.filter((entity) => entity.firstShotIndex <= shot.index);
     const debuting = eligible.filter((entity) => entity.firstShotIndex === shot.index);
+    const requiredByLyrics = this.requiredShotEntities(shot.lyricText, introductionSchedule, shot.index);
     const eligibleNames = new Set(eligible.map((entity) => this.normalizeShotText(entity.name)));
     const requested = [...(plan.allowedEntities ?? []), ...(plan.characters ?? [])]
       .filter((name) => eligibleNames.has(this.normalizeShotText(name)));
     const allowed = [...new Set([
       ...(requested.length ? requested : eligible.slice(0, 2).map((entity) => entity.name)),
+      ...requiredByLyrics.map((entity) => entity.name),
       ...debuting.map((entity) => entity.name)
     ])];
     const vehicle = eligible.find((entity) => /\b(vehicle|veiculo|trem|train|bus|onibus)\b/.test(this.normalizeShotText(entity.type)) && allowed.includes(entity.name));
     const actors = eligible
       .filter((entity) => allowed.includes(entity.name) && entity.name !== vehicle?.name)
       .sort((left, right) => {
-        const leftPriority = Number(debuting.includes(left)) * 2 + Number(this.normalizeShotText(plan.primaryFocus) === this.normalizeShotText(left.name));
-        const rightPriority = Number(debuting.includes(right)) * 2 + Number(this.normalizeShotText(plan.primaryFocus) === this.normalizeShotText(right.name));
+        const leftPriority = Number(debuting.includes(left)) * 4 + Number(requiredByLyrics.includes(left)) * 2 + Number(this.normalizeShotText(plan.primaryFocus) === this.normalizeShotText(left.name));
+        const rightPriority = Number(debuting.includes(right)) * 4 + Number(requiredByLyrics.includes(right)) * 2 + Number(this.normalizeShotText(plan.primaryFocus) === this.normalizeShotText(right.name));
         return rightPriority - leftPriority;
       });
     const lead = actors[0]?.name ?? vehicle?.name ?? eligible[0]?.name ?? 'O protagonista';
@@ -1921,9 +1973,36 @@ export class ChildrenClipProcessor {
       action = chooseFresh(neutralBeats);
       purpose = 'Criar um novo acontecimento visual coerente com o trecho sincronizado';
     }
+    const missingRequired = requiredByLyrics.filter((entity) => !this.containsShotEntity(this.normalizeShotText(action), entity.name));
+    if (missingRequired.length) {
+      const requiredVehicle = requiredByLyrics.find((entity) => /\b(vehicle|veiculo|trem|train|locomotiva)\b/.test(this.normalizeShotText(`${entity.type} ${entity.identity ?? ''}`)));
+      const requiredActors = requiredByLyrics.filter((entity) => entity !== requiredVehicle);
+      const actorNames = requiredActors.map((entity) => entity.name);
+      const actorList = actorNames.length > 1 ? `${actorNames.slice(0, -1).join(', ')} e ${actorNames.at(-1)}` : actorNames[0];
+      if (requiredVehicle && actorList) {
+        action = chooseFresh([
+          `${requiredVehicle.name} avanca pelos trilhos enquanto ${actorList} acena de dentro dos vagoes`,
+          `${requiredVehicle.name} cruza a ponte colorida enquanto ${actorList} aponta a paisagem de dentro dos vagoes`,
+          `${requiredVehicle.name} passa pelo moinho enquanto ${actorList} marca o ritmo com as patas e maos dentro dos vagoes`,
+          `${requiredVehicle.name} reduz a velocidade enquanto ${actorList} mostra os sinais coloridos de dentro dos vagoes`,
+          `${requiredVehicle.name} para na plataforma, abre as portas e ${actorList} celebra atras da faixa segura`,
+          `${requiredVehicle.name} soa o apito e segue pelos trilhos enquanto ${actorList} levanta bandeirolas dentro dos vagoes`
+        ]);
+      } else if (actorList) {
+        action = `${actorList} ${actorNames.length > 1 ? 'alternam' : 'alterna'} um gesto da letra com uma pose clara ${direction}`;
+      }
+    }
+    const previousLocation = previousPlans.at(-1);
+    const hasGenericLocation = /^cenario (?:intro|verse|chorus|bridge|outro)(?:\b|_)/.test(this.normalizeShotText(plan.locationName));
     const focus = allowed.find((name) => this.normalizeShotText(name) === this.normalizeShotText(plan.primaryFocus)) ?? allowed[0] ?? null;
     return {
       ...plan,
+      ...(hasGenericLocation && previousLocation ? {
+        locationKey: previousLocation.locationKey,
+        locationName: previousLocation.locationName,
+        locationDescription: previousLocation.locationDescription,
+        timeOfDay: previousLocation.timeOfDay
+      } : {}),
       purpose,
       primaryFocus: focus ?? undefined,
       allowedEntities: allowed,
