@@ -1836,12 +1836,19 @@ export class ChildrenClipProcessor {
       const rhythmBeats = lead === vehicle?.name ? [
         `${vehicle.name} pisca os farois duas vezes no pulso musical ${direction}`,
         `${vehicle.name} soa dois apitos curtos e acende o sinal colorido ${direction}`,
-        `${vehicle.name} abre e fecha a porta, parado na plataforma, seguindo o ritmo ${direction}`
+        `${vehicle.name} abre e fecha a porta, parado na plataforma, seguindo o ritmo ${direction}`,
+        `${vehicle.name} alterna as luzes laterais conforme as palmas da musica ${direction}`,
+        `${vehicle.name}, parado, toca a campainha e ilumina as janelas em sequencia ${direction}`,
+        `${vehicle.name} marca o compasso com dois sinais de luz no painel ${direction}`
       ] : [
         `${subject} ${plural ? 'marcam' : 'marca'} o ritmo com duas palmas acima da cabeca ${direction}`,
         `${subject} ${plural ? 'alternam' : 'alterna'} uma palma e um toque dos pes no chao ${direction}`,
         `${subject} ${plural ? 'batem' : 'bate'} palmas na altura dos ombros e ${plural ? 'param' : 'para'} em uma pose ${direction}`,
-        `${subject} ${plural ? 'acompanham' : 'acompanha'} o pulso com palmas baixas e dois passos laterais ${direction}`
+        `${subject} ${plural ? 'acompanham' : 'acompanha'} o pulso com palmas baixas e dois passos laterais ${direction}`,
+        `${subject} ${plural ? 'tocam' : 'toca'} primeiro os joelhos e depois ${plural ? 'batem' : 'bate'} uma palma ${direction}`,
+        `${subject} ${plural ? 'erguem' : 'ergue'} uma fita colorida a cada batida e ${plural ? 'trocam' : 'troca'} de mao ${direction}`,
+        `${subject} ${plural ? 'fazem' : 'faz'} duas palmas cruzadas e ${plural ? 'apontam' : 'aponta'} para o sinal da estacao ${direction}`,
+        `${subject} ${plural ? 'batem' : 'bate'} uma palma, ${plural ? 'giram' : 'gira'} no chao e ${plural ? 'congelam' : 'congela'} em pose ${direction}`
       ];
       action = chooseFresh(rhythmBeats);
       purpose = 'Transformar o comando musical em um gesto claro que a crianca possa acompanhar';
@@ -1873,7 +1880,15 @@ export class ChildrenClipProcessor {
         `${vehicle.name} avanca pelos trilhos e cruza o relogio da estacao enquanto ${observer} observa de uma zona protegida`,
         `${vehicle.name} passa por um arco de flores enquanto ${observer} aponta o caminho a partir da plataforma`,
         `${vehicle.name} mostra as rodas girando em detalhe enquanto ${observer} celebra a viagem longe dos trilhos`,
-        `${vehicle.name} alcanca a placa seguinte da estacao enquanto ${observer} acena de um ponto seguro`
+        `${vehicle.name} alcanca a placa seguinte da estacao enquanto ${observer} acena de um ponto seguro`,
+        `${vehicle.name} atravessa uma pequena ponte colorida enquanto ${observer} acompanha de um mirante protegido`,
+        `${vehicle.name} passa diante de um moinho e faz o sino da passagem tocar enquanto ${observer} mostra o destino`,
+        `${vehicle.name} entra em um tunel iluminado e projeta o farol nas paredes enquanto ${observer} observa da plataforma`,
+        `${vehicle.name} solta tres aneis de vapor acima da locomotiva enquanto ${observer} conta os sinais com os dedos`,
+        `${vehicle.name} cruza uma fileira de bandeirolas que se levantam com a passagem enquanto ${observer} permanece atras da faixa`,
+        `${vehicle.name} contorna uma colina e reaparece junto a uma placa colorida enquanto ${observer} aponta a chegada`,
+        `${vehicle.name} reflete as luzes em uma poca ao passar pela estacao enquanto ${observer} observa de um banco seguro`,
+        `${vehicle.name} aciona a cancela luminosa e segue pelos trilhos enquanto ${observer} confirma o caminho no mapa ilustrado`
       ];
       action = chooseFresh(vehicleBeats);
       purpose = 'Mostrar a partida e fazer a historia avancar com seguranca';
@@ -1895,7 +1910,13 @@ export class ChildrenClipProcessor {
         `${subject} ${plural ? 'respondem' : 'responde'} ao som com um aceno curto ${direction}`,
         `${subject} ${plural ? 'mostram' : 'mostra'} uma placa ilustrada sem texto ${direction}`,
         `${subject} ${plural ? 'mudam' : 'muda'} de pose no pulso musical ${direction}`,
-        `${subject} ${plural ? 'celebram' : 'celebra'} o novo compasso com um giro no chao ${direction}`
+        `${subject} ${plural ? 'celebram' : 'celebra'} o novo compasso com um giro no chao ${direction}`,
+        `${subject} ${plural ? 'organizam' : 'organiza'} tres blocos coloridos em fila ${direction}`,
+        `${subject} ${plural ? 'levantam' : 'levanta'} uma bandeirola e ${plural ? 'indicam' : 'indica'} o proximo caminho ${direction}`,
+        `${subject} ${plural ? 'rolam' : 'rola'} uma bola colorida ate a marca no piso ${direction}`,
+        `${subject} ${plural ? 'abrem' : 'abre'} um mapa ilustrado e ${plural ? 'localizam' : 'localiza'} a proxima estacao ${direction}`,
+        `${subject} ${plural ? 'encaixam' : 'encaixa'} uma estrela no painel da plataforma ${direction}`,
+        `${subject} ${plural ? 'puxam' : 'puxa'} uma fita de tecido que revela flores de papel ${direction}`
       ];
       action = chooseFresh(neutralBeats);
       purpose = 'Criar um novo acontecimento visual coerente com o trecho sincronizado';
