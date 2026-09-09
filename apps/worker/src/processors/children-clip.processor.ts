@@ -1838,8 +1838,17 @@ export class ChildrenClipProcessor {
     if (physicalIssue) return physicalIssue;
     for (const name of vehicleNames) {
       const vehicle = this.escapeRegExp(this.normalizeShotText(name));
-      if (new RegExp(`\\b${vehicle}\\b[^.;]{0,100}\\b(?:com|possui|tem)\\s+(?:(?:os|uma?|seus?)\\s+)?(?:olhos|rosto|boca|sorriso)\\b`).test(visibleSceneText)) {
-        return `veiculo ${name} recebeu anatomia de personagem`;
+      const otherNames = introductionSchedule.filter((entity) => entity.name !== name)
+        .map((entity) => this.escapeRegExp(this.normalizeShotText(entity.name)));
+      const subjectBoundary = new RegExp(`\\b(?:enquanto|${otherNames.join('|')})\\b`);
+      // Never carry an attribute across a field or a change of subject.
+      for (const field of [plan.action, plan.composition, plan.camera, plan.motionIntent]) {
+        for (const match of this.normalizeShotText(field).matchAll(new RegExp(`\\b${vehicle}\\b([^.;]{0,100})`, 'g'))) {
+          const clause = match[1].split(subjectBoundary)[0];
+          if (/\b(?:com|possui|tem)\s+(?:(?:os|uma?|seus?)\s+)?(?:olhos|rosto|boca|sorriso)\b/.test(clause)) {
+            return `veiculo ${name} recebeu anatomia de personagem`;
+          }
+        }
       }
     }
     return null;
@@ -2018,9 +2027,16 @@ export class ChildrenClipProcessor {
         const supportingBeat = otherRequiredActors.length
           ? `, enquanto ${otherRequiredActors.map((entity) => entity.name).join(' e ')} ${otherRequiredActors.length > 1 ? 'marcam' : 'marca'} o ritmo atras da faixa`
           : '';
-        action = requiredVehicleForCue
-          ? `${jumper.name} faz dois saltos dentro de uma marca segura na plataforma${supportingBeat}; depois ${requiredVehicleForCue.name}, parado durante os gestos, parte devagar pelos trilhos`
-          : `${jumper.name} faz dois saltos entre circulos coloridos no chao e aterrissa com equilibrio ${direction}`;
+        const jumpBeats = [
+          `${jumper.name} faz dois saltos dentro de uma marca segura na plataforma`,
+          `${jumper.name} salta sobre uma fita baixa e aterrissa com os bracos abertos`,
+          `${jumper.name} pula entre duas estrelas pintadas no piso e termina agachado`,
+          `${jumper.name} faz um salto curto no lugar e congela com as patas juntas`,
+          `${jumper.name} salta de um circulo azul para um amarelo e ergue os bracos`
+        ];
+        action = chooseFresh(jumpBeats.map((beat) => requiredVehicleForCue
+          ? `${beat}${supportingBeat}; depois ${requiredVehicleForCue.name}, parado durante os gestos, parte devagar pelos trilhos`
+          : `${beat}${supportingBeat}`));
       }
     }
     if (asksForSideToSide && requiredActorsForCue.length) {
