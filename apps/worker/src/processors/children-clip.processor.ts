@@ -1762,6 +1762,9 @@ export class ChildrenClipProcessor {
     shotIndex: number,
     lyricText: string | null
   ): string | null {
+    const requiredFields = ['purpose', 'locationKey', 'locationName', 'locationDescription', 'timeOfDay', 'primaryFocus', 'action', 'composition', 'camera'] as const;
+    const missingFields = requiredFields.filter((field) => typeof plan[field] !== 'string' || !plan[field]!.trim());
+    if (missingFields.length) return `plano incompleto: faltam ${missingFields.join(', ')}`;
     const action = this.normalizeShotText(plan.action);
     if (action && previousPlans.some((previous) => shotActionsAreTooSimilar(previous.action, action))) {
       return 'acao visual semanticamente repetida';
@@ -1833,6 +1836,12 @@ export class ChildrenClipProcessor {
       .map((field) => vehicleActionIssue(field, vehicleNames))
       .find((issue): issue is string => Boolean(issue));
     if (physicalIssue) return physicalIssue;
+    for (const name of vehicleNames) {
+      const vehicle = this.escapeRegExp(this.normalizeShotText(name));
+      if (new RegExp(`\\b${vehicle}\\b[^.;]{0,100}\\b(?:com|possui|tem)\\s+(?:(?:os|uma?|seus?)\\s+)?(?:olhos|rosto|boca|sorriso)\\b`).test(visibleSceneText)) {
+        return `veiculo ${name} recebeu anatomia de personagem`;
+      }
+    }
     return null;
   }
 
@@ -2069,6 +2078,10 @@ export class ChildrenClipProcessor {
         ?? null);
     return {
       ...plan,
+      locationKey: plan.locationKey || previousLocation?.locationKey || 'estacao-colorida',
+      locationName: plan.locationName || previousLocation?.locationName || 'Estação Colorida',
+      locationDescription: plan.locationDescription || previousLocation?.locationDescription || 'Plataforma colorida, com piso plano e faixa de seguranca separada dos trilhos',
+      timeOfDay: plan.timeOfDay || previousLocation?.timeOfDay || 'dia',
       ...(hasGenericLocation && previousLocation ? {
         locationKey: previousLocation.locationKey,
         locationName: previousLocation.locationName,

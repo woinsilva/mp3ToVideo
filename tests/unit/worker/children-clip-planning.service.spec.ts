@@ -27,11 +27,15 @@ describe('ChildrenClipPlanningService', () => {
   it('requires distinctive lyric gestures to be visible in the action', () => {
     expect(lyricActionIssue('Pula, pula!', 'Lilo estende uma fita no chão')).toContain('salto');
     expect(lyricActionIssue('Pula, pula!', 'Lilo salta sobre uma fita no chão')).toBeNull();
+    expect(lyricActionIssue('Pula, pula! Agora o trem vai devagar', 'Lilo faz dois saltos dentro de uma marca segura na plataforma; depois Pipo Express, parado durante os gestos, parte devagar pelos trilhos')).toBeNull();
     expect(lyricActionIssue('Bate palma, bate o pé', 'Lia acena para o trem')).toContain('palmas');
     expect(lyricActionIssue('Agora o trem vai devagar', 'Pipo Express reduz a velocidade nos trilhos')).toBeNull();
   });
 
   it('detects unsafe or physically impossible vehicle actions', () => {
+    expect(vehicleActionIssue('Lia segura o Pipo Express', ['Pipo Express'])).toContain('manipulando');
+    expect(vehicleActionIssue('Lia fica em uma area segura diante de Pipo Express parado', ['Pipo Express'])).toBeNull();
+    expect(visibleWrittenTextIssue("O trem exibe um cartaz com o texto Vem, vem, vem")).toContain('texto');
     expect(vehicleActionIssue(
       'Pipo Express se move pelos trilhos enquanto Toto corre ao lado dele',
       ['Pipo Express']

@@ -85,7 +85,7 @@ export function genericShotLocation(value: unknown): boolean {
 
 export function visibleWrittenTextIssue(value: unknown): string | null {
   const text = normalizeShotSemantics(value).replace(/\bsem texto\b/g, '');
-  if (/\b(inscricao|texto legivel|palavra escrita|frase escrita|legenda)\b/.test(text)) return 'texto escrito visivel nao permitido na cena';
+  if (/\b(inscricao|texto|palavra escrita|frase escrita|legenda)\b/.test(text)) return 'texto escrito visivel nao permitido na cena';
   if (/\bplaca\b.{0,55}\b(exibe|mostra|diz|escrito|inscricao|palavra|frase)\b/.test(text)) return 'placa com texto visivel nao permitida na cena';
   return null;
 }
@@ -108,7 +108,7 @@ export function lyricActionIssue(lyricValue: unknown, actionValue: unknown): str
   const lyric = normalizeShotSemantics(lyricValue);
   const action = normalizeShotSemantics(actionValue);
   if (!lyric || !action) return null;
-  if (/\bpula(?:r|m|ndo)?\b/.test(lyric) && !/\b(pula|pulam|pulando|salta|saltam|saltando|salto)\b/.test(action)) {
+  if (/\bpula(?:r|m|ndo)?\b/.test(lyric) && !/\b(pula|pulam|pulando|salta|saltam|saltando|saltos?)\b/.test(action)) {
     return 'a letra pede um salto, mas a acao nao mostra nenhum salto';
   }
   if (/\bbate palma\b/.test(lyric) && !/\b(palma|palmas)\b/.test(action)) {
@@ -130,7 +130,8 @@ export function lyricActionIssue(lyricValue: unknown, actionValue: unknown): str
 }
 
 export function vehicleActionIssue(value: unknown, vehicleNames: string[]): string | null {
-  const text = normalizeShotSemantics(value);
+  const text = normalizeShotSemantics(value)
+    .replace(/\b(area|marca|zona|faixa|distancia|plataforma) segura\b/g, '$1 protegida');
   if (!text) return null;
   const escapedVehicles = vehicleNames
     .map((name) => normalizeShotSemantics(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
