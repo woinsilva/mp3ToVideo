@@ -30,11 +30,17 @@ describe('ChildrenClipPlanningService', () => {
     expect(lyricActionIssue('Pula, pula! Agora o trem vai devagar', 'Lilo faz dois saltos dentro de uma marca segura na plataforma; depois Pipo Express, parado durante os gestos, parte devagar pelos trilhos')).toBeNull();
     expect(lyricActionIssue('Bate palma, bate o pé', 'Lia acena para o trem')).toContain('palmas');
     expect(lyricActionIssue('Agora o trem vai devagar', 'Pipo Express reduz a velocidade nos trilhos')).toBeNull();
+    expect(lyricActionIssue('Um, dois, tres, pode embarcar', 'Lia aponta para um balao no ceu')).toContain('embarque');
+    expect(lyricActionIssue('Um, dois, tres, pode embarcar', 'Lia entra pela porta do Pipo Express parado')).toBeNull();
+    expect(lyricActionIssue('Pulou dentro do vagao', 'Mimi, ja dentro do vagao, guarda o bilhete')).toBeNull();
   });
 
   it('detects unsafe or physically impossible vehicle actions', () => {
     expect(vehicleActionIssue('Lia segura o Pipo Express', ['Pipo Express'])).toContain('manipulando');
     expect(vehicleActionIssue('Lia fica em uma area segura diante de Pipo Express parado', ['Pipo Express'])).toBeNull();
+    expect(vehicleActionIssue('Lilo faz dois saltos na plataforma; depois Pipo Express parte pelos trilhos', ['Pipo Express'])).toBeNull();
+    expect(vehicleActionIssue('Lilo salta enquanto Pipo Express avanca pelos trilhos', ['Pipo Express'])).toContain('insegura');
+    expect(vehicleActionIssue('Lia e Toto dancam enquanto Pipo Express se aproxima lentamente', ['Pipo Express'])).toContain('insegura');
     expect(visibleWrittenTextIssue("O trem exibe um cartaz com o texto Vem, vem, vem")).toContain('texto');
     expect(vehicleActionIssue(
       'Pipo Express se move pelos trilhos enquanto Toto corre ao lado dele',
@@ -52,6 +58,10 @@ describe('ChildrenClipPlanningService', () => {
       'Mimi entra pela porta do Pipo Express parado na plataforma',
       ['Pipo Express']
     )).toBeNull();
+    expect(vehicleActionIssue(
+      'Lia e Toto entram pela porta do Pipo Express parado enquanto o trem comeca a se mover',
+      ['Pipo Express']
+    )).toContain('simultaneo');
     expect(vehicleActionIssue(
       'Pipo Express acende o farol enquanto Lia ergue uma bandeira em area segura',
       ['Pipo Express']

@@ -752,18 +752,20 @@ export class ChildrenClipProcessor {
       const batches = this.shotPlanningBatches(skeletons, 6);
       const generatedLocations = new Map<string, NonNullable<CreativePlanResponse['locations']>[number]>();
       const generatedShotPlans: NonNullable<CreativePlanResponse['shotPlans']> = [];
+      const entityIntroductionSchedule = this.planning.entityIntroductionSchedule(skeletons, characters, baseVisualBible, baseNarrative);
       for (let batchIndex = 0; batchIndex < batches.length; batchIndex += 1) {
         const batch = batches[batchIndex];
         const startProgress = 20 + Math.floor((batchIndex / Math.max(1, batches.length)) * 22);
         const nextBatchProgress = 20 + Math.floor(((batchIndex + 1) / Math.max(1, batches.length)) * 22);
         const cachedBatch = planningDraft.batches.find((item) => item.batchIndex === batchIndex);
         if (cachedBatch) {
+          const cachedResponse = this.normalizeCreativePlanResponse(cachedBatch.response);
           await this.planProgress(job, startProgress, 'REUSING_SHOT_BATCH', `Reutilizando tomadas ${batch[0].index + 1} a ${batch[batch.length - 1].index + 1} do checkpoint (${batchIndex + 1}/${batches.length}).`);
-          for (const location of cachedBatch.response.locations ?? []) {
+          for (const location of cachedResponse.locations ?? []) {
             const key = location.key?.trim().toLowerCase();
             if (key) generatedLocations.set(key, location);
           }
-          if (Array.isArray(cachedBatch.response.shotPlans)) generatedShotPlans.push(...cachedBatch.response.shotPlans);
+          if (Array.isArray(cachedResponse.shotPlans)) generatedShotPlans.push(...cachedResponse.shotPlans);
           continue;
         }
         await this.planProgress(job, startProgress, 'PLANNING_SHOT_BATCH', `Planejando tomadas ${batch[0].index + 1} a ${batch[batch.length - 1].index + 1} (${batchIndex + 1}/${batches.length}).`);
@@ -792,13 +794,14 @@ export class ChildrenClipProcessor {
             })
           }
         ]), startProgress, Math.max(startProgress, nextBatchProgress - 1), `O Ollama continua planejando o lote ${batchIndex + 1}/${batches.length}.`);
-        for (const location of response?.locations ?? []) {
+        const normalizedResponse = response ? this.normalizeCreativePlanResponse(response) : null;
+        for (const location of normalizedResponse?.locations ?? []) {
           const key = location.key?.trim().toLowerCase();
           if (key) generatedLocations.set(key, location);
         }
-        if (Array.isArray(response?.shotPlans)) generatedShotPlans.push(...response.shotPlans);
-        if (response) {
-          planningDraft.batches.push({ batchIndex, response });
+        if (Array.isArray(normalizedResponse?.shotPlans)) generatedShotPlans.push(...normalizedResponse.shotPlans);
+        if (normalizedResponse) {
+          planningDraft.batches.push({ batchIndex, response: normalizedResponse });
           await persistDraft();
         }
       }
@@ -847,8 +850,33 @@ export class ChildrenClipProcessor {
         }
         if (Array.isArray(repair.shotPlans)) generatedShotPlans.push(...repair.shotPlans);
       }
+      const plannedAfterAiRepair = new Set(generatedShotPlans
+        .map((shot) => shot.shotIndex)
+        .filter((index): index is number => typeof index === 'number'));
+      const stillMissing = skeletons.filter((shot) => !plannedAfterAiRepair.has(shot.index));
+      for (const missing of stillMissing) {
+        const priorPlans = generatedShotPlans
+          .filter((plan) => typeof plan.shotIndex === 'number' && plan.shotIndex < missing.index)
+          .sort((left, right) => left.shotIndex! - right.shotIndex!);
+        const previous = priorPlans.at(-1);
+        const eligible = entityIntroductionSchedule.filter((entity) => entity.firstShotIndex <= missing.index);
+        const fallback = this.deterministicSafeShotRepair({
+          shotIndex: missing.index,
+          locationKey: previous?.locationKey,
+          locationName: previous?.locationName,
+          locationDescription: previous?.locationDescription,
+          timeOfDay: previous?.timeOfDay,
+          primaryFocus: eligible[0]?.name,
+          allowedEntities: eligible.map((entity) => entity.name),
+          forbiddenEntities: entityIntroductionSchedule.filter((entity) => entity.firstShotIndex > missing.index).map((entity) => entity.name),
+          action: '', purpose: '', composition: '', camera: ''
+        }, missing, entityIntroductionSchedule, priorPlans);
+        generatedShotPlans.push(fallback);
+      }
+      if (stillMissing.length) {
+        await this.planProgress(job, 46, 'APPLYING_DETERMINISTIC_SHOT_REPAIR', `Fallback local completou tomadas omitidas pelo modelo: ${stillMissing.map((shot) => shot.index + 1).join(', ')}.`);
+      }
       const auditedShotPlans: NonNullable<CreativePlanResponse['shotPlans']> = [];
-      const entityIntroductionSchedule = this.planning.entityIntroductionSchedule(skeletons, characters, baseVisualBible, baseNarrative);
       const auditBatches = skeletons.map((shot) => [shot]);
       for (let batchIndex = 0; batchIndex < auditBatches.length; batchIndex += 1) {
         const batch = auditBatches[batchIndex];
@@ -1742,11 +1770,18 @@ export class ChildrenClipProcessor {
 
   private normalizeCreativePlanResponse(value: CreativePlanResponse): CreativePlanResponse {
     const record = value as unknown as Record<string, unknown>;
-    if (typeof record.shotIndex === 'number') return { shotPlans: [record as unknown as CreativeShotPlan] };
+    let normalized = value;
+    if (typeof record.shotIndex === 'number') normalized = { shotPlans: [record as unknown as CreativeShotPlan] };
     if (record.shotPlans && typeof record.shotPlans === 'object' && !Array.isArray(record.shotPlans)) {
-      return { ...value, shotPlans: [record.shotPlans as CreativeShotPlan] };
+      normalized = { ...normalized, shotPlans: [record.shotPlans as CreativeShotPlan] };
     }
-    return value;
+    const normalizedRecord = normalized as unknown as Record<string, unknown>;
+    if (normalizedRecord.locations && typeof normalizedRecord.locations === 'object' && !Array.isArray(normalizedRecord.locations)) {
+      normalized = { ...normalized, locations: [normalizedRecord.locations as NonNullable<CreativePlanResponse['locations']>[number]] };
+    } else if (normalizedRecord.locations != null && !Array.isArray(normalizedRecord.locations)) {
+      normalized = { ...normalized, locations: undefined };
+    }
+    return normalized;
   }
 
   private normalizeShotText(value: unknown): string {
@@ -1851,6 +1886,15 @@ export class ChildrenClipProcessor {
         }
       }
     }
+    const focusedVehicle = vehicleNames.find((name) => this.normalizeShotText(name) === this.normalizeShotText(plan.primaryFocus));
+    if (focusedVehicle) {
+      const vehicle = this.escapeRegExp(this.normalizeShotText(focusedVehicle));
+      const vehicleIsOnlyBackground = new RegExp(`\\b${vehicle}\\b.{0,55}\\b(?:permanece|esta|fica) parado\\b`).test(action)
+        && !new RegExp(`\\b${vehicle}\\b.{0,70}\\b(?:abre|fecha|pisca|acende|soa|parte|avanca|acelera|reduz|freia)\\b`).test(action);
+      const actingCharacter = introductionSchedule.some((entity) => entity.name !== focusedVehicle
+        && new RegExp(`^${this.escapeRegExp(this.normalizeShotText(entity.name))}\\b`).test(action));
+      if (vehicleIsOnlyBackground && actingCharacter) return `foco principal ${focusedVehicle} esta passivo ao fundo enquanto outro personagem executa a acao`;
+    }
     return null;
   }
 
@@ -1918,6 +1962,7 @@ export class ChildrenClipProcessor {
     const asksForSlow = /\bdevagar\b/.test(lyric);
     const asksForAcceleration = /\bacelerar\b/.test(lyric);
     const asksForSideToSide = /\bvai pra la e vem pra ca\b/.test(lyric);
+    const asksForReturn = /\b(voltar|volta|retorna|retornar)\b/.test(lyric);
     const direction = ['pela esquerda', 'ao centro', 'pela direita'][shot.index % 3];
     const chooseFresh = (candidates: string[]) => candidates.find((candidate) => (
       !previousPlans.some((previous) => shotActionsAreTooSimilar(previous.action, candidate))
@@ -1940,15 +1985,36 @@ export class ChildrenClipProcessor {
         `${subject} ${plural ? 'tocam' : 'toca'} primeiro o pe na marca do chao e depois ${plural ? 'batem' : 'bate'} uma palma ${direction}`,
         `${subject} ${plural ? 'batem' : 'bate'} palmas enquanto ${plural ? 'alternam' : 'alterna'} os pes entre dois circulos no chao ${direction}`,
         `${subject} ${plural ? 'fazem' : 'faz'} duas palmas cruzadas e ${plural ? 'pisam' : 'pisa'} na estrela pintada no piso ${direction}`,
-        `${subject} ${plural ? 'batem' : 'bate'} uma palma, ${plural ? 'tocam' : 'toca'} o pe no chao e ${plural ? 'congelam' : 'congela'} em pose ${direction}`
+        `${subject} ${plural ? 'batem' : 'bate'} uma palma, ${plural ? 'tocam' : 'toca'} o pe no chao e ${plural ? 'congelam' : 'congela'} em pose ${direction}`,
+        `${subject} ${plural ? 'empurram' : 'empurra'} uma bola colorida com o pe ate um circulo no chao e ${plural ? 'batem' : 'bate'} uma palma ao concluir ${direction}`,
+        `${subject} ${plural ? 'percorrem' : 'percorre'} tres pegadas pintadas, ${plural ? 'batem' : 'bate'} o pe na ultima marca do chao e ${plural ? 'erguem' : 'ergue'} as maos para uma palma ${direction}`,
+        `${subject} ${plural ? 'tocam' : 'toca'} com o pe um sino baixo preso ao chao e ${plural ? 'respondem' : 'responde'} ao som com uma palma ${direction}`,
+        `${subject} ${plural ? 'fazem' : 'faz'} uma roda com fita colorida, ${plural ? 'pisam' : 'pisa'} no centro e ${plural ? 'batem' : 'bate'} palmas acima da cabeca ${direction}`,
+        `${subject} ${plural ? 'equilibram' : 'equilibra'} um bloco leve com o pe sobre a marca do chao e ${plural ? 'celebram' : 'celebra'} com duas palmas ${direction}`,
+        `${subject} ${plural ? 'seguem' : 'segue'} setas ilustradas no piso, ${plural ? 'param' : 'para'} com o pe na marca final e ${plural ? 'batem' : 'bate'} uma palma ${direction}`,
+        `${subject} ${plural ? 'giram' : 'gira'} um catavento com o pe apoiado no chao e ${plural ? 'marcam' : 'marca'} o final com palmas ${direction}`,
+        `${subject} ${plural ? 'levantam' : 'levanta'} uma bandeirola ao bater o pe na alavanca do chao e ${plural ? 'acompanham' : 'acompanha'} o movimento com palmas ${direction}`
       ];
       action = chooseFresh(rhythmBeats);
       purpose = 'Transformar o comando musical em um gesto claro que a crianca possa acompanhar';
     } else if (/\b(embarcar|vagao|entrou)\b/.test(lyric) && vehicle) {
-      const boardingBeats = actors.length ? [
+      const previousAction = this.normalizeShotText(previousPlans.at(-1)?.action);
+      const previousWasBoarding = /\b(entra|entram|embarcam?|atravessa|atravessam|sobem?|sobe)\b.{0,70}\b(porta|entrada|rampa|degrau|vagao|trem|pipo express)\b/.test(previousAction);
+      const boardingBeats = previousWasBoarding && actors.length ? [
+        `${lead}, ja dentro do vagao de ${vehicle.name}, guarda o bilhete e acena pela janela${companion ? ` enquanto ${companion} se acomoda no banco` : ''}`,
+        `${lead}, sentado dentro do vagao de ${vehicle.name}, coloca a pequena mala sob o banco${companion ? ` enquanto ${companion} aponta a paisagem` : ''}`,
+        `${lead} se acomoda dentro do vagao de ${vehicle.name} e confere o desenho do bilhete${companion ? ` enquanto ${companion} fecha a mochila` : ''}`
+      ] : actors.length ? [
         `${lead} entra pela porta lateral de ${vehicle.name}, parado na plataforma${companion ? `, enquanto ${companion} acena da area segura` : ''}`,
         `${vehicle.name}, parado na plataforma, abre a porta e ${lead} sobe pelo degrau iluminado${companion ? ` enquanto ${companion} espera atras da faixa` : ''}`,
-        `${lead} mostra o bilhete ilustrado e atravessa a porta aberta de ${vehicle.name}, parado na plataforma${companion ? `, seguido por ${companion}` : ''}`
+        `${lead} mostra o bilhete ilustrado e atravessa a porta aberta de ${vehicle.name}, parado na plataforma${companion ? `, seguido por ${companion}` : ''}`,
+        `${lead} coloca uma pequena mala no degrau e embarca pela entrada iluminada de ${vehicle.name}, parado na estacao${companion ? ` enquanto ${companion} segura o bilhete` : ''}`,
+        `${vehicle.name} permanece imovel com a porta aberta enquanto ${lead} confere o numero ilustrado e entra no vagao${companion ? `; ${companion} aguarda na fila` : ''}`,
+        `${lead} atravessa a faixa de embarque e sobe pela rampa lateral de ${vehicle.name}, parado junto a plataforma${companion ? ` enquanto ${companion} aponta o assento` : ''}`,
+        `${vehicle.name}, com as rodas paradas, ilumina a entrada; ${lead} entra no vagao e guarda o bilhete ilustrado${companion ? ` enquanto ${companion} sobe em seguida` : ''}`,
+        `${lead} entrega o bilhete a ${companion ?? 'Lia'} e passa pela porta aberta de ${vehicle.name}, que aguarda parado na plataforma`,
+        `${vehicle.name} para diante do relogio e abre a porta; ${lead} sobe o primeiro degrau${companion ? ` e ${companion} embarca pela rampa` : ''}`,
+        `${lead} acena da plataforma, atravessa a entrada de ${vehicle.name} parado e se acomoda junto a janela${companion ? ` enquanto ${companion} entra pela mesma porta` : ''}`
       ] : [
         `${vehicle.name} abre a porta lateral enquanto permanece parado na plataforma`,
         `${vehicle.name}, imovel na plataforma, acende o degrau e mantem a porta aberta`,
@@ -1967,8 +2033,8 @@ export class ChildrenClipProcessor {
         ]);
       purpose = 'Representar visualmente a mudanca para o ritmo lento';
     } else if (/\b(piui+|aceler|vai sair|passeando|trenzinho|trem)\b/.test(lyric) && vehicle) {
-      const observer = lead === vehicle.name ? 'a sinalizacao da plataforma' : lead;
-      const vehicleBeats = [
+      const observer = lead === vehicle.name ? null : lead;
+      const vehicleBeats = observer ? [
         `${vehicle.name} acende o farol e soa o apito enquanto ${observer} ergue uma bandeira colorida em area segura`,
         `${vehicle.name} fecha as portas e ilumina o sinal de partida enquanto ${observer} faz a contagem regressiva na plataforma`,
         `${vehicle.name} avanca pelos trilhos e cruza o relogio da estacao enquanto ${observer} observa de uma zona protegida`,
@@ -1983,6 +2049,21 @@ export class ChildrenClipProcessor {
         `${vehicle.name} contorna uma colina e reaparece junto a uma placa colorida enquanto ${observer} aponta a chegada`,
         `${vehicle.name} reflete as luzes em uma poca ao passar pela estacao enquanto ${observer} observa de um banco seguro`,
         `${vehicle.name} aciona a cancela luminosa e segue pelos trilhos enquanto ${observer} confirma o caminho no mapa ilustrado`
+      ] : [
+        `${vehicle.name} acende o farol e soa dois apitos curtos antes da partida`,
+        `${vehicle.name}, parado na plataforma, fecha as portas e ilumina o sinal de partida`,
+        `${vehicle.name} avanca pelos trilhos e cruza o relogio da estacao`,
+        `${vehicle.name} passa por um arco de flores e segue ate a curva`,
+        `${vehicle.name} mostra as rodas girando em detalhe durante a viagem`,
+        `${vehicle.name} alcanca a placa ilustrada da estacao seguinte`,
+        `${vehicle.name} atravessa uma pequena ponte colorida`,
+        `${vehicle.name} passa diante de um moinho e aciona o sino da passagem`,
+        `${vehicle.name} entra em um tunel iluminado e projeta o farol nas paredes`,
+        `${vehicle.name} solta tres aneis de vapor acima da locomotiva`,
+        `${vehicle.name} cruza uma fileira de bandeirolas que se levantam com a passagem`,
+        `${vehicle.name} contorna uma colina e reaparece junto a uma placa colorida`,
+        `${vehicle.name} reflete as luzes em uma poca ao passar pela estacao`,
+        `${vehicle.name} aciona a cancela luminosa e segue pelos trilhos`
       ];
       action = chooseFresh(vehicleBeats);
       purpose = 'Mostrar a partida e fazer a historia avancar com seguranca';
@@ -2024,19 +2105,39 @@ export class ChildrenClipProcessor {
       const jumper = requiredActorsForCue.find((entity) => /\b(coelho|coelha|coelhinho|coelhinha)\b/.test(this.normalizeShotText(`${entity.type} ${entity.identity ?? ''}`))) ?? requiredActorsForCue[0] ?? actors[0];
       if (jumper) {
         const otherRequiredActors = requiredActorsForCue.filter((entity) => entity !== jumper);
-        const supportingBeat = otherRequiredActors.length
-          ? `, enquanto ${otherRequiredActors.map((entity) => entity.name).join(' e ')} ${otherRequiredActors.length > 1 ? 'marcam' : 'marca'} o ritmo atras da faixa`
-          : '';
         const jumpBeats = [
           `${jumper.name} faz dois saltos dentro de uma marca segura na plataforma`,
           `${jumper.name} salta sobre uma fita baixa e aterrissa com os bracos abertos`,
           `${jumper.name} pula entre duas estrelas pintadas no piso e termina agachado`,
           `${jumper.name} faz um salto curto no lugar e congela com as patas juntas`,
-          `${jumper.name} salta de um circulo azul para um amarelo e ergue os bracos`
+          `${jumper.name} salta de um circulo azul para um amarelo e ergue os bracos`,
+          `${jumper.name} pula sobre tres almofadas baixas e termina sentado na ultima`,
+          `${jumper.name} salta por cima de uma corda no piso e gira ao aterrissar`,
+          `${jumper.name} faz dois pulos seguindo pegadas coloridas ate a faixa protegida`,
+          `${jumper.name} pula dentro de um aro apoiado no chao e levanta uma bandeirola`,
+          `${jumper.name} salta ao tocar um sino baixo e aterrissa sobre a estrela central`
         ];
-        action = chooseFresh(jumpBeats.map((beat) => requiredVehicleForCue
-          ? `${beat}${supportingBeat}; depois ${requiredVehicleForCue.name}, parado durante os gestos, parte devagar pelos trilhos`
-          : `${beat}${supportingBeat}`));
+        const supportingBeats = otherRequiredActors.length ? [
+          `, enquanto ${otherRequiredActors.map((entity) => entity.name).join(' e ')} ${otherRequiredActors.length > 1 ? 'marcam' : 'marca'} o ritmo atras da faixa`,
+          `, com ${otherRequiredActors.map((entity) => entity.name).join(' e ')} levantando bandeirolas na zona protegida`,
+          `, enquanto ${otherRequiredActors.map((entity) => entity.name).join(' e ')} ${otherRequiredActors.length > 1 ? 'apontam' : 'aponta'} as marcas coloridas longe dos trilhos`,
+          `, sob as palmas de ${otherRequiredActors.map((entity) => entity.name).join(' e ')} atras da faixa`
+        ] : [''];
+        const vehicleEndings = asksForReturn ? [
+          `; depois ${requiredVehicleForCue?.name} retorna pela curva e para junto a plataforma`,
+          `; em seguida ${requiredVehicleForCue?.name} reaparece junto ao relogio e freia ate parar`,
+          `; depois ${requiredVehicleForCue?.name} volta pelo trilho principal e acende o sinal de chegada`,
+          `; em seguida ${requiredVehicleForCue?.name} chega devagar e abre as portas na plataforma`
+        ] : asksForSlow ? [
+          `; depois ${requiredVehicleForCue?.name}, parado durante os gestos, parte devagar pelos trilhos`
+        ] : [
+          `; depois ${requiredVehicleForCue?.name}, parado durante os gestos, parte pelos trilhos`,
+          `; em seguida ${requiredVehicleForCue?.name} acende o farol e segue ate a curva`,
+          `; depois ${requiredVehicleForCue?.name} soa o apito e avanca ate o sinal seguinte`
+        ];
+        action = chooseFresh(jumpBeats.map((beat, index) => requiredVehicleForCue
+          ? `${beat}${supportingBeats[index % supportingBeats.length]}${vehicleEndings[index % vehicleEndings.length]}`
+          : `${beat}${supportingBeats[index % supportingBeats.length]}`));
       }
     }
     if (asksForSideToSide && requiredActorsForCue.length) {
@@ -2085,7 +2186,13 @@ export class ChildrenClipProcessor {
     const hasGenericLocation = genericShotLocation(plan.locationName);
     const requestedFocus = allowed.find((name) => this.normalizeShotText(name) === this.normalizeShotText(plan.primaryFocus));
     const requiredDebutFocus = requiredByLyrics.find((entity) => entity.firstShotIndex === shot.index && this.containsShotEntity(this.normalizeShotText(action), entity.name));
+    const normalizedAction = this.normalizeShotText(action);
+    const vehicleIsOnlyBackground = vehicle
+      && new RegExp(`\\b${this.escapeRegExp(this.normalizeShotText(vehicle.name))}\\b.{0,55}\\b(?:permanece|esta|fica) parado\\b`).test(normalizedAction)
+      && !new RegExp(`\\b${this.escapeRegExp(this.normalizeShotText(vehicle.name))}\\b.{0,70}\\b(?:abre|fecha|pisca|acende|soa|parte|avanca|acelera|reduz|freia)\\b`).test(normalizedAction);
+    const activeLead = actors.find((entity) => new RegExp(`^${this.escapeRegExp(this.normalizeShotText(entity.name))}\\b`).test(normalizedAction));
     const focus = requiredDebutFocus?.name
+      ?? (vehicleIsOnlyBackground && activeLead ? activeLead.name : null)
       ?? (requestedFocus && this.containsShotEntity(this.normalizeShotText(action), requestedFocus)
       ? requestedFocus
       : requiredByLyrics.find((entity) => this.containsShotEntity(this.normalizeShotText(action), entity.name))?.name

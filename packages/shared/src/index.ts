@@ -126,6 +126,11 @@ export function lyricActionIssue(lyricValue: unknown, actionValue: unknown): str
   if (/\bvai pra la e vem pra ca\b/.test(lyric) && !/\b(lado a lado|de um lado para o outro|esquerda.{0,35}direita|direita.{0,35}esquerda|vai e volta)\b/.test(action)) {
     return 'a letra pede movimento de um lado para o outro, mas a acao nao o mostra';
   }
+  if (/\b(pode embarcar|quem entrou|entrou no|pulou dentro do vagao)\b/.test(lyric)
+    && !/\b(entra|entram|embarca|embarcam|atravessa|atravessam|sobe|sobem)\b.{0,70}\b(porta|entrada|rampa|degrau|vagao|trem|trenzinho|pipo express)\b/.test(action)
+    && !/\b(ja dentro|acomoda|acomodam|sentado|sentada|sentados|sentadas)\b.{0,70}\b(vagao|trem|trenzinho|pipo express)\b/.test(action)) {
+    return 'a letra pede embarque, mas a acao nao mostra alguem entrando no veiculo';
+  }
   return null;
 }
 
@@ -148,12 +153,24 @@ export function vehicleActionIssue(value: unknown, vehicleNames: string[]): stri
     return 'embarque sem porta e veiculo parado';
   }
 
-  const movingVehicle = new RegExp(`\\b${vehicleTerm}\\b.{0,70}\\b(move|movem|mover|movendo|movimenta|movimentam|movimento|passa|avanca|acelera|parte|faz uma curva)\\b`).test(text);
-  if (movingVehicle && !/\b(dentro|no interior)\b/.test(text) && /\b(corre|correm|correndo|danca|dancam|pula|pulam|se junta|aproxima|aproximam)\b/.test(text)) {
-    return 'personagem acompanhando veiculo em movimento de forma insegura';
+  const vehicleStartsMoving = new RegExp(
+    `\\b${vehicleTerm}\\b.{0,90}(?:\\b(?:comeca|comecam|inicia|iniciam)\\b.{0,20}\\b(?:mover|movimentar|andar|rodar)\\b|\\b(?:parte|partem|arranca|arrancam)\\b)`
+  ).test(text);
+  if (boarding && vehicleStartsMoving) {
+    return 'embarque simultaneo ao inicio do movimento do veiculo';
   }
-  if (movingVehicle && /\b(ao lado|ao redor|em volta)\b.{0,45}\b(corre|correm|danca|dancam|pula|pulam)\b/.test(text)) {
-    return 'personagem acompanhando veiculo em movimento de forma insegura';
+
+  // Evaluate simultaneous actions inside the same temporal phase. A character may
+  // finish a safe gesture first and the stopped vehicle may depart afterwards.
+  const temporalPhases = text.split(/\b(?:depois|em seguida|apos isso)\b/);
+  for (const phase of temporalPhases) {
+    const movingVehicle = new RegExp(`\\b${vehicleTerm}\\b.{0,70}\\b(move|movem|mover|movendo|movimenta|movimentam|movimento|passa|avanca|acelera|parte|aproxima|aproximando|chega|faz uma curva)\\b`).test(phase);
+    if (movingVehicle && !/\b(dentro|no interior)\b/.test(phase) && /\b(corre|correm|correndo|danca|dancam|pula|pulam|salta|saltam|se junta|aproxima|aproximam)\b/.test(phase)) {
+      return 'personagem acompanhando veiculo em movimento de forma insegura';
+    }
+    if (movingVehicle && /\b(ao lado|ao redor|em volta)\b.{0,45}\b(corre|correm|danca|dancam|pula|pulam|salta|saltam)\b/.test(phase)) {
+      return 'personagem acompanhando veiculo em movimento de forma insegura';
+    }
   }
   const circlesVehicle = new RegExp(`\\b(ao redor|em volta)\\b.{0,55}\\b${vehicleTerm}\\b|\\b${vehicleTerm}\\b.{0,55}\\b(ao redor|em volta)\\b`).test(text);
   if (circlesVehicle && !/\b(parado|parada|imovel|estacionado|estacionada)\b/.test(text)) {
